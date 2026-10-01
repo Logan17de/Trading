@@ -25,6 +25,19 @@ files from the cleaned engine plus `AGENTS.md` for future work.
 The initial `main` commit imports the verified headless workflow with fresh history.
 Earlier development and deployment history remains in the previous repository.
 
+## Strategies
+
+Four hypotheses are recorded: everyday, late-session premium decay, swing and
+expiry reversal. The everyday rule starts at 13:15 JST: NIFTY spot +400 on
+Monday/Tuesday/Friday; SENSEX spot +800 on Wednesday/Thursday; buy a higher call
+with matching expiry and quantity. Hold while the index is flat/down versus entry;
+an upward move produces an exit review. There is no added maximum-loss cap.
+
+The engine can review this rule offline and compare supplied hedges within a
+margin budget at fixed quantity. Margin budget and expiry choice remain unset.
+Continuous monitoring and real execution are unfinished; option-profit probability
+is unknown. See [the strategy guide](docs/OWNER_STRATEGY_RESEARCH.md).
+
 ## Use locally
 
 Follow [local setup](docs/LOCAL_HEADLESS.md), then from the repository in PowerShell:
@@ -49,7 +62,7 @@ across 41 observed sessions per index. The September 30 recording has 29 snapsho
 from 18:40–19:08 JST, with one partial snapshot. No strategy has a validated net
 option-profit probability.
 
-After cleanup, **77 tests passed locally with four POSIX-only skips**. Configuration,
+With the everyday strategy, **92 tests passed locally with four POSIX-only skips**. Configuration,
 package installation, dependency checks and the offline demo passed. The retained CI
 runs on Linux/Python 3.12 and Windows/Python 3.13.
 

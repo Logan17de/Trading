@@ -23,5 +23,9 @@
 - Evaluate the owner's fixed Japan-time hypotheses with costs, fills and chronological
   holdouts before selecting any strategy. Profit targets never increase exposure,
   leverage or loss limits; record insufficient evidence and NO_TRADE when appropriate.
+- Everyday: at/after 13:15 JST, NIFTY +400 on Mon/Tue/Fri and SENSEX +800 on Wed/Thu;
+  same-expiry higher call hedge, equal quantity. Hold when the index is flat/down
+  versus entry; up means exit review. Margin budget/expiry are unset, and the owner
+  requested no maximum-loss cap. Do not replace this with a P&L-based exit rule.
 - Verify meaningful changes with configuration checks, the retained tests and the
   offline demo. Report implemented, tested, deployed and blocked work separately.

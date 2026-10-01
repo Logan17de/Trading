@@ -20,7 +20,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 from ..brokers.groww_data import GrowwMarketData
-from .contracts import EXCHANGES, INDICES, IST, dumps, identity
+from .contracts import EXCHANGES, INDICES, IST, dumps, identity, keys, number
 from .market_check import SDK_VERSION, read_credentials, readonly_transport, run_checks, safe_error
 
 JST = timezone(timedelta(hours=9))
@@ -124,14 +124,19 @@ def distribution(values):
 
 
 def validate_protocol(protocol):
+    if not isinstance(protocol, dict) or protocol.get("format") not in (
+            "owner-strategy-hypotheses-v1", "owner-strategy-hypotheses-v2"):
+        raise ValueError("unsupported protocol")
     expected = {"format", "timezone", "preferred_spread", "execution_enabled", "late_session",
                 "swing", "expiry_reversal", "statistics"}
-    if set(protocol) != expected or protocol["format"] != "owner-strategy-hypotheses-v1":
+    if protocol["format"] == "owner-strategy-hypotheses-v2":
+        expected.add("everyday")
+    if set(protocol) != expected:
         raise ValueError("unsupported protocol")
     if protocol["timezone"] != "Asia/Tokyo" or protocol["preferred_spread"] != "CALL_CREDIT" or protocol["execution_enabled"] is not False:
         raise ValueError("unsupported execution or strategy")
-    # Version 1 evaluates the recorded fixed hypotheses only. Never silently run
-    # different hard-coded rules after a config edit.
+    # Keep the original hypotheses reproducible under v1; v2 adds the everyday
+    # rule explicitly. Never silently change parameters on existing holdouts.
     late, swing, reversal, stats = (protocol[k] for k in ("late_session", "swing", "expiry_reversal", "statistics"))
     if (late["entry_jst"], late["exit_jst"]) != ("17:45", "18:45"):
         raise ValueError("unsupported late-session window")
@@ -143,6 +148,136 @@ def validate_protocol(protocol):
         raise ValueError("unsupported reversal threshold/value kind")
     if stats["chronological_holdout_fraction"] != .3 or stats["minimum_holdout_events"] < 30 or stats["confidence_level"] != .95:
         raise ValueError("unsupported statistics")
+    if "everyday" in protocol:
+        everyday = protocol["everyday"]
+        keys(everyday, {"entry_not_before_jst", "frequency", "short_call_offset_points",
+            "default_index", "sensex_weekdays", "owner_reported_lot_size", "lot_size_policy", "carry_policy",
+            "listed_strike_policy", "hedge_policy", "hedge_objective", "margin_budget_inr",
+            "max_spread_loss_inr", "exit_policy", "exit_criteria", "expiry_rule",
+            "allow_position_size_increase", "status"})
+        if everyday["entry_not_before_jst"] != "13:15" or everyday["frequency"] != "EACH_TRADING_SESSION":
+            raise ValueError("unsupported everyday window")
+        if (everyday["short_call_offset_points"] != {"SENSEX":800,"NIFTY":400}
+                or any(type(v) is not int for v in everyday["short_call_offset_points"].values())):
+            raise ValueError("unsupported everyday offsets")
+        if everyday["default_index"] != "NIFTY" or everyday["sensex_weekdays"] != ["WEDNESDAY","THURSDAY"]:
+            raise ValueError("unsupported everyday weekday preference")
+        if (everyday["owner_reported_lot_size"] != {"NIFTY":65}
+                or type(everyday["owner_reported_lot_size"]["NIFTY"]) is not int
+                or everyday["lot_size_policy"] != "VERIFY_CURRENT_CONTRACT_METADATA"):
+            raise ValueError("unsupported everyday lot-size policy")
+        if (everyday["listed_strike_policy"] != "AT_OR_ABOVE_SPOT_PLUS_OFFSET"
+                or everyday["hedge_policy"] != "HIGHER_STRIKE_CALL_SAME_EXPIRY_EQUAL_QUANTITY"
+                or everyday["hedge_objective"] != "COMPARE_NET_MAX_PROFIT_WITHIN_MARGIN_AT_FIXED_QUANTITY"
+                or everyday["allow_position_size_increase"] is not False):
+            raise ValueError("unsupported everyday hedge policy")
+        if (everyday["exit_policy"] != "HOLD_WHILE_FAVORABLE_EXIT_WHEN_ADVERSE"
+                or everyday["carry_policy"] != "REASSESS_NEXT_SESSION"
+                or everyday["exit_criteria"] != "INDEX_RELATIVE_TO_ENTRY_FLAT_OR_DOWN_HOLD_UP_EXIT"
+                or everyday["status"] != "UNTESTED_OPTION_PROFITABILITY"):
+            raise ValueError("unsupported everyday exit/status")
+        for field in ("margin_budget_inr", "max_spread_loss_inr"):
+            limit = number(everyday[field], nullable=True)
+            if limit is not None and limit <= 0:
+                raise ValueError("positive everyday limit required")
+        for field in ("exit_criteria", "expiry_rule"):
+            value = everyday[field]
+            if value is not None and (not isinstance(value, str) or not 1 <= len(value) <= 500):
+                raise ValueError("invalid everyday review rule")
+
+
+def everyday_reference(protocol, index, spot, observed_at, listed_strikes=None):
+    """Apply the owner's offset to one observation; never select a hedge/order.
+
+    Historical references use the first eligible completed minute. Live callers
+    must supply their actual observation and exact listed call strikes; a strike
+    match alone does not verify a contract, expiry, book, margin or fill.
+    """
+    validate_protocol(protocol)
+    rule = protocol.get("everyday")
+    if rule is None or index not in rule["short_call_offset_points"]:
+        return {"status":"NOT_APPLICABLE", "execution_enabled":False}
+    if not isinstance(observed_at, datetime) or observed_at.utcoffset() is None:
+        raise ValueError("offset-aware everyday observation required")
+    local = observed_at.astimezone(JST)
+    weekdays = ("MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY","SUNDAY")
+    if local.weekday() >= 5:
+        return {"status":"ORDINARY_WEEKDAY_PLAN_NOT_APPLICABLE", "execution_enabled":False}
+    preferred = "SENSEX" if weekdays[local.weekday()] in rule["sensex_weekdays"] else rule["default_index"]
+    if index != preferred:
+        return {"status":"NOT_PREFERRED_INDEX_TODAY", "preferred_index":preferred, "execution_enabled":False}
+    if local.time() < time.fromisoformat(rule["entry_not_before_jst"]):
+        return {"status":"BEFORE_EVERYDAY_WINDOW", "execution_enabled":False}
+    if number(spot) <= 0:
+        raise ValueError("positive everyday spot required")
+    offset = rule["short_call_offset_points"][index]
+    floor = number(spot + offset)
+    listed = None
+    if listed_strikes is not None:
+        if not isinstance(listed_strikes, list) or len(listed_strikes) > 10000:
+            raise ValueError("bounded listed call strikes required")
+        for strike in listed_strikes:
+            if number(strike) <= 0:
+                raise ValueError("positive listed strike required")
+        listed = min((s for s in listed_strikes if s >= floor), default=None)
+    return {"status":"EVERYDAY_REFERENCE_ONLY", "index":index,
+        "observed_at":observed_at.isoformat(), "reference_spot":spot,
+        "short_call_offset_points":offset, "minimum_short_call_strike":floor,
+        "listed_short_call_strike":listed, "contract_and_quote_verified":False,
+        "lot_size_verified":False, "exit_policy":rule["exit_policy"], "hedge_selected":None,
+        "probability_of_net_option_profit":None, "execution_enabled":False}
+
+
+def everyday_direction_review(protocol, entry_spot, current_spot):
+    """Owner-defined index direction review, independent of spread profit/loss.
+
+    An EXIT_REVIEW is data for the owner, not a broker command. Unknown observations
+    never become favorable. No tolerance, option-profit or execution claim is added.
+    """
+    validate_protocol(protocol)
+    if "everyday" not in protocol:
+        raise ValueError("everyday protocol required")
+    for spot in (entry_spot, current_spot):
+        if spot is not None and number(spot) <= 0:
+            raise ValueError("positive index observations required")
+    if entry_spot is None or current_spot is None:
+        return {"assessment":"UNKNOWN", "review":"DATA_REQUIRED", "spot_move_points":None,
+            "spread_profit_verified":False, "order_submitted":False, "execution_enabled":False}
+    move = current_spot - entry_spot
+    return {"assessment":"ADVERSE" if move > 0 else "FAVORABLE",
+        "review":"EXIT_REVIEW" if move > 0 else "HOLD_REVIEW", "spot_move_points":move,
+        "spread_profit_verified":False, "order_submitted":False, "execution_enabled":False}
+
+
+def review_everyday(value, protocol):
+    """Review structured observations offline, including an existing position.
+
+    A held position is assessed even before the entry window or on a day when the
+    other index is preferred. This does not select an expiry, hedge or order.
+    """
+    keys(value, {"index", "spot", "observed_at"}, {"entry_spot", "listed_call_strikes"})
+    if value["index"] not in INDICES or not isinstance(value["observed_at"], str):
+        raise ValueError("supported index and observation timestamp required")
+    observed_at = datetime.fromisoformat(value["observed_at"])
+    if observed_at.utcoffset() is None:
+        raise ValueError("offset-aware everyday observation required")
+    if value["spot"] is not None and number(value["spot"]) <= 0:
+        raise ValueError("positive everyday spot required")
+    validate_protocol(protocol)
+    if "everyday" not in protocol:
+        raise ValueError("everyday protocol required")
+    reference = (everyday_reference(protocol, value["index"], value["spot"], observed_at,
+                                   value.get("listed_call_strikes"))
+                 if value["spot"] is not None else
+                 {"status":"DATA_REQUIRED", "execution_enabled":False})
+    position = (everyday_direction_review(protocol, value["entry_spot"], value["spot"])
+                if "entry_spot" in value and value["index"] in protocol["everyday"]["short_call_offset_points"]
+                else None)
+    return {"format":"owner-everyday-review-v1", "status":"OWNER_REVIEW_ONLY",
+        "index":value["index"], "observed_at":observed_at.isoformat(),
+        "protocol_hash":identity(protocol), "reference":reference, "position_review":position,
+        "source_timestamps_and_contracts_verified":False, "order_submitted":False,
+        "execution_enabled":False}
 
 
 def evaluate_history(dataset, protocol):
@@ -165,10 +300,26 @@ def evaluate_history(dataset, protocol):
     ordered_days = sorted(days)
     split = max(1, int(len(ordered_days)*.7))
     holdout_days = set(ordered_days[split:])
-    records, excluded, events = [], Counter(), []
+    records, excluded, events, everyday_observations = [], Counter(), [], []
     expiries = set(dataset["expiries"])
     for day in ordered_days:
         partition = "HOLDOUT" if day in holdout_days else "DEVELOPMENT"
+        daily = protocol.get("everyday")
+        if daily and dataset["index"] in daily["short_call_offset_points"]:
+            # Earliest eligible reference only, not an assumed daily entry/fill.
+            preferred = "SENSEX" if day.weekday() in (2,3) else daily["default_index"]
+            if day.weekday() >= 5:
+                excluded["EVERYDAY_ORDINARY_WEEKDAY_PLAN_NOT_APPLICABLE"] += 1
+            elif dataset["index"] != preferred:
+                excluded["EVERYDAY_NOT_PREFERRED_INDEX_TODAY"] += 1
+            else:
+                reference_at = datetime.combine(day, time.fromisoformat(daily["entry_not_before_jst"]), JST).astimezone(IST)
+                reference_spot = value_at(days[day], day, reference_at.strftime("%H:%M"))
+                if reference_spot is None:
+                    excluded["EVERYDAY_REFERENCE_MINUTE_MISSING"] += 1
+                else:
+                    observation = everyday_reference(protocol, dataset["index"], reference_spot, reference_at)
+                    everyday_observations.append({"day":str(day), "partition":partition, **observation})
         late_start, late_end = (value_at(days[day], day, t) for t in ("14:15", "15:15"))
         if late_start is None or late_end is None:
             excluded["LATE_WINDOW_ENDPOINT_MISSING"] += 1
@@ -219,7 +370,7 @@ def evaluate_history(dataset, protocol):
     measured = partitions['HOLDOUT']['candidate_series_events']
     if measured['trials'] < protocol['statistics']['minimum_holdout_events']:
         assumptions.append('HOLDOUT_EVENT_COUNT_INSUFFICIENT')
-    return {"format":"owner-study-result-v1", "index":dataset['index'], "protocol_hash":identity(protocol),
+    result = {"format":"owner-study-result-v1", "index":dataset['index'], "protocol_hash":identity(protocol),
         "dataset_hash":identity(dataset), "source_value_kind":dataset['value_kind'],
         "status":"INSUFFICIENT_EVIDENCE" if assumptions else "PRICE_EVENT_REVIEW_REQUIRED",
         "strategy_reversal_probability":None if assumptions else measured,
@@ -233,6 +384,22 @@ def evaluate_history(dataset, protocol):
             "Candles cannot establish tradable bid/ask, simultaneous fills, fees or margin",
             "Wilson intervals assume independent sessions; small samples and regime changes remain material",
             "10/20-strike hedges are hypotheses, not approval to average into a losing position"]}
+    if "everyday" in protocol:
+        rule = protocol["everyday"]
+        result.update(format="owner-study-result-v2", strategy_count=4,
+            everyday_spot_observations=everyday_observations,
+            everyday_strategy={"status":"UNTESTED_OPTION_PROFITABILITY",
+                "applicable":dataset["index"] in rule["short_call_offset_points"],
+                "entry_not_before_jst":rule["entry_not_before_jst"],
+                "default_index":rule["default_index"], "sensex_weekdays":rule["sensex_weekdays"],
+                "exit_policy":rule["exit_policy"], "margin_budget_inr":rule["margin_budget_inr"],
+                "exit_criteria":rule["exit_criteria"], "expiry_rule":rule["expiry_rule"],
+                "carry_policy":rule["carry_policy"], "lot_size_verified":False,
+                "max_spread_loss_inr":rule["max_spread_loss_inr"],
+                "unresolved":[name for name in ("margin_budget_inr","expiry_rule","exit_criteria") if rule[name] is None],
+                "probability_of_net_option_profit":None, "hedge_selected":None, "execution_enabled":False})
+        result["limitations"].append("Everyday strike references are observations, not entries or next-day option returns")
+    return result
 
 
 def record_market(market, directory, until, *, interval_seconds=60, clock=lambda:datetime.now(timezone.utc), sleep=wall_time.sleep):
@@ -296,10 +463,19 @@ def main():
     sub.add_argument('--dataset',type=Path,required=True)
     sub.add_argument('--protocol',type=Path,default=Path('config/owner_strategies.json'))
     sub.add_argument('--output',type=Path,required=True)
+    sub = subs.add_parser('everyday',help='Offline review of structured everyday observations')
+    sub.add_argument('--input',type=Path,required=True)
+    sub.add_argument('--protocol',type=Path,default=Path('config/owner_strategies.json'))
+    sub.add_argument('--output',type=Path,required=True)
     args = parser.parse_args()
     if args.output.exists() or not args.output.parent.is_dir():
         raise ValueError('new output in existing private directory required')
-    if args.command == 'evaluate':
+    if args.command == 'everyday':
+        if args.input.stat().st_size > 262144 or args.protocol.stat().st_size > 16384:
+            raise ValueError('input too large')
+        result = review_everyday(json.loads(args.input.read_text(encoding='utf-8')),
+                                json.loads(args.protocol.read_text(encoding='utf-8')))
+    elif args.command == 'evaluate':
         if args.dataset.stat().st_size > 100_000_000 or args.protocol.stat().st_size > 16384:
             raise ValueError('input too large')
         result = evaluate_history(json.loads(args.dataset.read_text(encoding='utf-8')),json.loads(args.protocol.read_text(encoding='utf-8')))

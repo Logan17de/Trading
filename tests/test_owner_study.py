@@ -9,7 +9,8 @@ import pytest
 from nifty_engine.agent_engine.contracts import IST
 from nifty_engine.agent_engine.market_check import allowed_request, call_samples, quote_summary, readonly_transport
 from nifty_engine.agent_engine.owner_study import (
-    FORMAT, collect_history, evaluate_history, normalize_candles, probability, record_market, value_at,
+    FORMAT, collect_history, evaluate_history, everyday_direction_review, everyday_reference,
+    normalize_candles, probability, record_market, review_everyday, validate_protocol, value_at,
 )
 from nifty_engine.agent_engine.spread_review import compare
 
@@ -158,3 +159,147 @@ def test_spread_risk_and_margin_are_separate_no_profit_probability():
         with pytest.raises(ValueError):compare(value)
     value=spread();value['hedges'][0]['strike']=74900
     with pytest.raises(ValueError):compare(value)
+
+
+def test_everyday_time_and_listed_strike_use_owner_offsets():
+    before=datetime(2026,10,5,9,44,tzinfo=IST)
+    at=before+timedelta(minutes=1)
+    assert everyday_reference(protocol(),'NIFTY',25425.5,before)['status']=='BEFORE_EVERYDAY_WINDOW'
+    result=everyday_reference(protocol(),'NIFTY',25425.5,at,[25900,25800,25850])
+    assert result['minimum_short_call_strike']==25825.5
+    assert result['listed_short_call_strike']==25850
+    assert result['hedge_selected'] is None and result['lot_size_verified'] is False
+    assert result['probability_of_net_option_profit'] is None
+    assert result['execution_enabled'] is False
+    assert everyday_reference(protocol(),'NIFTY',25425.5,at,[25800])['listed_short_call_strike'] is None
+    sensex=everyday_reference(protocol(),'SENSEX',75425,datetime(2026,10,1,13,15,tzinfo=timezone(timedelta(hours=9))),[76200,76300])
+    assert sensex['minimum_short_call_strike']==76225 and sensex['listed_short_call_strike']==76300
+    with pytest.raises(ValueError,match='offset-aware'):
+        everyday_reference(protocol(),'NIFTY',25425.5,at.replace(tzinfo=None))
+
+
+@pytest.mark.parametrize('day,index',[(5,'NIFTY'),(6,'NIFTY'),(7,'SENSEX'),(8,'SENSEX'),(9,'NIFTY')])
+def test_everyday_weekday_preference(day,index):
+    at=datetime(2026,10,day,9,45,tzinfo=IST)
+    assert everyday_reference(protocol(),index,75000,at)['status']=='EVERYDAY_REFERENCE_ONLY'
+    other='SENSEX' if index=='NIFTY' else 'NIFTY'
+    result=everyday_reference(protocol(),other,75000,at)
+    assert result['status']=='NOT_PREFERRED_INDEX_TODAY' and result['preferred_index']==index
+    assert everyday_reference(protocol(),'BANKNIFTY',75000,at)['status']=='NOT_APPLICABLE'
+
+
+def test_everyday_history_uses_completed_minute_and_preserves_v1():
+    raw=dataset()
+    for day in raw['expiries']:
+        for hhmm,price in [('09:44',75000),('09:45',76000)]:
+            raw['candles'].append({'at':f'{day}T{hhmm}:00+05:30','open':price,'high':price,'low':price,'close':price})
+    raw['candles'].sort(key=lambda r:r['at'])
+    result=evaluate_history(raw,protocol())
+    observations=result['everyday_spot_observations']
+    assert [r['day'] for r in observations]==['2026-08-05','2026-08-06','2026-08-12']
+    assert all(r['reference_spot']==75000 and r['minimum_short_call_strike']==75800 for r in observations)
+    assert all(r['observed_at'].endswith('09:45:00+05:30') for r in observations)
+    excluded=result['coverage']['excluded']
+    assert excluded['EVERYDAY_NOT_PREFERRED_INDEX_TODAY']==5
+    assert excluded['EVERYDAY_ORDINARY_WEEKDAY_PLAN_NOT_APPLICABLE']==2
+    assert 'EVERYDAY_REFERENCE_MINUTE_MISSING' not in excluded
+    assert result['everyday_strategy']['unresolved']==['margin_budget_inr','expiry_rule']
+    assert result['strategy_count']==4 and result['probability_of_net_option_profit'] is None
+    missing=deepcopy(raw)
+    missing['candles']=[r for r in missing['candles'] if r['at']!='2026-08-06T09:44:00+05:30']
+    absent=evaluate_history(missing,protocol())
+    assert absent['coverage']['excluded']['EVERYDAY_REFERENCE_MINUTE_MISSING']==1
+    assert len(absent['everyday_spot_observations'])==2
+    old=protocol();old.pop('everyday');old['format']='owner-strategy-hypotheses-v1'
+    previous=evaluate_history(raw,old)
+    assert previous['format']=='owner-study-result-v1' and 'everyday_strategy' not in previous
+    assert previous['partitions']==result['partitions'] and previous['expiry_events']==result['expiry_events']
+
+
+def test_everyday_protocol_has_no_required_loss_cap_and_rejects_drift():
+    rule=protocol()
+    validate_protocol(rule)
+    assert rule['everyday']['max_spread_loss_inr'] is None
+    for field,value in [('short_call_offset_points',{'SENSEX':800,'NIFTY':350}),
+                        ('sensex_weekdays',['TUESDAY','THURSDAY']),
+                        ('allow_position_size_increase',True),
+                        ('margin_budget_inr',float('inf'))]:
+        wrong=deepcopy(rule);wrong['everyday'][field]=value
+        with pytest.raises(ValueError):validate_protocol(wrong)
+
+
+@pytest.mark.parametrize('spot,assessment,review',[(25000,'FAVORABLE','HOLD_REVIEW'),
+                                                 (24999,'FAVORABLE','HOLD_REVIEW'),
+                                                 (25000.01,'ADVERSE','EXIT_REVIEW')])
+def test_everyday_direction_uses_index_relative_to_entry(spot,assessment,review):
+    result=everyday_direction_review(protocol(),25000,spot)
+    assert result['assessment']==assessment and result['review']==review
+    assert result['spot_move_points']==spot-25000
+    assert result['spread_profit_verified'] is False and result['order_submitted'] is False
+    assert result['execution_enabled'] is False
+
+
+def test_existing_everyday_position_is_reviewed_outside_new_entry_preference():
+    # Wednesday morning: NIFTY remains reviewable even though SENSEX is preferred
+    # for new entries, and 13:15 JST has not yet arrived.
+    value={'index':'NIFTY','spot':25001,'entry_spot':25000,'observed_at':'2026-10-07T13:00:00+09:00'}
+    result=review_everyday(value,protocol())
+    assert result['reference']['status']=='NOT_PREFERRED_INDEX_TODAY'
+    assert result['position_review']['review']=='EXIT_REVIEW'
+    value['observed_at']='2026-10-06T13:00:00+09:00'
+    assert review_everyday(value,protocol())['reference']['status']=='BEFORE_EVERYDAY_WINDOW'
+    value['spot']=None
+    unknown=review_everyday(value,protocol())
+    assert unknown['reference']['status']=='DATA_REQUIRED'
+    assert unknown['position_review']['assessment']=='UNKNOWN'
+    assert unknown['position_review']['review']=='DATA_REQUIRED'
+    for bad in (True,0,-1,float('nan')):
+        with pytest.raises(ValueError):everyday_direction_review(protocol(),bad,None)
+
+
+def test_everyday_cli_is_offline_and_does_not_overwrite(tmp_path,monkeypatch):
+    import sys
+    import requests
+    from nifty_engine.agent_engine.owner_study import main
+    def unexpected(*args,**kwargs):
+        pytest.fail('offline review contacted a network service')
+    monkeypatch.setattr(requests.sessions.Session,'request',unexpected)
+    source=tmp_path/'input.json';target=tmp_path/'review.json'
+    source.write_text(json.dumps({'index':'NIFTY','spot':25001,'entry_spot':25000,
+        'observed_at':'2026-10-05T13:15:00+09:00','listed_call_strikes':[25400,25450]}))
+    monkeypatch.setattr(sys,'argv',['owner_study','everyday','--input',str(source),'--output',str(target),
+        '--protocol',str(Path(__file__).parents[1]/'config/owner_strategies.json')])
+    main()
+    result=json.loads(target.read_text())
+    assert result['reference']['listed_short_call_strike']==25450
+    assert result['position_review']['review']=='EXIT_REVIEW' and result['order_submitted'] is False
+    with pytest.raises(ValueError,match='new output'):main()
+
+
+def test_spread_profit_ranking_respects_margin_and_fixed_quantity():
+    value=spread();value['margin_budget_inr']=80000
+    result=compare(value);wide,narrow=result['comparisons']
+    assert wide['within_margin_budget'] is False and wide['profit_rank_within_margin_budget'] is None
+    assert narrow['within_margin_budget'] is True and narrow['profit_rank_within_margin_budget']==1
+    assert result['quantity']==10 and result['selected_hedge'] is None
+    assert result['maximum_loss_limit_applied'] is False
+    assert narrow['net_max_expiry_loss_inr']==17300
+    value['margin_budget_inr']=100000
+    wide,narrow=compare(value)['comparisons']
+    assert wide['profit_rank_within_margin_budget']==1 and narrow['profit_rank_within_margin_budget']==2
+    value.update(instrument='NIFTY',exchange='NSE',lot_size=65,quantity=65)
+    assert compare(value)['quantity']==65
+    value['quantity']=64
+    with pytest.raises(ValueError,match='whole number'):compare(value)
+
+
+def test_spread_unknown_budget_margin_or_cost_is_not_ranked():
+    assert all(r['profit_rank_within_margin_budget'] is None for r in compare(spread())['comparisons'])
+    value=spread();value['margin_budget_inr']=100000;value['hedges'][0]['broker_margin_inr']=None
+    wide=compare(value)['comparisons'][0]
+    assert wide['within_margin_budget'] is None and wide['profit_rank_within_margin_budget'] is None
+    value['round_trip_cost_inr']=None
+    assert all(r['profit_rank_within_margin_budget'] is None for r in compare(value)['comparisons'])
+    for budget in (True,0,-1,float('nan'),float('inf')):
+        value=spread();value['margin_budget_inr']=budget
+        with pytest.raises(ValueError):compare(value)

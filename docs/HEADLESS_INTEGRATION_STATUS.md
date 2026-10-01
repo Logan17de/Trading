@@ -11,9 +11,9 @@ runbook.
 |---|---|---|
 | Local Groww REST reader | October 1 at 16:22 JST: authentication plus 22 profile, index, expiry, chain and sampled-call probes passed across NIFTY, BANKNIFTY and SENSEX | Read-only; successful retrieval does not establish executable freshness |
 | Historical study | 17,105 one-minute candles per index; 51,315 total; 41 observed sessions per index | Index moves are not option P&L; source identity/timestamp semantics remain unverified |
-| Owner protocol | Fixed Japan-time windows, call preference, 70/30 chronological partition and session-level statistics | No strategy selected; profit probability unknown |
-| Call-spread comparison | Higher-strike hedge, equal units, credit/payoff/cost arithmetic and separate broker margin | Owner-supplied inputs; no quote verification or order submission |
-| Runtime tests | 77 passed locally after cleanup, four POSIX-only skips; Linux/Windows headless CI configured | Functional verification is not strategy validation |
+| Owner protocol | Four fixed hypotheses; everyday weekday routing, spot offsets and index-direction holding review; 70/30 chronological partition | No strategy selected; margin budget/expiry choice unset; profit probability unknown |
+| Call-spread comparison | Higher-strike hedge, equal units, payoff/cost arithmetic, separate broker margin and optional budget ranking at fixed quantity | Owner-supplied inputs; no loss cap, quote verification, hedge selection or order submission |
+| Runtime tests | 92 passed locally with the everyday strategy, four POSIX-only skips; Linux/Windows headless CI configured | Functional verification is not strategy validation |
 | Offline demo | Two persisted analysis jobs and HTML/text/MIME/PNG artifacts | Synthetic inputs and fake analyst; no email sent |
 | SQLite operations | Backup API and restore-to-new-path preserved state/report identity | Automated off-host backups and retention are not installed |
 
@@ -89,10 +89,32 @@ index series. With zero qualifying events, reversal probability and its confiden
 interval are unknown. This neither validates nor refutes a separate indicative-price
 observation; one-minute closes can also miss shorter spikes.
 
-All three strategies remain `INSUFFICIENT_EVIDENCE` for net option profitability.
+Version 2 adds the everyday hedged-call rule after 13:15 JST: NIFTY +400 on
+Monday/Tuesday/Friday and SENSEX +800 on Wednesday/Thursday. The offline `everyday`
+command reviews structured observations and existing entry levels. Flat/down
+means hold review; any rise means exit review. It has no fixed next-day exit,
+automatic quantity change or maximum-loss cap. Margin budget and expiry rule are
+still unset. This direction check is not wired to continuous monitoring or orders.
+
+Re-evaluation of the existing data produced 25 NIFTY and 16 SENSEX completed-minute
+everyday references; BANKNIFTY is not applicable. Missing or non-preferred dates
+are counted separately. The three previous version 1 study results reproduce
+exactly. All four strategies have unknown net option-profit probabilities.
 Required evidence includes verified indicative/regular series identity, source
 timestamps, historical two-leg bid/ask/depth, exact contract/lot/expiry data, costs,
 fill assumptions and enough independent out-of-sample sessions.
+
+NSE's current lot file, fetched October 1 at 17:11 JST, has a September 29
+Last-Modified header and lists NIFTY 65 for October 2026 and all displayed
+maturities. This verifies the public reference, not a proposed broker contract or
+its executable quote. The comparison uses the supplied contract lot and a fixed
+quantity. [NSE permitted lot sizes](https://nsearchives.nseindia.com/content/fo/fo_mktlots.csv)
+
+The everyday change passed 92 local tests with four POSIX-only skips, configuration,
+compilation, PowerShell syntax and the synthetic offline demo. The demo completed
+two persisted jobs and generated visual artifacts without sending email.
+Private evidence is `.agent-state/everyday-strategy-evidence-20261001.json` and
+`.agent-state/nse-lot-metadata-20261001.json`. This source update is not deployed to Oracle.
 
 ## Codex verification
 
