@@ -1,18 +1,18 @@
 # Trading
 
-Headless local Groww market observation and research of the owner's hedged-call
+Local Groww market observation, a read-only dashboard and research of the owner's hedged-call
 strategies. Oracle remains the intended execution host and stays running continuously
 for shared services. Real Oracle execution is unfinished and inactive.
 
 ## What this repository contains
 
 This is the current working repository: [`Logan17de/Trading`](https://github.com/Logan17de/Trading).
-The local checkout is `D:\Money Trader\Trading`. It contains the 50 essential source
-files from the cleaned engine plus `AGENTS.md` for future work.
+The local checkout is `D:\Money Trader\Trading`. It builds on the essential source
+import from the cleaned engine, with `AGENTS.md` for future work.
 
 | Path | Purpose |
 |---|---|
-| `src/nifty_engine/agent_engine/` | Market reader, recorder, owner study, spread review, SQLite triggers, isolated Codex, visual email, news and backups |
+| `src/nifty_engine/agent_engine/` | Local dashboard, market reader, recorder, owner study, spread review, SQLite triggers, isolated Codex, visual email, news and backups |
 | `src/nifty_engine/brokers/` | Existing read-only Groww adapter and shared rate limiter |
 | `config/` | Disabled headless settings, fixed owner hypotheses and manual-ticket example |
 | `scripts/` | Local PowerShell commands, holdings helper, config check and diagnostic mail support |
@@ -44,8 +44,18 @@ Follow [local setup](docs/LOCAL_HEADLESS.md), then from the repository in PowerS
 
 ```powershell
 .\scripts\Read-GrowwMarket.ps1
+.\scripts\Start-TradingDashboard.ps1
 .\scripts\Research-GrowwStrategies.ps1 -Index SENSEX -Start 2026-08-03 -End 2026-09-29
 ```
+
+The dashboard opens in Edge at [127.0.0.1:8765](http://127.0.0.1:8765/).
+Groww quotes and orders refresh on a **5-second cycle**, with **5-minute option
+candles**. Buy/sell charts appear only for matching actual orders or open positions.
+Slow requests or rate limits can extend a cycle; historical chart reads run
+independently. P&L and margin stay unknown until a private reviewed ledger is
+connected. Strategy bars show non-loss/loss shares of completed trades; no losses
+gives 100% green, while no completed trades gives “No results”. See
+[the dashboard guide](docs/LOCAL_HEADLESS.md#local-options-dashboard).
 
 See [owner strategies](docs/OWNER_STRATEGY_RESEARCH.md) for Japan-time windows,
 bounded recording and offline hedge comparison. Your strategy rules remain fixed;
@@ -62,7 +72,7 @@ across 41 observed sessions per index. The September 30 recording has 29 snapsho
 from 18:40–19:08 JST, with one partial snapshot. No strategy has a validated net
 option-profit probability.
 
-With the everyday strategy, **92 tests passed locally with four POSIX-only skips**. Configuration,
+With the local dashboard, **109 tests passed locally with four POSIX-only skips**. Configuration,
 package installation, dependency checks and the offline demo passed. The retained CI
 runs on Linux/Python 3.12 and Windows/Python 3.13.
 

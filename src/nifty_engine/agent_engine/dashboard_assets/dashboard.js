@@ -1,0 +1,175 @@
+"use strict";
+const $ = id => document.getElementById(id);
+const money = new Intl.NumberFormat("en-IN", {style:"currency", currency:"INR", maximumFractionDigits:2});
+const numeric = new Intl.NumberFormat("en-IN", {maximumFractionDigits:2, minimumFractionDigits:2});
+const escapeHTML = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const known = value => typeof value === "number" && Number.isFinite(value);
+const inr = value => known(value) ? money.format(value) : "—";
+const signed = value => known(value) ? (value > 0 ? "+" : "") + money.format(value) : "—";
+const percent = value => known(value) ? (value > 0 ? "+" : "") + value.toFixed(1) + "%" : "—";
+let liveData = null, data = null, demo = false, selectedIndex = "NIFTY", timeZone = "Asia/Tokyo", autoRefresh = true;
+let contracts = {buy:null, sell:null}, refreshPending = false, lastRequest = 0;
+try {selectedIndex = localStorage.getItem("trading-index") || "NIFTY"; timeZone = localStorage.getItem("trading-timezone") || timeZone;} catch {}
+if (!["NIFTY","SENSEX","BANKNIFTY"].includes(selectedIndex)) selectedIndex = "NIFTY";
+if (!["Asia/Tokyo","Asia/Kolkata"].includes(timeZone)) timeZone = "Asia/Tokyo";
+const clock = value => new Intl.DateTimeFormat("en-GB", {timeZone, hour:"2-digit", minute:"2-digit"}).format(new Date(value));
+const dateTime = value => new Intl.DateTimeFormat("en-GB", {timeZone, day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit", second:"2-digit"}).format(new Date(value));
+function tone(element, value) {element.classList.toggle("positive", known(value) && value >= 0); element.classList.toggle("negative", known(value) && value < 0);}
+function setAmount(id, value, withSign=false) {$(id).textContent = withSign ? signed(value) : inr(value); tone($(id), withSign ? value : null);}
+function emptyChart(container, title, subtitle="") {
+  delete container.dataset.chartSignature;
+  container.innerHTML = `<div class="empty-chart"><svg class="icon" aria-hidden="true"><use href="#icon-bars"/></svg><strong>${escapeHTML(title)}</strong><small>${escapeHTML(subtitle)}</small></div>`;
+}
+function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=false, candles=false, label="Chart"}={}) {
+  const rows = (points || []).filter(p => known(p.value) && Number.isFinite(Date.parse(p.at)));
+  if (rows.length < (candles?1:2)) {emptyChart(container, rows.length ? "Waiting for more observations" : "No chart data", "No prices are filled in or simulated."); return;}
+  const signature=JSON.stringify({rows,color,area,mini,pnl,candles,label,timeZone});
+  if(container.dataset.chartSignature===signature) return;
+  container.dataset.chartSignature=signature;
+  const width=640, height=mini?120:250, left=mini?1:47, right=mini?4:15, top=mini?10:14, bottom=mini?7:29;
+  let low=Math.min(...rows.map(r=>r.value)), high=Math.max(...rows.map(r=>r.value));
+  if(candles) {low=Math.min(low,...rows.map(r=>known(r.low)?r.low:r.value)); high=Math.max(high,...rows.map(r=>known(r.high)?r.high:r.value));}
+  if (pnl) {low=Math.min(low,0); high=Math.max(high,0);}
+  let span=high-low || Math.max(Math.abs(high)*.02,1); low-=span*.09; high+=span*.09; if(candles) low=Math.max(0,low); span=high-low;
+  const first=Date.parse(rows[0].at), last=Date.parse(rows.at(-1).at), duration=last-first||1;
+  const inset=candles?Math.min(8,(width-left-right)/rows.length/2):0;
+  const x=r=>rows.length===1?(width+left-right)/2:left+inset+(Date.parse(r.at)-first)/duration*(width-left-right-2*inset), y=v=>top+(high-v)/span*(height-top-bottom);
+  const path=rows.map((r,i)=>`${i?"L":"M"}${x(r).toFixed(2)},${y(r.value).toFixed(2)}`).join(" ");
+  const base=pnl?y(0):height-bottom, id="fill-"+container.id;
+  const fill=`${path} L${x(rows.at(-1)).toFixed(2)},${base.toFixed(2)} L${x(rows[0]).toFixed(2)},${base.toFixed(2)} Z`;
+  let grid="";
+  if (!mini) {
+    for(let i=0;i<4;i++) {
+      const value=low+span*(3-i)/3, at=y(value);
+      const tick=Math.abs(value)>=1000?(value/1000).toFixed(Math.abs(value)>=10000?0:1)+"k":value.toFixed(0);
+      grid+=`<line x1="${left}" y1="${at}" x2="${width-right}" y2="${at}" stroke="#eaf0ed"/><text x="${left-9}" y="${at+4}" text-anchor="end" fill="#72849a" font-size="10">${tick}</text>`;
+    }
+    for(let i=0;i<5;i++) {
+      const at=left+i/4*(width-left-right), time=clock(first+i/4*duration);
+      grid+=`<line x1="${at}" y1="${top}" x2="${at}" y2="${height-bottom}" stroke="#f0f4f1"/><text x="${at}" y="${height-8}" text-anchor="${i===0?"start":i===4?"end":"middle"}" fill="#72849a" font-size="10">${time}</text>`;
+    }
+  }
+  const candleWidth=Math.max(2,Math.min(9,(width-left-right)/rows.length*.55));
+  const segments=candles?rows.map(r=>{const opened=known(r.open)?r.open:r.value, high=known(r.high)?r.high:r.value, low=known(r.low)?r.low:r.value, c=r.value>=opened?"#08b75d":"#ef4b2c";return `<line x1="${x(r)}" y1="${y(high)}" x2="${x(r)}" y2="${y(low)}" stroke="${c}"/><rect x="${x(r)-candleWidth/2}" y="${Math.min(y(opened),y(r.value))}" width="${candleWidth}" height="${Math.max(1,Math.abs(y(opened)-y(r.value)))}" fill="${c}"/>`;}).join(""):pnl?rows.slice(1).map((r,i)=>`<path d="M${x(rows[i])},${y(rows[i].value)} L${x(r)},${y(r.value)}" fill="none" stroke="${r.value>=0?"#08b75d":"#ef4b2c"}" stroke-width="2.5"/>`).join(""):`<path d="${path}" fill="none" stroke="${color}" stroke-width="${mini?2.7:2.6}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  container.innerHTML=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHTML(label)} · ${rows.length} observations"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".2"/><stop offset="1" stop-color="${color}" stop-opacity=".015"/></linearGradient></defs>${grid}${area?`<path d="${fill}" fill="url(#${id})"/>`:""}${pnl?`<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#bdcec3"/>`:""}${segments}${mini?"":`<circle cx="${x(rows.at(-1))}" cy="${y(rows.at(-1).value)}" r="4.5" fill="${color}" stroke="white" stroke-width="2"/>`}</svg>`;
+  if(mini) return;
+  const tooltip=document.createElement("div"); tooltip.className="chart-tooltip"; tooltip.hidden=true; container.append(tooltip);
+  container.onpointermove=event=> {
+    const box=container.getBoundingClientRect(), relative=(event.clientX-box.left)/box.width*width;
+    const nearest=rows.reduce((best,r)=>Math.abs(x(r)-relative)<Math.abs(x(best)-relative)?r:best,rows[0]);
+    tooltip.innerHTML=`${escapeHTML(clock(nearest.at))} ${timeZone==="Asia/Tokyo"?"JST":"IST"}<b>${escapeHTML(inr(nearest.value))}</b>${candles?`O ${inr(nearest.open)} · H ${inr(nearest.high)}<br>L ${inr(nearest.low)} · C ${inr(nearest.value)}`:""}`;
+    tooltip.hidden=false; tooltip.style.left=Math.max(0,Math.min(event.clientX-box.left+12,box.width-tooltip.offsetWidth-4))+"px";
+  };
+  container.onpointerleave=()=>{tooltip.hidden=true;};
+}
+function renderIndices() {
+  $("indices").innerHTML=[...(data.markets||[])].sort((a,b)=>["NIFTY","SENSEX","BANKNIFTY"].indexOf(a.index)-["NIFTY","SENSEX","BANKNIFTY"].indexOf(b.index)).map(m=> {
+    const positive=!known(m.change)||m.change>=0, name=m.index==="NIFTY"?"NIFTY 50":m.index==="BANKNIFTY"?"BANK NIFTY":"SENSEX";
+    return `<article class="card index-card"><div class="index-top"><div class="index-info"><h2 class="index-name">${name}</h2><strong class="index-price">${known(m.price)?numeric.format(m.price):"—"}</strong><div class="index-change ${known(m.change)?positive?"positive":"negative":""}">${known(m.change)?`${m.change>=0?"+":""}${numeric.format(m.change)} (${percent(m.change_pct)}) ${positive?"▲":"▼"}`:"Change unavailable"}</div></div><div id="mini-${m.index}" class="mini-chart"></div></div><div class="index-details"><span>H: <b>${known(m.high)?numeric.format(m.high):"—"}</b></span><span>L: <b>${known(m.low)?numeric.format(m.low):"—"}</b></span><span>Prev: <b>${known(m.previous)?numeric.format(m.previous):"—"}</b></span></div></article>`;
+  }).join("");
+  for(const m of data.markets||[]) {
+    const container=$("mini-"+m.index);
+    if(m.series?.length>=2) chart(container,m.series,{mini:true,area:true,color:known(m.change)&&m.change<0?"#ef4b2c":"#08b75d",label:m.index+" index"});
+    else container.innerHTML="";
+  }
+}
+function renderOptions(reset=false) {
+  const withOrders=(data.markets||[]).filter(m=>m.options?.length);
+  if(withOrders.length&&!withOrders.some(m=>m.index===selectedIndex)) selectedIndex=withOrders[0].index;
+  $("chart-toolbar").hidden=!withOrders.length; $("option-grid").hidden=!withOrders.length;
+  $("orders-empty").hidden=Boolean(withOrders.length);
+  $("orders-empty").textContent=data.orders_status==="AVAILABLE"?"No option orders or open positions. Buy and sell charts appear when those orders are present.":"Option orders could not be fully checked. Charts appear only for confirmed orders or open positions.";
+  for(const tab of document.querySelectorAll(".tab")) {const active=tab.dataset.index===selectedIndex; tab.classList.toggle("active",active); tab.setAttribute("aria-pressed",String(active));tab.disabled=!withOrders.some(m=>m.index===tab.dataset.index);}
+  const market=(data.markets||[]).find(m=>m.index===selectedIndex), options=market?.options||[];
+  let visible=0;
+  for(const side of ["buy","sell"]) {
+    const legs=options.filter(o=>o.side===side.toUpperCase());
+    $(side+"-card").hidden=!legs.length; if(legs.length) visible++;
+    if(reset||!legs.some(o=>o.symbol===contracts[side])) contracts[side]=legs[0]?.symbol||null;
+    const select=$(side+"-option");
+    const markup=legs.map(o=>`<option value="${escapeHTML(o.symbol)}">${escapeHTML(known(o.strike)?`${o.index} ${numeric.format(o.strike)} ${o.type}`:o.symbol)} · ${escapeHTML(o.expiry||"Expiry unverified")}</option>`).join("");
+    if(select.innerHTML!==markup) select.innerHTML=markup;
+    select.value=contracts[side]||""; select.disabled=!legs.length;
+    drawOption(side, legs.find(o=>o.symbol===contracts[side]));
+  }
+  $("option-grid").classList.toggle("single",visible===1);
+}
+function drawOption(side, option) {
+  setAmount(side+"-price",option?.last_price);
+  const initial=option?.series?.[0]?.value, change=known(initial)&&known(option?.last_price)?option.last_price-initial:null;
+  $(side+"-change").textContent=known(change)?`${change>=0?"+":""}${change.toFixed(2)}${initial>0?` (${percent(change/initial*100)})`:""}`:"";
+  $(side+"-change").title="Change versus the first completed 5-minute candle close"; tone($(side+"-change"),change);
+  $(side+"-book").textContent=option?`Bid ${inr(option.bid)} · Ask ${inr(option.ask)}`:"Bid — · Ask —";
+  $(side+"-expiry").textContent=option?`${option.order_status==="POSITION"?"Open position":option.order_status==="OPEN"||option.order_status==="TRIGGER_PENDING"?"Pending order":option.order_status==="PARTIAL_FILL"?"Partial fill":"Executed order"} · ${option.expiry||"Expiry unverified"}`:"Expiry —";
+  if(option?.series?.length) chart($(side+"-chart"),option.series,{candles:true,color:change<0?"#ef4b2c":side==="buy"?"#08b75d":"#fb861c",label:side+" option premium · 5-minute candles · "+option.symbol});
+  else emptyChart($(side+"-chart"),option?.series_status==="LOADING_OPTION_HISTORY"?"Loading 5-minute candles":option?"Option history unavailable":"Choose an option contract",option?.series_status==="LOADING_OPTION_HISTORY"?"Current quotes continue updating while this contract’s history loads.":option?"This exact contract has no candle series. Index prices are not used here.":"Your selected strike and expiry will appear here.");
+}
+function renderAccount() {
+  const a=data.account;
+  setAmount("today-pnl",a.today_pnl_inr,true); $("today-return").textContent=percent(a.today_return_pct); tone($("today-return"),a.today_return_pct);
+  setAmount("realized",a.realized_today_inr,true); setAmount("unrealized",a.unrealized_inr,true); $("trade-count").textContent=a.trade_count_today??"—";
+  setAmount("capital",a.capital_inr); setAmount("used-margin",a.used_margin_inr); setAmount("available-margin",a.available_margin_inr);
+  $("margin-percent").textContent=known(a.margin_utilization_pct)?a.margin_utilization_pct.toFixed(0)+"%":"—";
+  $("margin-meter").style.width=known(a.margin_utilization_pct)?Math.max(0,Math.min(100,a.margin_utilization_pct))+"%":"0%";
+  $("account-status").textContent=data.demo?"Sample results · design preview":a.status==="NOT_CONNECTED"?"Trade ledger not connected":a.status==="STALE_LEDGER"?"Ledger is from an earlier trading day":a.status==="INVALID_LEDGER"?"Trade ledger needs review":"Owner-reviewed ledger · after costs";
+  setAmount("chart-pnl",a.today_pnl_inr,true); setAmount("portfolio-value",a.portfolio_value_inr);
+  if(a.pnl_series?.length>=2) chart($("pnl-chart"),a.pnl_series,{area:true,pnl:true,label:"Today's net profit and loss"});
+  else emptyChart($("pnl-chart"),"No P&L history yet","Connect your recorded trade results to see this chart.");
+  if(a.portfolio_series?.length>=2) chart($("portfolio-chart"),a.portfolio_series,{color:"#fb861c",area:true,label:"Reviewed portfolio value"});
+  else emptyChart($("portfolio-chart"),"No portfolio history yet","Your account values are never estimated from index moves.");
+  $("strategy-rows").innerHTML=data.strategies.map((s,i)=>`<tr><td><div class="strategy-info ${known(s.net_pnl_inr)&&s.net_pnl_inr<0?"negative":""}"><span class="strategy-number">${i+1}</span><div class="strategy-content"><div class="strategy-name">${escapeHTML(s.name)}</div><p class="strategy-description">${escapeHTML(s.description)}</p><div class="outcome-track" role="img" aria-label="${escapeHTML(s.name)}: ${s.closed_trades?`${s.non_loss_pct.toFixed(1)}% non-losing, ${s.loss_pct.toFixed(1)}% losing, ${s.closed_trades} closed trades`:"No results"}"><span class="profit-segment" style="width:${s.non_loss_pct??0}%"></span><span class="loss-segment" style="width:${s.loss_pct??0}%"></span></div><span class="outcome-caption">${s.closed_trades?`${s.non_loss_pct.toFixed(0)}% non-loss · ${s.loss_pct.toFixed(0)}% loss · ${s.closed_trades} trades`:"No results"}</span></div></div></td><td class="${known(s.return_pct)?s.return_pct<0?"negative":"positive":""}">${percent(s.return_pct)}</td><td class="${known(s.net_pnl_inr)?s.net_pnl_inr<0?"negative":"positive":""}">${signed(s.net_pnl_inr)}</td></tr>`).join("");
+}
+function render() {
+  if(!data) return;
+  renderIndices(); renderOptions(); renderAccount();
+  const recent=data.freshness==="RECENT";
+  $("data-status").textContent=data.demo?"Sample data":data.freshness==="NO_DATA"?"No market data":recent?"Latest snapshot":"Saved snapshot";
+  $("data-status").className="status-pill"+(data.demo?" demo":!recent?" stale":"");
+  $("as-of").textContent=data.as_of?`${dateTime(data.as_of)} ${timeZone==="Asia/Tokyo"?"JST":"IST"}`:"Refresh to read Groww data";
+  $("footer-source").textContent=data.demo?"Design preview · all figures simulated":`Groww observations · ${timeZone==="Asia/Tokyo"?"JST":"IST"} · Viewing only`;
+  const message=data.demo?"DESIGN PREVIEW — sample prices and results. Switch off sample data in settings to return to your actual snapshots.":data.refresh_error||data.market_status==="BLOCKED"?"The latest broker read failed. Check Groww API approval, then refresh again.":data.offline?"Offline viewing. Showing saved observations; broker refresh is disabled.":data.market_status==="PARTIAL_MARKET_DATA"?"Some Groww quote reads failed. Missing values remain unavailable.":data.orders_status==="INCOMPLETE"?"Some orders or positions could not be fully checked. Only confirmed contracts are shown.":data.freshness==="STALE"?"Showing a saved snapshot. Refresh data to request a current read.":null;
+  $("notice").hidden=!message; $("notice").textContent=message||"";
+  $("refresh").disabled=refreshPending||demo||data.offline;
+  $("refresh").classList.toggle("loading",refreshPending);
+  $("refresh").querySelector("span").textContent=refreshPending?"Reading Groww…":autoRefresh&&data.refreshing?"Refreshing · 5s":"Refresh data";
+}
+async function load() {
+  try {
+    const response=await fetch("/api/dashboard",{cache:"no-store"});
+    if(!response.ok) throw new Error("local-data-unavailable");
+    const value=await response.json(), changed=!liveData||JSON.stringify(value)!==JSON.stringify(liveData);
+    liveData=value;
+    if(!demo&&changed) {data=liveData;render();}
+  } catch {$("notice").hidden=false;$("notice").textContent="The local dashboard is unavailable. Start the dashboard command and try again.";$("data-status").textContent="Disconnected";}
+}
+async function refresh() {
+  if(refreshPending||demo||liveData?.offline) return;
+  refreshPending=true;lastRequest=Date.now();render();
+  try {
+    const response=await fetch("/api/refresh",{method:"POST",headers:{"X-Local-Token":document.querySelector('meta[name="local-token"]').content}});
+    if(!response.ok) throw new Error("refresh-unavailable");
+  } catch {$("notice").hidden=false;$("notice").textContent="Could not start the local market reader. Try refreshing again.";}
+  finally {refreshPending=false;await load();render();}
+}
+function sampleData() {
+  // Explicit design preview only. Never returned by the actual data API or journal.
+  const start=Date.parse("2026-10-01T09:15:00+05:30");
+  function series(initial,delta,n=72) {return Array.from({length:n},(_,i)=>{const value=initial+delta*i/(n-1)+Math.sin(i*.48)*Math.abs(delta)*.045+Math.sin(i*1.7)*Math.abs(delta)*.012, open=value+Math.sin(i*.77)*Math.abs(delta)*.03;return {at:new Date(start+i*300000).toISOString(),value,open,high:Math.max(open,value)+Math.abs(delta)*.02,low:Math.min(open,value)-Math.abs(delta)*.02};});}
+  const specs=[["NIFTY",22368,124.5],["BANKNIFTY",48332.6,-120.45],["SENSEX",74967.18,456.1]];
+  const markets=specs.map(([index,price,change])=>({index,price,change,change_pct:change/(price-change)*100,high:price+74,low:price-210,previous:price-change,series:series(price-change,change),options:[0,1].map((n)=>({symbol:`SAMPLE-${index}-${n}-CE`,index,type:"CE",side:n?"BUY":"SELL",order_status:"POSITION",exchange:index==="SENSEX"?"BSE":"NSE",expiry:index==="SENSEX"?"2026-10-08":"2026-10-06",strike:Math.ceil(price/100)*100+n*(index==="SENSEX"?800:400),last_price:[198,82][n],bid:[197,81][n],ask:[199,83][n],series:series([245,120][n],[-47,-38][n]),series_status:"SAMPLE"}))}));
+  const rows=[{id:"everyday",name:"Everyday hedged call",description:"13:15 JST · NIFTY +400 / SENSEX +800",closed_trades:8,non_loss_pct:100,loss_pct:0,net_pnl_inr:8450,return_pct:28.2},{id:"late_session",name:"Late-session decay",description:"17:45–18:45 JST · Hedged calls",closed_trades:10,non_loss_pct:60,loss_pct:40,net_pnl_inr:-3200,return_pct:-12.8},{id:"swing",name:"Swing call spread",description:"Overnight · 10 / 20 strike study",closed_trades:12,non_loss_pct:75,loss_pct:25,net_pnl_inr:12600,return_pct:18},{id:"expiry_reversal",name:"Expiry reversal",description:"SENSEX · 18:50 JST onward",closed_trades:5,non_loss_pct:80,loss_pct:20,net_pnl_inr:6100,return_pct:24.4}];
+  const pnl=series(0,24850,40).map((r,i)=>({...r,value:r.value-(i>2&&i<12?Math.sin((i-2)/10*Math.PI)*10000:0)}));
+  return {demo:true,orders_status:"AVAILABLE",as_of:new Date(start+71*300000).toISOString(),freshness:"SAMPLE",markets,strategies:rows,account:{status:"SAMPLE",capital_inr:150000,portfolio_value_inr:218450,used_margin_inr:112000,available_margin_inr:38000,margin_utilization_pct:74.67,today_pnl_inr:24850,today_return_pct:16.57,realized_today_inr:22300,unrealized_inr:2550,trade_count_today:8,pnl_series:pnl,portfolio_series:series(190000,28450,25)}};
+}
+$("refresh").addEventListener("click",refresh);
+$("settings").addEventListener("click",()=>$("settings-dialog").showModal());
+$("settings-dialog").addEventListener("click",event=>{if(event.target===$("settings-dialog")) {const r=$("settings-dialog").getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) $("settings-dialog").close();}});
+$("timezone").value=timeZone;
+$("timezone").addEventListener("change",event=>{timeZone=event.target.value;try{localStorage.setItem("trading-timezone",timeZone);}catch{}render();});
+$("auto-refresh").addEventListener("change",event=>{autoRefresh=event.target.checked;if(autoRefresh) refresh();});
+$("demo-toggle").addEventListener("change",event=>{demo=event.target.checked;contracts={buy:null,sell:null};data=demo?sampleData():liveData;render();if(!demo&&autoRefresh) refresh();});
+for(const tab of document.querySelectorAll(".tab")) tab.addEventListener("click",()=>{selectedIndex=tab.dataset.index;try{localStorage.setItem("trading-index",selectedIndex);}catch{}contracts={buy:null,sell:null};renderOptions(true);});
+for(const side of ["buy","sell"]) $(side+"-option").addEventListener("change",event=>{contracts[side]=event.target.value||null;const market=data.markets.find(m=>m.index===selectedIndex);drawOption(side,market?.options.find(o=>o.symbol===contracts[side]));});
+load().then(()=>refresh());
+setInterval(async()=>{if(!document.hidden){await load();if(autoRefresh&&!demo&&Date.now()-lastRequest>=4500) await refresh();}},5000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&autoRefresh&&!demo) refresh();});

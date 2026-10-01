@@ -34,6 +34,11 @@ interpretations of the owner's phrase “10–20 places.”
 
 - Local reader, history download, bounded recorder and offline call-spread review
   extend the existing `agent_engine` package.
+- The owner-authorized local Options Trader viewer is implemented in that package,
+  with Groww quotes/orders on a five-second target cycle and five-minute option
+  candles. Buy/sell panels use only matching actual orders or open positions.
+  Start it with `scripts/Start-TradingDashboard.ps1`; see the local guide. Account
+  P&L and strategy outcomes still require a private reviewed ledger.
 - Everyday version 2 references and an offline structured holding-review command
   are implemented. Margin comparisons rank supplied hedges by net maximum expiry
   profit within a supplied budget at fixed quantity. No hedge or order is selected.
@@ -46,7 +51,7 @@ interpretations of the owner's phrase “10–20 places.”
   Edge session. The study has 51,315 candles, with 41 observed sessions per index.
 - The September 30 recording ended with 29 snapshots, 28 successful and one partial,
   covering 18:40–19:08 JST. It does not cover the full late-session hypothesis.
-- The latest runtime tests passed: 92 locally, four POSIX-only skips; the offline demo passed.
+- The latest runtime/dashboard tests passed: 109 locally, four POSIX-only skips; the offline demo passed.
   The retained CI exercises Linux and Windows.
 - The existing history produced 25 NIFTY and 16 SENSEX everyday references. Version
   1 results reproduce exactly across all three datasets; option-profit probability
@@ -75,8 +80,9 @@ not authorize creating keys, changing broker permissions or placing orders.
    continuous holding review still need integration.
 3. Connect reviewed local observations to the existing analysis/reporting schema.
    The recorder's diagnostic JSON is not automatically a validated engine snapshot.
-4. Finish continuous collection, monitoring, Windows isolation and visual daily-mail
-   integration. Headless scheduling is disabled; no retained workflow publishes
+4. Finish unattended collection, monitoring, Windows isolation and visual daily-mail
+   integration. The viewer collector runs only with an active page lease.
+   Headless scheduling is disabled; no retained workflow publishes
    local captures or delivers a recurring visual report.
 5. Review Oracle deployment, shared resource capacity, backup/restore and independent
    outage monitoring before enabling any new service. Oracle execution remains
@@ -93,7 +99,7 @@ Do not submit real orders, enable LIVE, change broker permissions or merge
 PRs automatically. The owner submits real transactions through their authorized
 execution flow. A profit target cannot increase exposure or bypass an evidence gate.
 
-The new repository contains 51 essential tracked files including `AGENTS.md`.
+The repository contains the essential source import and current local extensions.
 News/calendar evidence lives in `agent_engine.news`. Private historical studies,
 recordings and verification evidence are copied into ignored `.agent-state/`;
 the Windows helpers reuse the existing protected sibling credential vault.

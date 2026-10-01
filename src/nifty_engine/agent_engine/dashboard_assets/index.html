@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="local-token" content="__LOCAL_TOKEN__">
+  <meta name="color-scheme" content="light">
+  <title>Options Trader · Local dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='19' width='6' height='10' rx='2' fill='%23fb772b'/%3E%3Crect x='13' y='11' width='6' height='18' rx='2' fill='%2309b965'/%3E%3Crect x='23' y='3' width='6' height='26' rx='2' fill='%23078946'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/dashboard.css">
+  <script src="/dashboard.js" defer></script>
+</head>
+<body>
+  <svg class="icon-definitions" aria-hidden="true"><defs>
+    <symbol id="icon-bars" viewBox="0 0 28 30"><rect x="1" y="20" width="6" height="9" rx="1.7"/><rect x="11" y="11" width="6" height="18" rx="1.7"/><rect x="21" y="1" width="6" height="28" rx="1.7"/></symbol>
+    <symbol id="icon-coins" viewBox="0 0 32 32"><ellipse cx="13" cy="7" rx="8" ry="4"/><path d="M5 7v13c0 5 16 5 16 0V7M5 12c0 5 16 5 16 0M5 17c0 5 16 5 16 0"/><ellipse cx="24" cy="23" rx="6" ry="3"/><path d="M18 23v5c0 4 12 4 12 0v-5"/></symbol>
+    <symbol id="icon-up" viewBox="0 0 32 32"><path d="m3 25 10-11 6 5L29 8M20 8h9v9"/></symbol>
+    <symbol id="icon-list" viewBox="0 0 28 28"><path d="M9 6h17M9 14h17M9 22h17"/><circle cx="2" cy="6" r="1.5"/><circle cx="2" cy="14" r="1.5"/><circle cx="2" cy="22" r="1.5"/></symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2 6M20 4v7h-7"/></symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24"><path d="m10 3 1-1h2l1 3 3 1 3-1 2 3-2 2v4l2 2-2 3-3-1-3 1-1 3h-3l-1-3-3-1-3 1-2-3 2-2v-4L1 8l2-3 3 1 3-1z"/><circle cx="12" cy="12" r="3.3"/></symbol>
+  </defs></svg>
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Options Trader home"><span class="brand-symbol"><i></i><i></i><i></i></span><span><strong>Options Trader</strong><small>Track · Analyse · Grow</small></span></a>
+    <div class="header-actions"><span class="local-tag"><span class="dot"></span>Local view</span><button id="refresh" class="button refresh-button" type="button"><svg class="icon"><use href="#icon-refresh"/></svg><span>Refresh data</span></button><button id="settings" class="icon-button" type="button" aria-label="Dashboard settings"><svg class="icon"><use href="#icon-settings"/></svg></button></div>
+  </header>
+  <main>
+    <div class="session-line"><div><span id="data-status" class="status-pill">Loading market data</span><span id="as-of">Connecting to your local engine…</span></div><span class="pause-label"><span class="pause-bars">Ⅱ</span> Execution paused</span></div>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section class="summary-grid" aria-label="Account overview">
+      <article class="card summary-card profit-card"><div class="summary-icon positive"><svg><use href="#icon-up"/></svg></div><div class="summary-main"><h1>Today’s Profit</h1><div class="big-number-line"><strong id="today-pnl" class="big-number">—</strong><span id="today-return" class="percent-badge">—</span></div><p id="account-status" class="summary-caption">Waiting for your trade ledger</p></div><dl class="summary-details"><div><dt>Realised P&amp;L</dt><dd id="realized">—</dd></div><div><dt>Unrealised P&amp;L</dt><dd id="unrealized">—</dd></div><div><dt>Closed trades today</dt><dd id="trade-count">—</dd></div></dl></article>
+      <article class="card summary-card invested-card"><div class="summary-icon orange"><svg><use href="#icon-coins"/></svg></div><div class="summary-main"><h2>Invested</h2><strong id="capital" class="big-number">—</strong><p class="summary-caption">Reviewed capital · INR</p></div><dl class="summary-details"><div><dt>Used margin</dt><dd id="used-margin">—</dd></div><div><dt>Available</dt><dd id="available-margin">—</dd></div><div class="margin-row"><dt>Margin utilisation</dt><dd><span class="meter"><span id="margin-meter"></span></span><span id="margin-percent">—</span></dd></div></dl></article>
+    </section>
+    <section id="indices" class="index-grid" aria-label="Market indices"></section>
+    <p id="orders-empty" class="orders-empty" role="status">Checking your option orders…</p>
+    <div id="chart-toolbar" class="chart-toolbar" hidden><div><h2>Option charts</h2><span class="toolbar-note">View your buy and sell legs</span></div><div class="index-tabs" role="group" aria-label="Option chart index"><button type="button" class="tab active" data-index="NIFTY" aria-pressed="true">NIFTY</button><button type="button" class="tab" data-index="SENSEX" aria-pressed="false">SENSEX</button><button type="button" class="tab" data-index="BANKNIFTY" aria-pressed="false">BANK NIFTY</button></div></div>
+    <section id="option-grid" class="option-grid" hidden aria-label="Selected option premium charts">
+      <article id="buy-card" class="card option-card" hidden><div class="section-heading"><h2><svg class="icon filled positive"><use href="#icon-bars"/></svg>Buy Chart</h2><span class="leg-label">Buy order / long position</span></div><label class="visually-hidden" for="buy-option">Buy option contract</label><select id="buy-option" class="contract-select"><option value="">No option data</option></select><div class="quote-line"><strong id="buy-price">—</strong><span id="buy-change">—</span><span class="period">5 min · premium ₹</span></div><div id="buy-chart" class="chart option-chart"></div><div class="chart-foot"><span id="buy-book">Bid — · Ask —</span><span id="buy-expiry">Expiry —</span></div></article>
+      <article id="sell-card" class="card option-card" hidden><div class="section-heading"><h2><svg class="icon filled orange"><use href="#icon-bars"/></svg>Sell Chart</h2><span class="leg-label">Sell order / short position</span></div><label class="visually-hidden" for="sell-option">Sell option contract</label><select id="sell-option" class="contract-select"><option value="">No option data</option></select><div class="quote-line"><strong id="sell-price">—</strong><span id="sell-change">—</span><span class="period">5 min · premium ₹</span></div><div id="sell-chart" class="chart option-chart"></div><div class="chart-foot"><span id="sell-book">Bid — · Ask —</span><span id="sell-expiry">Expiry —</span></div></article>
+    </section>
+    <section class="bottom-grid" aria-label="Profit and strategy performance">
+      <article class="card bottom-card"><div class="section-heading"><h2><svg class="icon filled positive"><use href="#icon-bars"/></svg>Today’s Profit Chart</h2></div><div class="bottom-subline"><span>Total P&amp;L</span><strong id="chart-pnl">—</strong></div><div id="pnl-chart" class="chart small-chart"></div></article>
+      <article class="card bottom-card portfolio-card"><div class="section-heading"><h2><svg class="icon orange"><use href="#icon-coins"/></svg>My Portfolio</h2></div><strong id="portfolio-value" class="portfolio-number">—</strong><p class="portfolio-note">Total reviewed portfolio value</p><div id="portfolio-chart" class="chart small-chart"></div></article>
+      <article class="card bottom-card strategy-card"><div class="section-heading"><h2><svg class="icon orange"><use href="#icon-list"/></svg>Strategies</h2><span id="strategy-count" class="count-badge">4</span></div><div class="strategy-table-wrap"><table><thead><tr><th scope="col">Strategy &amp; outcomes</th><th scope="col">P&amp;L %</th><th scope="col">Net P&amp;L</th></tr></thead><tbody id="strategy-rows"></tbody></table></div><p class="strategy-key"><span class="key-swatch green"></span>Profit / break-even <span class="key-swatch red"></span>Loss <span class="key-note">Closed trades · after costs</span></p></article>
+    </section>
+    <footer><span>Indian markets <b>·</b> Local options dashboard</span><span id="footer-source">Read-only observation</span><span>Plan your trade. Trade your plan.</span></footer>
+  </main>
+  <dialog id="settings-dialog" aria-labelledby="settings-title"><form method="dialog"><div class="dialog-heading"><h2 id="settings-title">Dashboard settings</h2><button class="icon-button" aria-label="Close settings" value="close">×</button></div><label class="setting"><span><strong>Auto-refresh quotes</strong><small>Read Groww every 5 seconds while this page is visible. Charts use 5-minute candles.</small></span><input id="auto-refresh" type="checkbox" checked></label><label class="setting"><span><strong>Preview with sample data</strong><small>Try the layout and charts with clearly labelled examples.</small></span><input id="demo-toggle" type="checkbox"></label><label class="setting"><span><strong>Chart time zone</strong><small>Strategy schedules always stay in Japan time.</small></span><select id="timezone"><option value="Asia/Tokyo">Japan · JST</option><option value="Asia/Kolkata">India · IST</option></select></label><div class="settings-note"><strong>Your strategy bars</strong><p>Green is the share of closed trades with net P&amp;L ≥ 0; red is the share with net P&amp;L &lt; 0. No recorded losses gives a 100% green bar. No completed trades gives “No results”. The separate P&amp;L percentage is net profit divided by reviewed strategy capital.</p></div><button class="button primary" value="done">Done</button></form></dialog>
+  <noscript><p class="notice">Enable JavaScript to view local market data. Trading remains paused.</p></noscript>
+</body>
+</html>

@@ -40,38 +40,44 @@ def safe_error(exc):
             "code": code if re.fullmatch(r"(?:GA[0-9]{3}|[0-9]{3})", code) else None}
 
 
-def allowed_request(method, url, *, history=False):
+def allowed_request(method, url, *, history=False, dashboard=False):
     parsed = urlsplit(url)
+    if dashboard and method.upper() == "GET" and url == "https://growwapi-assets.groww.in/instruments/instrument.csv":
+        return True
     if (parsed.scheme, parsed.netloc) != ("https", "api.groww.in") or parsed.fragment:
         return False
     read_paths = {"/v1/live-data/quote", "/v1/live-data/ltp", "/v1/historical/expiries", "/v1/user/detail"}
     if history:
         read_paths.update({"/v1/historical/candles", "/v1/historical/contracts"})
+    if dashboard:
+        read_paths.update({"/v1/order/list", "/v1/positions/user"})
     read_paths.update(f"/v1/option-chain/exchange/{EXCHANGES[index]}/underlying/{index}" for index in INDICES)
     return ((method.upper() == "POST" and parsed.path == "/v1/token/api/access" and not parsed.query)
             or (method.upper() == "GET" and parsed.path in read_paths))
 
 
 @contextlib.contextmanager
-def readonly_transport(audit, *, history=False, deadline=None):
+def readonly_transport(audit, *, history=False, dashboard=False, deadline=None, timeout_seconds=15):
     """Guard this single-purpose process against order writes and auth redirects."""
     import requests
     original = requests.sessions.Session.request
 
     def guarded(session, method, url, **kwargs):
-        if not allowed_request(method, url, history=history):
+        if not allowed_request(method, url, history=history, dashboard=dashboard):
             raise PermissionError("request outside read-only diagnostic scope")
         kwargs["allow_redirects"] = False
-        kwargs["timeout"] = 15
+        kwargs["timeout"] = timeout_seconds
         if deadline is not None:
             remaining = (deadline-datetime.now(timezone.utc)).total_seconds()
             if remaining <= 0:
                 raise TimeoutError("read-only recording deadline reached")
-            kwargs["timeout"] = min(15, remaining)
+            kwargs["timeout"] = min(timeout_seconds, remaining)
         response = original(session, method, url, **kwargs)
         item = {"method": method.upper(), "path": urlsplit(url).path,
                 "http_status": response.status_code, "json_response": False, "provider_code": None}
         try:
+            if url == "https://growwapi-assets.groww.in/instruments/instrument.csv":
+                raise ValueError("CSV response, no JSON audit")
             body = response.json()
             item["json_response"] = True
             code = body.get("error", {}).get("code") if isinstance(body, dict) else None
@@ -98,6 +104,8 @@ def finite(value):
 def quote_summary(raw, received_at):
     result = {key: finite(raw.get(key)) for key in (
         "last_price", "bid_price", "offer_price", "bid_quantity", "offer_quantity", "volume", "open_interest")}
+    ohlc = raw.get("ohlc") if isinstance(raw.get("ohlc"), dict) else {}
+    result["ohlc"] = {key: finite(ohlc.get(key)) for key in ("open", "high", "low", "close")}
     # Actual SDK 1.5.0 option responses on 2026-09-30 used epoch seconds,
     # while the documented examples use milliseconds. Expose the unit explicitly.
     value = finite(raw.get("last_trade_time"))

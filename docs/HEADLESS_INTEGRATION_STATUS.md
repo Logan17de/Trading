@@ -10,10 +10,11 @@ runbook.
 | Capability | Verified result | Limit |
 |---|---|---|
 | Local Groww REST reader | October 1 at 16:22 JST: authentication plus 22 profile, index, expiry, chain and sampled-call probes passed across NIFTY, BANKNIFTY and SENSEX | Read-only; successful retrieval does not establish executable freshness |
+| Local Options Trader viewer | Real index/order/position reads, exact option metadata and five-minute history passed October 1; five-second quote cycle with independent history reads | Loopback-only manual viewer; account P&L and strategy attribution require the reviewed private ledger |
 | Historical study | 17,105 one-minute candles per index; 51,315 total; 41 observed sessions per index | Index moves are not option P&L; source identity/timestamp semantics remain unverified |
 | Owner protocol | Four fixed hypotheses; everyday weekday routing, spot offsets and index-direction holding review; 70/30 chronological partition | No strategy selected; margin budget/expiry choice unset; profit probability unknown |
 | Call-spread comparison | Higher-strike hedge, equal units, payoff/cost arithmetic, separate broker margin and optional budget ranking at fixed quantity | Owner-supplied inputs; no loss cap, quote verification, hedge selection or order submission |
-| Runtime tests | 92 passed locally with the everyday strategy, four POSIX-only skips; Linux/Windows headless CI configured | Functional verification is not strategy validation |
+| Runtime tests | 109 passed locally with the dashboard, four POSIX-only skips; Linux/Windows headless CI configured | Functional verification is not strategy validation |
 | Offline demo | Two persisted analysis jobs and HTML/text/MIME/PNG artifacts | Synthetic inputs and fake analyst; no email sent |
 | SQLite operations | Backup API and restore-to-new-path preserved state/report identity | Automated off-host backups and retention are not installed |
 
@@ -59,6 +60,42 @@ Private evidence: `.agent-state/groww-renewal-verification-20261001.json` and th
 approval screenshot. This daily approval is an operator action through the owner's
 Edge session; no recurring browser task has been installed. The displayed reset
 time's timezone is not established by the page.
+
+## Local dashboard verification
+
+The owner-authorized local viewer extends the existing engine with static assets
+and a loopback HTTP server. It is running manually on the PC at
+`http://127.0.0.1:8765/`; it is not an Oracle deployment or trading activation.
+Quotes/order records target five-second polling, and exact option histories use
+completed five-minute candles. A separate history thread keeps chart retrieval
+from stopping current quote reads. On October 1 at 18:46 JST, eight observed cycles
+started 5.000–5.223 seconds apart; every market/order/position read was available.
+This is measured behavior under that load, not a guaranteed network deadline.
+
+Buy/sell panels are gated independently by matching broker order/open-position
+records. Chain research samples do not create panels. Missing/partial broker
+reads, pending orders, historical fills and current positions retain distinct
+states. Exact option selection and real call/put history were verified in Edge.
+P&L, margin and per-strategy returns are still unconnected to a reviewed private
+ledger and remain unknown. Recorded non-loss/loss shares, including a 100% green
+bar for completed trades without losses, pass the ledger tests and labelled
+sample preview. No completed trades is “No results”.
+
+The local suite passed 109 tests with four POSIX-only skips; configuration,
+compilation, PowerShell syntax, JavaScript syntax and the offline demo passed.
+Order gating, five-minute completion, history/quote independence, lease expiry,
+secret filtering and local HTTP/Origin boundaries are covered. Browser QA includes
+320/390/768/1440 CSS-pixel layouts, exact option selection, time-zone switching,
+sample preview, keyboard focus and Escape dismissal. Further desktop/reference
+and reduced-motion checks are recorded in the private QA evidence. An optional
+second-port UI fixture was blocked by Edge's automation client; no-order and
+single-side filtering are covered by unit tests. The real owner-opened dashboard
+works in Edge. Private screenshots/cadence evidence are ignored by Git.
+
+See [local dashboard setup and ledger format](LOCAL_HEADLESS.md#local-options-dashboard).
+Unattended collection, account reconciliation, strategy attribution, scheduled
+visual mail and Oracle execution remain unfinished/inactive. The engine pause,
+broker permissions, credentials and shared VM lifecycle are unchanged.
 
 ## September 30 recording
 

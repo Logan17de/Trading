@@ -5,6 +5,12 @@
   integration/strategy guides before changing the workflow.
 - Extend `src/nifty_engine/agent_engine/`. Keep it headless: structured data for
   Codex, a visual daily email for the owner. Preserve the existing runtime.
+  The owner also authorized the local loopback-only Options Trader viewer. It
+  reads Groww every five seconds while visible and uses five-minute option candles.
+  Show each buy/sell panel only for that side's actual orders or open positions;
+  chain samples must not create charts. Pending orders are not fills. No recorded
+  losses means 100% non-loss only when completed trades exist; absent results stay
+  unknown. Account/strategy P&L needs the private reviewed ledger, never index moves.
 - Use the local PC for read-only Groww observation and strategy research. Oracle
   is the intended later execution host; execution remains unfinished and inactive.
 - Preserve `.trader-paused`, private journals and encrypted credentials. Do not

@@ -1,6 +1,9 @@
 # Local read-only diagnostic. Secrets stay in DPAPI storage and a process stdin pipe.
 [CmdletBinding()]
 param(
+    [switch]$Dashboard,
+    [switch]$Watch,
+    [string]$LeaseFile,
     [string]$Vault = (Join-Path (Split-Path $PSScriptRoot -Parent | Split-Path -Parent) '.secrets\growing-trader'),
     [string]$OutputDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) '.agent-state\market-checks')
 )
@@ -27,7 +30,13 @@ try {
     } | ConvertTo-Json -Compress
     $taskName = 'market-check-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmss') + '-' + [Guid]::NewGuid().ToString('N') + '.json'
     $taskOutput = Join-Path $OutputDirectory $taskName
-    $taskPayload | & $taskPython -I -m nifty_engine.agent_engine.market_check --credentials-stdin --output $taskOutput
+    if ($Dashboard -and $Watch) {
+        $taskPayload | & $taskPython -I -m nifty_engine.agent_engine.dashboard watch --credentials-stdin --directory $OutputDirectory --lease-file $LeaseFile
+    } elseif ($Dashboard) {
+        $taskPayload | & $taskPython -I -m nifty_engine.agent_engine.dashboard capture --credentials-stdin --output $taskOutput
+    } else {
+        $taskPayload | & $taskPython -I -m nifty_engine.agent_engine.market_check --credentials-stdin --output $taskOutput
+    }
     $taskExit = $LASTEXITCODE
 } finally {
     if ($null -ne $taskKeyBytes) { [Array]::Clear($taskKeyBytes, 0, $taskKeyBytes.Length) }
