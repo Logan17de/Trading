@@ -15,6 +15,11 @@
 - Local helpers reuse the protected sibling `.secrets/growing-trader` DPAPI vault.
   Keep credentials, account data and Codex authentication out of Git, logs,
   structured analysis inputs and generated reports. Private state is `.agent-state/`.
+- Use the owner's Edge session for Groww browser checks. If authentication returns
+  403, inspect `https://groww.in/trade-api/api-keys`. The owner authorizes clicking
+  Approve for the existing Codex key only when it shows Expired. Verify Approved,
+  then rerun the read-only helper. This refresh does not authorize new keys,
+  changed broker permissions, subscription purchases or orders.
 - Evaluate the owner's fixed Japan-time hypotheses with costs, fills and chronological
   holdouts before selecting any strategy. Profit targets never increase exposure,
   leverage or loss limits; record insufficient evidence and NO_TRADE when appropriate.

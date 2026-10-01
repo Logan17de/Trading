@@ -40,9 +40,10 @@ no strategy, size or real order is automatically selected.
 
 ## Current evidence
 
-Local access was verified on September 30 for NIFTY, BANKNIFTY and SENSEX.
-The October 1 migration check returned authentication HTTP 403 in both the old
-and new checkouts; current market reads are blocked until that is resolved.
+Local access was reverified on October 1 at 16:22 JST for NIFTY, BANKNIFTY and SENSEX:
+authentication and all 22 read-only probes passed. The earlier HTTP 403 was resolved
+by approving the expired existing Codex key in the owner's Edge session. Groww
+shows that approval resets at 6 AM tomorrow; no new credential was generated.
 The study has 51,315 index candles
 across 41 observed sessions per index. The September 30 recording has 29 snapshots
 from 18:40–19:08 JST, with one partial snapshot. No strategy has a validated net

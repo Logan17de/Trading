@@ -91,12 +91,20 @@ quote checks remain owner review items; separate tickets do not prove both legs 
 
 ## Verification and remaining work
 
-Local read-only access was verified for all three indices on September 30.
-October 1 migration checks returned authentication HTTP 403 in both checkouts;
-new reads currently fail before market-data requests. The cause is unverified.
+Local read-only access was reverified for all three indices on October 1 at
+16:22 JST: authentication and all 22 probes passed after the existing expired
+Codex key was approved in the owner's Edge session.
 The migrated runtime suite passed 77 tests with four POSIX-only skips, and the
 offline demo passed in the new checkout.
 Headless CI runs on Linux and Windows. `nifty-engine` now invokes the headless CLI.
+
+For a future authentication 403, inspect
+[`Groww API Keys`](https://groww.in/trade-api/api-keys) in the owner's Edge session.
+When the existing Codex key shows Expired, the owner authorizes clicking Approve.
+Verify Approved and rerun `Read-GrowwMarket.ps1`. Groww displays a daily 6 AM reset;
+the page does not establish its timezone. Reapproval does not require replacement
+credential files or expanded broker permissions. No automated browser renewal
+task is installed.
 
 Continuous collection, validated engine-snapshot publication, Windows isolation and
 local scheduled visual mail remain unfinished. Existing headless settings stay

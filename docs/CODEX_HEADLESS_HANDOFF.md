@@ -28,10 +28,10 @@ interpretations of the owner's phrase “10–20 places.”
 
 - Local reader, history download, bounded recorder and offline call-spread review
   extend the existing `agent_engine` package.
-- Local Groww access was verified across all three indices on September 30.
-  October 1 checks in both the source and Trading checkouts returned authentication
-  HTTP 403; the cause is unverified. The study has 51,315 candles, with 41 observed
-  sessions per index.
+- Local Groww access was reverified across all three indices on October 1 at
+  16:22 JST: authentication and all 22 read-only probes passed. The earlier HTTP
+  403 was resolved by approving the expired existing Codex key in the owner's
+  Edge session. The study has 51,315 candles, with 41 observed sessions per index.
 - The September 30 recording ended with 29 snapshots, 28 successful and one partial,
   covering 18:40–19:08 JST. It does not cover the full late-session hypothesis.
 - The latest runtime tests passed: 77 locally, four POSIX-only skips; the offline demo passed.
@@ -43,10 +43,12 @@ interpretations of the owner's phrase “10–20 places.”
 
 ## Remaining work
 
-Current data blocker: resolve the October 1 Groww authentication HTTP 403 before
-new captures. Code, SDK version and protected credentials match the source
-checkout; the migration does not establish a credential/subscription failure cause.
-Do not automatically rotate credentials or change broker permissions.
+Groww approval lifecycle: the API key dashboard shows a daily 6 AM reset. On a
+future authentication 403, inspect the existing Codex key in the owner's Edge
+session. The owner authorizes Approve when that key shows Expired; verify Approved
+and rerun the read-only helper. The page does not state a timezone, so preserve
+the displayed reset time without inferring a conversion. This instruction does
+not authorize creating keys, changing broker permissions or placing orders.
 
 1. Record complete comparable sessions, exact option contracts and both leg books;
    identify indicative versus regular index prices and verify source timestamps,

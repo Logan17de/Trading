@@ -1,7 +1,7 @@
 # Current integration status
 
-Reviewed 2026-10-01. Cleanup/test evidence is from October 1; broker, CLI and
-email evidence is from September 30 unless noted otherwise.
+Reviewed 2026-10-01. Cleanup/test evidence and the latest broker renewal/read check
+are from October 1; CLI and email evidence is from September 30 unless noted otherwise.
 This is the current status record for the local research workflow, not an activation
 runbook.
 
@@ -9,7 +9,7 @@ runbook.
 
 | Capability | Verified result | Limit |
 |---|---|---|
-| Local Groww REST reader | September 30: authentication, profile, quotes, LTP, expiries and chains succeeded for all three indices. October 1: authentication HTTP 403 in both source and Trading checkouts | Current reads blocked; failure cause unverified. Past access does not establish executable freshness |
+| Local Groww REST reader | October 1 at 16:22 JST: authentication plus 22 profile, index, expiry, chain and sampled-call probes passed across NIFTY, BANKNIFTY and SENSEX | Read-only; successful retrieval does not establish executable freshness |
 | Historical study | 17,105 one-minute candles per index; 51,315 total; 41 observed sessions per index | Index moves are not option P&L; source identity/timestamp semantics remain unverified |
 | Owner protocol | Fixed Japan-time windows, call preference, 70/30 chronological partition and session-level statistics | No strategy selected; profit probability unknown |
 | Call-spread comparison | Higher-strike hedge, equal units, credit/payoff/cost arithmetic and separate broker margin | Owner-supplied inputs; no quote verification or order submission |
@@ -47,10 +47,18 @@ research/authentication files were hash-verified, ignored by Git and stored with
 restricted ACLs; helpers reuse the existing DPAPI vault. Holdings credentials
 were copied locally with their restricted ACLs and were excluded from Git.
 
-Fresh Groww checks at 15:58 and 16:00 JST on October 1 returned authentication
-HTTP 403 in Trading and the original checkout respectively. Authentication failed
-before market-data reads. The SDK and credentials match; the cause is not yet
-verified. No credential was regenerated, permission changed or order submitted.
+Groww checks at 15:58 and 16:00 JST initially returned authentication HTTP 403 in
+both checkouts. In the owner's Edge session, the API dashboard showed the existing
+Codex key as Expired. The owner-authorized Approve action changed it to Approved,
+with the displayed status “Resets 6 AM tomorrow.” A fresh Trading check from
+16:22:30 to 16:22:53 JST then passed authentication and all 22 read-only probes,
+using the same SDK and protected credentials. No credential was regenerated,
+permission changed or order submitted. `.trader-paused` remains present.
+
+Private evidence: `.agent-state/groww-renewal-verification-20261001.json` and the
+approval screenshot. This daily approval is an operator action through the owner's
+Edge session; no recurring browser task has been installed. The displayed reset
+time's timezone is not established by the page.
 
 ## September 30 recording
 
