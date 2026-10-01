@@ -1,0 +1,41 @@
+name: Trading Headless CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: windows-latest
+            python: '3.13'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e '.[dev]'
+      - run: python scripts/check_config.py
+      - run: python -m compileall -q src scripts
+      - run: python -m pytest -q
+      - run: python -m nifty_engine.agent_engine demo smoke-demo
+      - name: Check PowerShell helper syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($script in Get-ChildItem scripts/*.ps1) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count) { throw "Invalid PowerShell syntax: $($script.Name)" }
+          }

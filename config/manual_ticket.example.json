@@ -1,0 +1,9 @@
+{
+  "exchange": "NSE",
+  "segment": "FNO",
+  "symbol": "REPLACE_WITH_EXACT_CONTRACT",
+  "side": "BUY",
+  "quantity": 0,
+  "limit_price": "0",
+  "product": "NRML"
+}

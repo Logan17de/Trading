@@ -1,0 +1,37 @@
+# TEMPLATE ONLY. Not installed/enabled. Review paths, identities and isolation.
+[Unit]
+Description=Growing Trader headless research scheduler
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=growing-research
+Group=growing-research-state
+WorkingDirectory=/opt/growing-trader
+Environment=PYTHONPATH=/opt/growing-trader/src
+EnvironmentFile=/etc/growing-trader/call-seller.env
+ExecCondition=/usr/bin/test ! -e /opt/growing-trader/.trader-paused
+ExecStart=/usr/bin/python3 -m nifty_engine.agent_engine.launch scheduler --config /etc/growing-trader/agent-engine.json run
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+KillMode=control-group
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/growing-research
+ReadOnlyPaths=/opt/growing-trader /var/lib/growing-trader-feed
+ProtectProc=invisible
+PrivateDevices=true
+RestrictSUIDSGID=true
+TasksMax=32
+MemoryMax=128M
+CPUQuota=20%
+
+[Install]
+WantedBy=multi-user.target

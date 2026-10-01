@@ -1,0 +1,19 @@
+{
+  "enabled": false,
+  "send_email": false,
+  "repository_root": ".",
+  "database": ".agent-state/engine.sqlite",
+  "snapshot_file": ".agent-state/latest.json",
+  "reports_dir": ".agent-state/reports",
+  "report_time_ist": "16:15",
+  "poll_seconds": 2,
+  "analysis_interval_seconds": 900,
+  "daily_codex_calls": 24,
+  "codex_timeout_seconds": 120,
+  "codex_executable": "/usr/local/bin/codex",
+  "codex_home": ".agent-state/codex-home",
+  "codex_model": null,
+  "codex_expected_version": null,
+  "codex_expected_sha256": null,
+  "shared_state_group": false
+}

@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nifty-market-engine"
+version = "0.1.0"
+description = "Headless Groww market observation, owner strategy research and Codex analysis."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "growwapi==1.5.0",
+  "pyotp>=2.9,<3",
+  "tzdata>=2026.4,<2027",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9"]
+
+[project.scripts]
+nifty-engine = "nifty_engine.agent_engine.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nifty_engine"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,7 @@
+Growing Trader automation is paused.
+
+While this marker exists:
+- trader services/timers must remain stopped and disabled;
+- trader-specific OCI market wake schedules must remain inactive;
+- trader email notifications/reports must not be sent;
+- shared Oracle VM demand wake and Colab/Qwen relay flows remain available.
