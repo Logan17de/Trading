@@ -57,7 +57,9 @@ def health(runtime, now, *, previous=None, progress_at=None):
     progress_at=now.timestamp() if changed or progress_at is None else progress_at
     if runtime.get("initializing") is True and identity[1]==1 and 0<=age<=120:
         return "STARTING",identity,progress_at
-    state="WORKER_STUCK" if not 0<=age<=30 or now.timestamp()-progress_at>30 else "HEALTHY"
+    # Host clocks can differ slightly. This tolerance applies to heartbeat
+    # liveness only; quote, funds, P&L and news freshness remain strict.
+    state="WORKER_STUCK" if not -5<=age<=30 or now.timestamp()-progress_at>30 else "HEALTHY"
     return state,identity,progress_at
 
 
@@ -100,7 +102,10 @@ class RemoteViewer:
         self.config=settings(json.loads((self.root/".agent-state/oracle-viewer.json").read_text(encoding="utf-8-sig")))
         self.cache=None; self.lock=threading.Lock(); self.previous=None; self.progress_at=None
         self.status="CONNECTING"; self.failed_since=None; self.last_attempt=0
-        self.incident=None; self.alert_status=None
+        saved=self.store.meta("vm-incident",{})
+        self.incident=saved.get("id") if saved.get("status") not in (None,"RECOVERED") else None
+        self.alert_status=saved.get("alert_status") if self.incident else None
+        self.bad_reads=0;self.healthy_since=None
 
     def poll(self, now=None, *, fetch=request, alert=notify):
         fixed_clock=now is not None
@@ -117,16 +122,27 @@ class RemoteViewer:
             self.failed_since=self.failed_since or now.timestamp()
             state="VM_UNREACHABLE" if now.timestamp()-self.failed_since>=30 else "RECONNECTING"
         if state in ("VM_UNREACHABLE","WORKER_STUCK","INVALID_HEARTBEAT"):
+            self.healthy_since=None
+            self.bad_reads+=1
+            if self.bad_reads<3:
+                self.status=state
+                return state
             if self.incident is None:
                 self.incident="oracle-"+str(int(now.timestamp()))
-                self.store.set_meta("vm-incident",{"id":self.incident,"status":state,"at":now.isoformat()})
                 self.last_attempt=0
             if now.timestamp()-self.last_attempt>=300 and self.alert_status!="ACCEPTED":
                 self.last_attempt=now.timestamp()
                 self.alert_status=alert(self.root,state,self.incident)
-        elif state=="HEALTHY" and self.incident:
-            self.store.set_meta("vm-recovery",{"id":self.incident,"at":now.isoformat()})
-            self.incident=None; self.alert_status=None
+            self.store.set_meta("vm-incident",{"id":self.incident,"status":state,"at":now.isoformat(),"alert_status":self.alert_status})
+        elif state=="HEALTHY":
+            self.bad_reads=0
+            self.healthy_since=self.healthy_since or now.timestamp()
+            if self.incident and now.timestamp()-self.healthy_since>=60:
+                self.store.set_meta("vm-recovery",{"id":self.incident,"at":now.isoformat()})
+                self.store.set_meta("vm-incident",{"id":self.incident,"status":"RECOVERED","at":now.isoformat()})
+                self.incident=None; self.alert_status=None
+        else:
+            self.bad_reads=0;self.healthy_since=None
         self.status=state
         return state
 

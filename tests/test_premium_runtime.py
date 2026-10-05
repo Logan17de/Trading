@@ -80,6 +80,8 @@ def test_heartbeat_requires_actual_advancement_and_bounded_timestamps():
     v['heartbeat_sequence']=2
     assert health(v,NOW+timedelta(seconds=31),previous=old,progress_at=at)[0]=='HEALTHY'
     assert health(v,NOW)[0]=='WORKER_STUCK'
+    skew=dict(v,heartbeat_at=(NOW+timedelta(seconds=2)).isoformat())
+    assert health(skew,NOW)[0]=='HEALTHY'
     startup=dict(boot_id='new',heartbeat_sequence=1,heartbeat_at=NOW.isoformat(),initializing=True)
     assert health(startup,NOW+timedelta(seconds=119))[0]=='STARTING'
     assert health(startup,NOW+timedelta(seconds=121))[0]=='WORKER_STUCK'
@@ -141,7 +143,22 @@ def test_remote_outage_is_deduplicated_and_retries_without_mutating_intent(tmp_p
     assert remote.poll(NOW,fetch=failed,alert=alert)=='RECONNECTING'
     assert remote.poll(NOW+timedelta(seconds=31),fetch=failed,alert=alert)=='VM_UNREACHABLE'
     remote.poll(NOW+timedelta(seconds=100),fetch=failed,alert=alert)
+    remote.poll(NOW+timedelta(seconds=105),fetch=failed,alert=alert)
     assert len(alerts)==1 and p.intent(store)['enabled']
+    def good(*args):
+        return {'runtime':{'boot_id':'boot','heartbeat_sequence':int(current[0].timestamp()),'heartbeat_at':current[0].isoformat()}}
+    current=[NOW+timedelta(seconds=110)]
+    remote.poll(current[0],fetch=good,alert=alert)
+    assert remote.incident is not None
+    for second in (115,120,125):
+        remote.poll(NOW+timedelta(seconds=second),fetch=failed,alert=alert)
+    assert len(alerts)==1
+    reopened=RemoteViewer(tmp_path,store)
+    for second in (200,235,240,245):reopened.poll(NOW+timedelta(seconds=second),fetch=failed,alert=alert)
+    assert len(alerts)==1
+    current[0]=NOW+timedelta(seconds=250);remote.poll(current[0],fetch=good,alert=alert)
+    current[0]+=timedelta(seconds=61);remote.poll(current[0],fetch=good,alert=alert)
+    assert remote.incident is None
 
 def test_heartbeat_clock_is_checked_after_ssh_response_not_before(tmp_path,monkeypatch):
     import nifty_engine.agent_engine.oracle_link as link
