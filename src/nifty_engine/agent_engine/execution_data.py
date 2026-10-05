@@ -79,14 +79,32 @@ class GrowwPreparation:
         if (not snapshot or not fresh(snapshot['finished_at'], now)
                 or snapshot.get('positions_status') != 'AVAILABLE' or snapshot.get('orders_status') != 'AVAILABLE'):
             return result
-        index = p.preferred_index(now); day = now.astimezone(JST).date().isoformat()
+        executor = self.journal.store.meta('premium-executor-v1', {})
+        occupied = self.journal.slot_status()['new_entry_blocked']
+        owned = executor.get('phase') not in (None, 'CLOSED')
+        day = now.astimezone(JST).date().isoformat()
+        preferred = p.preferred_index(now)
+        late_day = day in snapshot.get('expiry_evidence',{}).get(preferred,{}).get('expiries',[])
+        roll = False
+        forced = None
+        if owned and executor.get('phase') in ('ENTRY_HEDGE','ENTRY_SHORT'):
+            forced = executor['candidate']
+        elif owned and executor.get('phase') in ('ROLL_CLOSE_SHORT','ROLL_REHEDGE'):
+            forced = executor['roll_candidate']; roll = True
+        elif owned and executor.get('phase') == 'MONITORING' and executor.get('strategy') == 'EVERYDAY':
+            short_symbol = executor['candidate']['short']['symbol']
+            option = next((r for r in snapshot.get('ordered_options', []) if r['symbol']==short_symbol), {})
+            premium = (option.get('quote') or {}).get('offer_price')
+            roll = not late_day and bool(executor.get('queued_roll') or (premium is not None and premium < cfg['roll_below_rupees']))
+        index = executor['candidate']['index'] if (forced or roll) else p.preferred_index(now)
+        day = now.astimezone(JST).date().isoformat()
         evidence = snapshot.get('expiry_evidence', {}).get(index, {})
         if evidence.get('status') != 'CONFIRMED_CURRENT_MASTER' or evidence.get('day_jst') != day:
             return dict(result, reason='CURRENT_EXPIRY_REQUIRED')
         expiries = sorted(d for d in evidence.get('expiries', []) if d >= day)
         if not expiries:
             return dict(result, reason='CURRENT_EXPIRY_REQUIRED')
-        expiry = expiries[0]
+        expiry = executor['candidate']['expiry'] if (forced or roll) else expiries[0]
         strategy = 'LATE_SESSION' if day in expiries else 'EVERYDAY'
         trend = 'FLAT'; kind = 'CE'
         if strategy == 'LATE_SESSION':
@@ -96,7 +114,7 @@ class GrowwPreparation:
             kind = cfg['late_session']['trend_mapping'].get(trend)
             if kind not in ('CE', 'PE'):
                 return dict(result, reason='VERIFIED_DIRECTIONAL_TREND_REQUIRED', strategy=strategy)
-        if self.journal.slot_status()['new_entry_blocked']:
+        if occupied and not owned:
             return dict(result, reason='ENGINE_SLOT_OCCUPIED_RECONCILE_BEFORE_ENTRY')
         chain = self.call(self.market.groww.get_option_chain, exchange=EXCHANGES[index], underlying=index, expiry_date=expiry)
         samples = []
@@ -118,11 +136,33 @@ class GrowwPreparation:
                 return dict(result, reason='VERIFIED_LISTED_EXPIRY_STRIKES_REQUIRED', strategy=strategy)
             short_sample = matches[0]
             evidence = dict(evidence, spot=chain.get('underlying_ltp'))
+        elif forced:
+            matches = [s for s in samples if s[2] == forced['short']['symbol']]
+            if not matches: return dict(result, reason='CURRENT_OWNED_SHORT_MASTER_REQUIRED')
+            short_sample = matches[0]
+        elif roll and not executor.get('queued_roll'):
+            previous = executor['candidate']['short']
+            # Use actual listed symbols/LTP only to select the bounded quote
+            # sample; executable bid above eight is checked again below.
+            eligible = [r for r in samples if r[1]<previous['strike'] and
+                        next((number(sides[kind]['ltp']) for strike,sides in chain['strikes'].items()
+                              if float(strike)==r[1] and kind in sides),0)>8]
+            if not eligible: return dict(result, reason='NEXT_LISTED_SHORT_ABOVE_8_REQUIRED')
+            short_sample = max(eligible,key=lambda r:r[1])
         else:
             short_sample = samples[0]
         # Chain LTP identifies a sample; current bid/ask/quantity are read below.
         hedge_samples = [r for r in samples if (r[1] > short_sample[1] if kind=='CE' else r[1] < short_sample[1])]
         hedges = sorted(hedge_samples, key=lambda r:abs(r[1]-short_sample[1]))[:4]
+        if forced:
+            hedges = [r for r in hedge_samples if r[2]==forced['hedge']['symbol']]
+        elif roll:
+            old_hedge = executor['candidate']['hedge']['symbol']
+            current = [r for r in hedge_samples if r[2]==old_hedge]
+            hedges = current + [r for r in hedges if r[2]!=old_hedge]
+        if roll and forced:
+            old_hedge=executor['candidate']['hedge']['symbol']
+            hedges += [r for r in hedge_samples if r[2]==old_hedge and r not in hedges]
         wanted = [short_sample]+hedges
         master_key = (index, expiry, int(now.timestamp())//3600)
         if master_key != self.master_key:
@@ -160,21 +200,28 @@ class GrowwPreparation:
         def order(q, side, qty):
             return dict(trading_symbol=q['symbol'], exchange=EXCHANGES[index], product='NRML',
                         transaction_type=side, quantity=qty, order_type='LIMIT', price=q['ask' if side=='BUY' else 'bid'])
+        calculated = {}
         for hedge in (q for q in quotes if (q['strike'] > short['strike'] if kind=='CE' else q['strike'] < short['strike'])):
-            for lots in range(1, (cfg['maximum_lots'] or 0)+1):
+            lots_values = [forced['lots']] if forced else [executor['short_quantity']//short['lot_size']] if roll else range(1, (cfg['maximum_lots'] or 0)+1)
+            for lots in lots_values:
                 qty = lots*short['lot_size']
                 if short['bid_quantity'] < qty or hedge['ask_quantity'] < qty:
                     continue
                 try:
                     opening = [order(hedge, 'BUY', qty), order(short, 'SELL', qty)]
+                    held_hedge = any(r.get('symbol')==hedge['symbol'] and r.get('side')=='BUY'
+                        and r.get('quantity')>=qty and r.get('ownership')=='ENGINE_VERIFIED'
+                        for r in snapshot.get('ordered_options',[]))
+                    if held_hedge: opening = opening[1:]
                     entry = self.call(self.market.groww.get_order_margin_details, segment='FNO', orders=opening)
-                    hedge_only = self.call(self.market.groww.get_order_margin_details, segment='FNO', orders=opening[:1])
+                    hedge_only = self.call(self.market.groww.get_order_margin_details, segment='FNO', orders=[order(hedge,'BUY',qty)]) if not held_hedge else {'total_requirement':0}
                     closing = [order(short, 'BUY', qty), order(hedge, 'SELL', qty)]
                     exit_quote = self.call(self.market.groww.get_order_margin_details, segment='FNO', orders=closing)
                     margins[basket_key(short, hedge, qty)] = dict(received_at=self.clock().isoformat(),
                         basket_requirement_inr=number(entry['total_requirement']),
                         hedge_requirement_inr=number(hedge_only['total_requirement']),
                         round_trip_charges_inr=number(entry['brokerage_and_charges'])+number(exit_quote['brokerage_and_charges']))
+                    calculated[basket_key(short,hedge,qty)] = dict(held_hedge=held_hedge,opening_cost=number(entry['brokerage_and_charges']))
                 except Exception:
                     continue  # Failed calculation is unknown, never zero cost/margin.
         raw = self.call(self.market.groww.get_available_margin_details)
@@ -198,10 +245,51 @@ class GrowwPreparation:
             prepared = self._expiry_rank(cfg, quotes, margins, funds, evidence, at, active, trend, samples)
         else:
             prepared = rank_baskets(cfg, quotes, margins, funds, evidence, at, active=active, complete=True)
+        if forced or roll:
+            # Existing hedge/margin is already in the broker's actual state. Do
+            # not charge its purchase twice or increase size during a short roll.
+            candidates=[]
+            old_hedge=executor['candidate']['hedge']
+            old_book=next((q for q in quotes if q['symbol']==old_hedge['symbol']),None)
+            for hedge in quotes:
+                if hedge['symbol']==short['symbol']: continue
+                if forced and hedge['symbol']!=forced['hedge']['symbol']: continue
+                lots=forced['lots'] if forced else executor['short_quantity']//short['lot_size']; qty=lots*short['lot_size']
+                k=basket_key(short,hedge,qty); m=margins.get(k); info=calculated.get(k)
+                if not m or not info or not fresh(m['received_at'],at): continue
+                if short['bid_quantity']<qty or hedge['ask_quantity']<qty: continue
+                if m['basket_requirement_inr']>funds['option_sell_available_inr']: continue
+                if not info['held_hedge'] and max(m['hedge_requirement_inr'],hedge['ask']*qty)>funds['option_buy_available_inr']: continue
+                improvement=0; incremental=m['round_trip_charges_inr']
+                if roll and not info['held_hedge']:
+                    if not old_book: continue
+                    try:
+                        replacement = self.call(self.market.groww.get_order_margin_details, segment='FNO',
+                            orders=[order(hedge,'BUY',qty),order(old_book,'SELL',qty)])
+                        incremental += number(replacement['brokerage_and_charges'])
+                    except Exception: continue
+                    improvement=(old_book['bid']-hedge['ask'])*qty-number(replacement['brokerage_and_charges'])
+                    if improvement<=100: continue
+                credit=short['bid']-hedge['ask']; width=abs(short['strike']-hedge['strike'])
+                if not 0<credit<width: continue
+                if roll and not executor.get('queued_roll') and short['bid']<=8: continue
+                candidates.append(dict(key=k,index=index,expiry=expiry,strategy=executor['strategy'],short=short,hedge=hedge,
+                    quantity=qty,lots=lots,product='NRML',net_max_expiry_profit_inr=credit*qty-m['round_trip_charges_inr'],
+                    basket_requirement_inr=m['basket_requirement_inr'],round_trip_charges_inr=m['round_trip_charges_inr'],
+                    incremental_costs_inr=incremental,held_hedge=info['held_hedge'],hedge_improvement_after_costs_inr=improvement,
+                    prepared_at=self.clock().isoformat(),broker_writes=False))
+            if candidates:
+                candidates.sort(key=lambda r:(-r['net_max_expiry_profit_inr'],r['basket_requirement_inr']))
+                prepared.update(status='PREPARED_ROLL' if roll else 'PREPARED_OWNED_ENTRY',selected=candidates[0],reason='CURRENT_OWNED_ACTION_CALCULATED')
+            else: prepared.update(status='WAIT',selected=None,reason='OWNED_ACTION_MARGIN_AND_BOOKS_REQUIRED')
         prepared.update(at=at.isoformat(), execution_enabled=False, candidate_scope='CHAIN_SAMPLE_ONLY',
                         omitted_hedges=max(0, len(hedge_samples)-len(hedges)),
                         globally_maximum_profit_verified=False, book_evidence=book_evidence,
                         calculation_evidence=result['calculation_evidence'])
+        if prepared.get('selected'):
+            prepared['selected']['expiry_evidence']=evidence
+            if strategy=='LATE_SESSION':
+                prepared['selected'].update(trend=trend,spot=chain.get('underlying_ltp'),listed_strikes=[s[1] for s in samples])
         return prepared
 
     @staticmethod

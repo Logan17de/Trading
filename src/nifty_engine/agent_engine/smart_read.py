@@ -1,7 +1,7 @@
 """Bounded GET-only OCO/GTT observations for chart SL/target overlays.
 
-SDK 1.5.0 lacks the newly documented smart-order methods. Use the documented
-REST reads with its existing in-memory token; no new credential or write route.
+SDK 1.5.0 includes smart-order methods. This bounded REST reader uses the same
+in-memory token and retains GET-only chart observation; it never arms an order.
 """
 from __future__ import annotations
 

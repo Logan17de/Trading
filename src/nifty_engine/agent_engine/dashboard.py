@@ -516,7 +516,8 @@ def collect_charts(market, snapshot, now, *, previous=None, refresh_all=True):
 
 class DashboardCollector:
     def __init__(self, market, *, clock=lambda: datetime.now(timezone.utc), metadata_loader=download_metadata,
-                 background_history=True, journal=None, calendar_loader=download_calendar, smart_loader=None):
+                 background_history=True, journal=None, calendar_loader=download_calendar, smart_loader=None,
+                 before_ownership=None):
         self.market, self.clock, self.metadata_loader = market, clock, metadata_loader
         self.metadata, self.charts, self.chart_bucket, self.metadata_attempt = {}, {}, None, None
         self.sequence = 0
@@ -525,6 +526,7 @@ class DashboardCollector:
         self.journal, self.calendar_loader = journal, calendar_loader
         self.expiry_evidence, self.expiry_day, self.expiry_next_at = {}, None, 0
         self.smart_loader = smart_loader
+        self.before_ownership = before_ownership
         from .session import SessionJournal
         self.sessions = SessionJournal(journal.store) if journal else None
         self.pnl_journal = broker_pnl.PnlJournal(journal.store) if journal else None
@@ -621,6 +623,8 @@ class DashboardCollector:
         ordered = ordered[:40]
         result["orders_status"] = "AVAILABLE" if complete else "INCOMPLETE" if succeeded else "UNAVAILABLE"
         if self.journal:
+            if self.before_ownership:
+                self.before_ownership()
             ownership = self.journal.ownership(orders,positions,complete=complete)
             for option in ordered:
                 option["ownership"] = ownership.get(option["symbol"],"MANUAL_OR_UNKNOWN_PROTECTED")
@@ -693,6 +697,20 @@ class DashboardCollector:
             option["quote"] = probes[option["symbol"] + "_quote"].get("value", {})
             probe = probes[option["symbol"] + "_quote"]
             option["received_at"] = probe["received_at"] if probe["ok"] else None
+        if self.journal:
+            # Private execution evidence never grants a desktop order capability
+            # and is omitted by public_response. Preserve product and signed net
+            # quantities; an average/side alone cannot prove an owned position.
+            result["execution_observation"] = dict(complete=complete,
+                received_at=probes["positions"]["received_at"],
+                expiry_evidence=self.expiry_evidence,
+                positions=[dict(symbol=r.get("trading_symbol"),quantity=r.get("quantity"),
+                    product=r.get("product"),ownership=ownership.get(r.get("trading_symbol"),"MANUAL_OR_UNKNOWN_PROTECTED"))
+                    for r in positions if option_identity(r) and r.get("quantity")],
+                funds=self.funds,
+                books={o["symbol"]:dict(bid=o["quote"].get("bid_price"),ask=o["quote"].get("offer_price"),
+                    bid_quantity=o["quote"].get("bid_quantity"),ask_quantity=o["quote"].get("offer_quantity"),
+                    received_at=o["received_at"]) for o in ordered if o.get("received_at")})
         result["ordered_options"] = ordered
         if self.history_future and self.history_future.done():
             self.charts = self.history_future.result()

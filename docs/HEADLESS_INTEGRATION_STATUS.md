@@ -3,8 +3,10 @@
 This section is current; older entries below are dated verification history.
 Premium policy v3 supersedes offset/barrier/swing/reversal entries.
 The owner's October 5 follow-up retired active news collection and news gates.
-Read-only basket preparation and a replay-only write-ahead order gateway are now
-implemented; see EXECUTION_PREPARATION.md. Real trading remains disabled.
+Read-only preparation and the durable Oracle entry/protection/trailing/roll/exit
+controller are implemented; see ORACLE_EXECUTION.md. Preparation's older deployed
+release is listed below until the new paused rollout is recorded. Real broker
+acceptance, GTT/child linkage and owner activation remain pending.
 
 | Component | Actual result |
 | --- | --- |
@@ -28,11 +30,11 @@ implemented; see EXECUTION_PREPARATION.md. Real trading remains disabled.
 | Preparation backups | Before/after SQLite integrity verified; 30,027,776-byte post-deployment off-host copy hash matched. Original journals/backups retained; production has zero owned orders and zero withdrawals |
 | Verification | **259 tests passed, 4 POSIX skips** on Windows, config/compile/JS checks and offline demo passed; exact release CI on Ubuntu3.12 and Windows3.13 passed (run37282655954). Capital widths 320/390/768/1440 checked previously; narrow live money-card clipping fixed. No broker order writes, key rotations, permission changes, merges or VM shutdown |
 
-**Not complete:** production broker executor, persistent protective stops,
-generated-child ownership, rollover/replacement/exit orchestration and actual
-execution sessions. Bounded actual margin/book sampling is implemented separately
-from the collector; replay gateway recovery is tested with injected brokers.
-₹2,000 is an undeployed basket-stop trigger, not a guaranteed cap.
+**Not complete:** controlled real broker acceptance, persistent protection and
+generated-child linkage verification, owner activation and actual execution
+sessions. The entry/protection/trail/roll/exit/replacement code and gated transport
+are now implemented and replay tested. The ₹2,000 basket-stop trigger and GTT
+remain unarmed in production; neither guarantees a maximum loss.
 No validated strategy profit probability exists. Net strategy accounting remains
 unconnected. The PC alert monitor is not an always-on external cloud watchdog.
 Windows reboot/sign-in and complete-session continuity remain unverified.

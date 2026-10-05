@@ -1,7 +1,8 @@
-"""Owner's premium-target policy and read-only plans. No broker transport.
+"""Owner's premium-target policy and deterministic plans. No broker transport.
 
 This replaces active strike-offset/barrier/swing entry rules. Historical studies
-stay reproducible. A decision is not an order; the Oracle executor is unfinished.
+stay reproducible. A decision is not an order; Oracle's controller has separate
+deployment, activation, ownership and broker-verification gates.
 """
 import json
 from datetime import time
@@ -74,7 +75,7 @@ def intent(store):
 
 def readiness(policy, now, *, paused=True, offline=False, fresh=False, news_risk="UNKNOWN", desired_enabled=False):
     validate(policy)
-    blockers = ["ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED"]
+    blockers = ["ORACLE_EXECUTOR_CONNECTION_REQUIRED"]
     if not desired_enabled:blockers.append("OWNER_ALGO_OFF")
     if paused:blockers.append("REPOSITORY_PAUSED")
     if offline:blockers.append("OFFLINE_VIEW")
@@ -85,7 +86,7 @@ def readiness(policy, now, *, paused=True, offline=False, fresh=False, news_risk
         "execution_enabled":False,"broker_writes":False,
         "blockers":blockers,"index":preferred_index(now),"window_open":entry_window(now),
         "policy_version":policy["format"],"maximum_lots":policy["maximum_lots"],
-        "stop_loss_inr":policy["loss_stop_inr"],"stop_status":"NOT_DEPLOYED_TRIGGER_NOT_GUARANTEED_LOSS_CAP",
+        "stop_loss_inr":policy["loss_stop_inr"],"stop_status":"BROKER_PROTECTION_NOT_VERIFIED_TRIGGER_NOT_GUARANTEED_LOSS_CAP",
         "news_required":False}
 
 

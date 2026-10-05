@@ -56,6 +56,8 @@ def allowed_request(method, url, *, history=False, dashboard=False, calculations
         read_paths.add("/v1/order-advance/list")
         if method.upper() == "GET" and re.fullmatch(r"/v1/order-advance/status/FNO/(?:OCO|GTT)/internal/[A-Za-z0-9_-]{1,128}",parsed.path):
             return True
+        if method.upper() == "GET" and re.fullmatch(r"/v1/order/(?:detail/[A-Za-z0-9_-]{1,128}|status/reference/[A-Za-z0-9_-]{8,20})",parsed.path):
+            return True
     read_paths.update(f"/v1/option-chain/exchange/{EXCHANGES[index]}/underlying/{index}" for index in INDICES)
     return ((method.upper() == "POST" and parsed.path == "/v1/token/api/access" and not parsed.query)
             or (method.upper() == "GET" and parsed.path in read_paths))
@@ -69,7 +71,9 @@ def readonly_transport(audit, *, history=False, dashboard=False, calculations=Fa
 
     def guarded(session, method, url, **kwargs):
         if not allowed_request(method, url, history=history, dashboard=dashboard, calculations=calculations):
-            raise PermissionError("request outside read-only diagnostic scope")
+            from .execution_gate import consume_write
+            if not consume_write(method, url, kwargs):
+                raise PermissionError("request outside read-only diagnostic scope")
         kwargs["allow_redirects"] = False
         kwargs["timeout"] = timeout_seconds
         if deadline is not None:

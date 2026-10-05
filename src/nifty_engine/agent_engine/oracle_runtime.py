@@ -1,4 +1,4 @@
-"""Oracle observer and durable owner intent. No order executor or public port."""
+"""Oracle observer, paused execution controller and durable owner intent."""
 from __future__ import annotations
 import argparse
 import contextlib
@@ -34,13 +34,29 @@ class Runtime:
         self.mail_state={"status":"SCHEDULED_BY_1930_JST","provider_accepted":False,"inbox_verified":False}
         self.output=self.state.directory/"market-check-oracle-live.json"
         self.preparer=None
+        self.executor=None
 
     def read(self):
         view=self.state.read()
         from .oracle_link import revalidate
         revalidate(view,datetime.now(timezone.utc))
+        from .premium_executor import observation
+        from .dashboard import load_json
+        execution = self.executor.public(observation(load_json(self.output,8_000_000))) if self.executor else {
+            "code_implemented":True,"status":"BLOCKED","execution_enabled":False,"phase":"IDLE",
+            "blockers":["ORACLE_EXECUTOR_CONNECTION_REQUIRED"]}
         view["runtime"]={"host":"ORACLE","boot_id":self.boot_id,"heartbeat_sequence":self.sequence,
-            "heartbeat_at":self.at,"error":self.error,"orders_enabled":False,"collector_host":"ORACLE"}
+            "heartbeat_at":self.at,"error":self.error,"orders_enabled":execution["execution_enabled"],"collector_host":"ORACLE"}
+        view["execution_controller"]=execution
+        algo=view.get('control',{}).get('algo')
+        if isinstance(algo,dict):
+            algo['blockers']=list(dict.fromkeys([r for r in algo.get('blockers',[]) if r not in
+                ('ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED','ORACLE_EXECUTOR_CONNECTION_REQUIRED')]+execution['blockers']))
+            algo['execution_enabled']=execution['execution_enabled']
+            algo['status']='ON_READY' if execution['execution_enabled'] else 'ON_BLOCKED' if algo.get('desired_enabled') else 'OFF'
+            algo['stop_status']='PERSISTENT_GTT_IMPLEMENTED_ACTIVATION_UNVERIFIED'
+            view['control']['blockers']=algo['blockers']
+            view['control']['execution_enabled']=execution['execution_enabled']
         view["runtime"]["initializing"]=self.sequence==1
         view["daily_email"]=self.mail_state
         view["execution_preparation"]=self.state.pnl_lines.store.meta("premium-preparation",
@@ -50,7 +66,10 @@ class Runtime:
     def command(self,value):
         if value=={"action":"read"}:return self.read()
         if isinstance(value,dict) and set(value)=={"action","enabled"} and value["action"]=="intent" and type(value["enabled"]) is bool:
-            return self.state.algo_set(value["enabled"])
+            result=self.state.algo_set(value["enabled"])
+            current=self.read().get('control',{}).get('algo')
+            if current: result.update(current)
+            return result
         if isinstance(value,dict) and set(value)=={"action","withdrawal"} and value["action"]=="record_withdrawal":
             try:
                 return self.state.record_withdrawal(value["withdrawal"])
@@ -71,6 +90,21 @@ class Runtime:
         self.collector.account_loader=lambda:None
         from .execution_data import GrowwPreparation
         self.preparer=GrowwPreparation(market,self.state.monitor.journal)
+        from . import premium_strategy
+        from .contracts import identity
+        from .execution_gate import ExecutionGate
+        from .oracle_orders import GrowwOrderTransport, OracleOrderGateway
+        from .oracle_protection import PersistentProtection
+        from .premium_executor import PremiumExecutor
+        cfg=premium_strategy.load(self.root)
+        # Exact immutable source directory, never a mutable default branch pin.
+        release=Path(__file__).resolve().parents[3].name
+        gate=ExecutionGate(self.state.monitor.journal,self.root/'.trader-paused',mode=os.environ.get('EXECUTION_MODE','paper'),
+            release=release,host='ORACLE',clock=lambda:datetime.now(timezone.utc),policy_hash=identity(cfg))
+        transport=GrowwOrderTransport(market,gate);gateway=OracleOrderGateway(self.state.monitor.journal,transport,gate)
+        protection=PersistentProtection(self.state.monitor.journal,transport,gateway)
+        self.executor=PremiumExecutor(self.state.monitor.journal,gateway,protection,gate,cfg,clock=gate.clock)
+        self.collector.before_ownership=self.executor.reconcile_before_collection
         self.token_day=now.date()
 
     def preparation_loop(self):
@@ -87,6 +121,15 @@ class Runtime:
                     self.state.pnl_lines.store.set_meta("premium-preparation",{"status":"WAIT",
                         "reason":"PREPARATION_INPUT_UNAVAILABLE","at":datetime.now(timezone.utc).isoformat(),
                         "execution_enabled":False,"broker_writes":False,"selected":None})
+
+    def execution_loop(self):
+        from .dashboard import load_json
+        from .premium_executor import observation
+        while not self.stop.wait(5):
+            executor=self.executor
+            if executor:
+                executor.tick(observation(load_json(self.output,8_000_000)),
+                    self.state.pnl_lines.store.meta('premium-preparation',{}))
 
     def report_loop(self):
         while not self.stop.wait(30):
@@ -107,6 +150,7 @@ class Runtime:
             logging.disable(logging.CRITICAL)
             with readonly_transport([],history=True,dashboard=True,calculations=True,timeout_seconds=5):
                 threading.Thread(target=self.preparation_loop,daemon=True).start()
+                threading.Thread(target=self.execution_loop,daemon=True).start()
                 while not self.stop.is_set():
                     started=time.monotonic();now=datetime.now(timezone.utc)
                     try:
@@ -114,7 +158,11 @@ class Runtime:
                             if self.collector is None or self.token_day!=now.date():
                                 if self.collector:self.collector.close()
                                 self.connect(now)
-                            value=self.collector.sample()
+                            # Serialize an owned write with raw ownership reads;
+                            # calculation/history workers remain independent.
+                            with self.executor.lock:
+                                self.executor.reconcile_before_collection()
+                                value=self.collector.sample()
                             write_snapshot(self.output,value)
                             if value.get("status")=="BLOCKED" or any(r.get("code")=="403" for r in value.get("probes",{}).values()):
                                 raise ConnectionError("read unavailable")
@@ -130,12 +178,20 @@ class Runtime:
                         if self.collector:self.collector.close()
                         self.collector=None
                         self.preparer=None
+                        self.executor=None
                         write_snapshot(self.output,{"finished_at":now.isoformat(),"status":"BLOCKED","failure":self.error,"order_capability":False})
                     self.sequence+=1;self.at=datetime.now(timezone.utc).isoformat()
                     self.stop.wait(max(0,5-(time.monotonic()-started)))
 
 
 def serve(root):
+    # One process owns collection/reconciliation and the execution state machine.
+    # A second process cannot steal the socket or overwrite a basket's step.
+    import fcntl
+    lease=Path(root)/'.agent-state/premium-executor.lock'
+    lease.parent.mkdir(parents=True,exist_ok=True)
+    process_lock=lease.open('a')
+    fcntl.flock(process_lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
     runtime=Runtime(root);path=Path(root)/"observer.sock"
     if path.exists():path.unlink()
     class Handler(socketserver.StreamRequestHandler):

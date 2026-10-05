@@ -18,7 +18,8 @@
   trigger, not a guaranteed loss cap. See the policy guide for exact semantics.
 - Only explicit owner On/Off changes durable desired intent. Preserve On through
   restarts/windows/faults. Expose blocked readiness separately: broker executor
-  remains unfinished. Preserve `.trader-paused`. Never activate LIVE or place/
+  is implemented but live provider validation/activation remain pending. Read
+  docs/ORACLE_EXECUTION.md. Preserve `.trader-paused`. Never activate LIVE or place/
   modify real orders during maintenance/tests. Manual/unknown/mixed trades are
   protected; ownership needs reservation, exact broker acknowledgment and fills.
 - Five-second read-only observer targets 12:40–19:45 JST weekdays. Network delays
@@ -41,8 +42,12 @@
   GrowwPreparation independently compares actual books and hypothetical broker
   basket/hedge/exit calculations, with explicit sampled scope; never calls order
   methods. PreparedOrderGateway is replay-only and rejects a real broker even
-  if someone removes the pause or switches the owner preference On. Persistent
-  broker protection, generated-child ownership and live execution remain blocked.
+  if someone removes the pause or switches the owner preference On. The separate
+  OracleOrderGateway and premium controller use exact SDK routes behind thread-local
+  one-request capabilities, owner intent, pause, LIVE and private release/policy-bound
+  validation gates. Maintenance never creates activation proof. Generated-child
+  reference linkage is synthetically tested, not verified against real fills;
+  unknown create/cancel/modify/child states freeze further writes.
 - Visual daily email at 19:30 JST every calendar day, minimal words, existing
   approved sender/recipient. Retry frozen content without changing trading state.
   Distinguish provider acceptance, recipient-server acceptance and inbox evidence.

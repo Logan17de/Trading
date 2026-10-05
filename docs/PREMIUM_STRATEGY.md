@@ -24,9 +24,11 @@ Late-session only.
 Three strike intervals do not mean three lots/positions. Weekday routing never
 proves expiry. At/after 19:00, roll proposals wait for the next window.
 
-These are deterministic **review proposals**, not broker orders. Bounded actual
-book/margin preparation and a replay-only durable order gateway are implemented;
-see EXECUTION_PREPARATION.md. Persistent protective-order/child-fill integration,
-roll/exit orchestration and real execution remain unfinished. A payoff bound is
+These deterministic proposals feed the implemented Oracle order controller only
+after separate activation, ownership and freshness gates. Bounded preparation,
+durable hedge-first entry, persistent GTT/child reconciliation, trailing updates,
+short-first roll/exit and expiry replacement are implemented and replay tested;
+see ORACLE_EXECUTION.md and EXECUTION_PREPARATION.md. Real broker-write/protection
+validation and activation remain pending. The pause is preserved. A payoff bound is
 not expected profit; no validated net-profit probability exists. The owner retired
 news workers and news entry requirements on October 5.

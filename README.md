@@ -2,8 +2,9 @@
 
 **Options Trader** is the owner's local PC viewer/controller for the existing
 Python engine on Oracle. Oracle runs Groww observation, premium-policy review,
-read-only basket preparation, private accounting and visual daily reporting.
-Live broker execution is unfinished and inactive.
+read-only basket preparation, a durable order controller, private accounting and
+visual daily reporting. The controller is implemented; live trading remains paused
+pending controlled broker/protection verification and owner activation.
 
 Current repository: [`Logan17de/Trading`](https://github.com/Logan17de/Trading).
 Local checkout: `D:\Money Trader\Trading`.
@@ -51,16 +52,18 @@ within actual available broker margin, with an equal-quantity same-expiry bought
 - Late-session: actual expiry after 18:00, UP → PUT three listed strikes below
   ATM; DOWN → CALL three above; flat/unknown → no entry. Matching positions skip;
   replacement requires verified algo exits and flat confirmation. Manual trades stay protected.
-- ₹2,000 basket-loss stop has priority over rolls. Broker protection is not
-  deployed; this trigger is not a guaranteed maximum loss.
+- ₹2,000 basket-loss stop has priority over rolls. Persistent GTT protection and
+  trailing updates are implemented but unarmed; this is not a guaranteed loss cap.
 
 Owner On/Off persists until explicitly changed. The button cannot bypass the
-unfinished executor or pause. Actual read-only preparation labels its sampled
-scope; replay recovery tests do not prove persistent broker protection.
+pause or live-validation gates. Hedge-first entry, short-first exits, rolls and
+expiry replacement use exact journal-owned orders. Actual preparation labels its
+sampled scope; replay tests do not prove live persistent broker protection.
 News workers, news entry gates and news dashboard/email wording are retired.
 Historical offset, barrier, swing and news research remain provenance.
 Read [the exact premium policy](docs/PREMIUM_STRATEGY.md) and
-[execution preparation and remaining work](docs/EXECUTION_PREPARATION.md).
+[execution preparation](docs/EXECUTION_PREPARATION.md) and
+[the Oracle controller and activation boundary](docs/ORACLE_EXECUTION.md).
 
 ## What is retained
 

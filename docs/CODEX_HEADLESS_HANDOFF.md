@@ -14,7 +14,8 @@ Qwen/Colab/mail/tunnels. The old trader remains disabled and paused.
 
 Owner On/Off is durable. Only explicit button requests change it. Restarts,
 windows and faults retain On but separately block trading readiness. The actual
-broker executor is unfinished: On must never be described as trading activated.
+broker controller is implemented, but live provider validation and activation remain
+pending: On must never be described as trading activated while blocked.
 Only Everyday and Late-session appear in strategy results. Manual/unknown/mixed
 contracts remain protected. Read exact premium/expiry/roll/stop rules in the guide.
 Owner retired news on October 5: no active fetch worker, entry gate or news UI.
@@ -24,7 +25,11 @@ chain/master/books and hypothetical basket/hedge/exit margin/cost calculations.
 It labels sampled scope; a prepared comparison is never an order or global optimum.
 PreparedOrderGateway is replay-only, persists intent before a simulated write and
 reconciles original references/fills without duplicating uncertain submissions.
-Real broker transport remains rejected; the pause and actual owner Off are retained.
+The replay-only gateway still rejects real transport. The separate Oracle gateway,
+durable one-basket controller, persistent GTT and trailing/roll/exit/replacement
+paths are now implemented in the existing runtime; read ORACLE_EXECUTION.md.
+The pause and actual owner Off are retained. Every network write needs an exact
+thread-local capability and private release/policy-bound activation evidence.
 Preparation deployed October 5 at approximately 17:19 JST as immutable release
 `492c7355827fac857aa14d72269c74703f22de9d`. Groww's actual hypothetical basket-margin
 API was verified independently at 16:59:50 JST; no broker order routes were used.
@@ -91,10 +96,12 @@ pause markers. SQLite backups use its backup API; restore only to a new path.
 
 ## Remaining blockers
 
-Real broker execution, persistent protective orders and generated-child ownership,
-replacement/roll/exit orchestration and actual execution sessions remain unfinished.
-Standard-order uncertain-write recovery and bounded margin ranking now have
-synthetic tests; these are not proof of live persistent broker protection.
+Real broker acceptance, persistent protection and generated-child reference linkage
+still need controlled live validation before activation. Entry/protection/trail,
+replacement/roll/exit orchestration are implemented, with full synthetic sessions
+and uncertain-write/partial-fill/cancellation-race/restart tests. These are not proof
+of actual broker behavior. The public GTT schema omits generated-child linkage; no
+guessed child adoption or duplicate close is allowed.
 No validated profit probability or guaranteed income exists.
 Windows reboot/sign-in and external cloud monitoring are unverified. Inbox
 receipt requires mailbox evidence even after provider reports delivery. Dated
@@ -107,4 +114,4 @@ rotate keys, change broker permissions, merge or shut down Oracle in a check.
 October 5 deployment and visual-preview inbox verification are complete; the first
 real scheduled EOD email remains later today. See the current status table for
 exact release, test and backup evidence. The persistent On setting still cannot
-place orders while the executor is unfinished and the pause remains.
+place orders while the pause/LIVE/provider-verification gates remain blocked.

@@ -1,5 +1,11 @@
 # Oracle execution preparation
 
+The preparation remains read-only. October 5's later implementation adds a separate
+durable controller in the same runtime: see ORACLE_EXECUTION.md. The replay gateway
+below still rejects real brokers; OracleOrderGateway supplies the gated SDK adapter.
+No production orders have been placed or protection armed. Previous preparation-only
+verification below is dated provenance, not the latest capability.
+
 October 5, 2026. The owner retired news and requested Everyday/Late-session only.
 News workers and news readiness gates are removed from the premium runtime,
 desktop and visual email. Historical research and evidence remain provenance.

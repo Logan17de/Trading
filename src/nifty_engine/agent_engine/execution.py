@@ -246,7 +246,7 @@ class PreparedOrderGateway:
         try:
             # A pause/Off can arrive after the journal commit but before the write.
             self._gate(observation)
-        except ValueError:
+        except (ValueError, PermissionError):
             record["status"] = "ABORTED_BEFORE_WRITE"
             self.journal.store.set_meta(operation_key, record)
             with self.journal.store.transaction() as db:
@@ -259,8 +259,13 @@ class PreparedOrderGateway:
                 raise ValueError("UNVERIFIED_BROKER_RECEIPT")
             self.journal.acknowledge(reference, receipt["groww_order_id"])
             record.update(status="ACKNOWLEDGED", broker_id=receipt["groww_order_id"])
-        except Exception:
-            record["status"] = "RECONCILIATION_REQUIRED"
+        except Exception as exc:
+            from .execution_gate import ExecutionDenied
+            if isinstance(exc,ExecutionDenied):
+                record['status']='ABORTED_BEFORE_WRITE'
+                with self.journal.store.transaction() as db:
+                    db.execute("UPDATE pc_orders SET state='CLOSED' WHERE reference=?",(reference,))
+            else: record["status"] = "RECONCILIATION_REQUIRED"
         self.journal.store.set_meta(operation_key, record)
         return {"status":record["status"], "reference":reference, "filled":False, "broker_write_attempted":True}
 
@@ -321,11 +326,15 @@ class PreparedOrderGateway:
                 return {"status":"CANCEL_RECONCILIATION_REQUIRED", "broker_writes":False}
             latest["cancel_attempted"] = True
             db.execute("UPDATE meta SET body=? WHERE key=?", (dumps(latest), operation_key))
-        self._gate(observation)
         try:
+            self._gate(observation)
             self.broker.cancel_order(segment="FNO", groww_order_id=record["broker_id"], timeout=5)
-        except Exception:
-            pass
+        except Exception as exc:
+            from .execution_gate import ExecutionDenied
+            if isinstance(exc,ExecutionDenied):
+                latest['cancel_attempted']=False
+                self.journal.store.set_meta(operation_key,latest)
+                raise
         # Cancellation acceptance is not a terminal order; fills can race it.
         return self.reconcile(key)
 
