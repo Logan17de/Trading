@@ -5,8 +5,11 @@ Premium policy v3 supersedes offset/barrier/swing/reversal entries.
 
 | Component | Actual result |
 | --- | --- |
-| Oracle observer | `trading-observer.service` enabled/active; immutable release `080c47588b754fb3a0d3f957a8718d6c2fc75e76`; existing runtime, read-only HTTP allowlist, no public port |
+| Oracle observer | `trading-observer.service` enabled/active; immutable release `b5a54faa59370771320bb822e745527fd19913ec`; existing runtime, read-only HTTP allowlist, no public port |
 | Desktop | Installed app now reads Oracle via verified private SSH/Unix socket; background/sign-in launch reused |
+| Capital | Confirmed opening investment and zero withdrawals provisioned privately in Oracle SQLite; October 2026 is the first monthly API fee. Live starting formula and isolated November result verified; production contains October only. All four amounts visible near the top in owner Edge and visual email preview; Self/Algo P&L also visible near the top |
+| Withdrawals | Protected Record withdrawal form and fixed SSH/socket accounting command; INR paise arithmetic, dated owner records and persistent idempotent IDs. Successful records/conflicts/retries tested in isolated HTTP/SQLite fixtures; production form zero validation and keyboard dismissal verified; no test withdrawal saved to production |
+| Capital backups | Before/after SQLite integrity verified; post-update 23,015,424-byte off-host copy hash matched. Original journals and backups retained |
 | Owner control | On/Off intent persists in Oracle journal until explicit change; isolated VM restart test passed; production intent remains Off |
 | Strategy policy | Everyday ₹20 NIFTY / ₹80 SENSEX, one basket/max two lots, 14:00–19:00 JST; expiry Late-session at 18:00, 3 strike intervals; deterministic review functions tested |
 | Actual reads | VM Groww authentication, current NIFTY/SENSEX/BANKNIFTY quotes, positions, money and expiry/master evidence passed; five-second target remains subject to read/CPU/network delays |
@@ -18,7 +21,7 @@ Premium policy v3 supersedes offset/barrier/swing/reversal entries.
 | Alert repair | Deployment revealed repeated false alarms (24 messages in a Gmail thread) from startup/heartbeat-clock/recovery handling. VM remained online. Startup grace, response-time clock check, bounded heartbeat-only skew tolerance and persistent/debounced incidents installed; data/news freshness was not relaxed |
 | Migration/backups | SQLite integrity passed: 1,621 observations/588 P&L points, zero owned orders migrated; original journal retained. Post-migration backup + restore to new path passed; 17,428,480-byte off-host copy hash matched |
 | Isolation/shared VM | Separate service identity; root-owned source, root0600 reused credentials/mail, private state/socket; memory capped240MB/CPU35%; shared Qwen/mail/tunnels stayed active; old trader disabled/inactive; all pause markers preserved |
-| Verification | **220 tests passed, 4 POSIX skips** on Windows, config/compile/JS checks and offline demo passed; exact source CI on Ubuntu3.12 and Windows3.13 passed. No broker order writes, key rotations, permission changes, merges or VM shutdown |
+| Verification | **238 tests passed, 4 POSIX skips** on Windows, config/compile/JS checks and offline demo passed; capital runtime source CI on Ubuntu3.12 and Windows3.13 passed. Capital widths 320/390/768/1440 checked; narrow live money-card clipping fixed. No broker order writes, key rotations, permission changes, merges or VM shutdown |
 
 **Not complete:** broker order executor, actual margin/book candidate ranking,
 initial protective stops, partial-fill/crash reconciliation and execution replay

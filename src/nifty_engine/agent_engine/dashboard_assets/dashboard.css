@@ -49,4 +49,4 @@
 .summary-pnl-split>span{display:flex;align-items:center;gap:8px}.summary-pnl-split i{width:16px;height:3px;border-radius:2px}.summary-pnl-split b{font-size:14px}
 .withdrawal-field{display:block;font-size:12px;font-weight:650;margin:18px 0}.withdrawal-field input{display:block;width:100%;margin-top:7px;border:1px solid #cddfd6;border-radius:8px;padding:12px;font:16px var(--font);color:var(--ink);background:#fff}
 .withdrawal-note{font-size:12px;color:var(--muted);line-height:1.5}.capital-total dd.negative{color:var(--red)}
-@media(max-width:700px){.capital-card{padding:16px}.capital-equation{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.capital-equation>div{padding:12px}.capital-equation dd{font-size:23px}.capital-equation dt{font-size:11px}.capital-operator{display:none}.summary-pnl-split{gap:10px 18px}}
+@media(max-width:700px){.summary-grid{grid-template-columns:1fr}.capital-card{padding:16px}.capital-equation{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.capital-equation>div{padding:12px}.capital-equation dd{font-size:23px}.capital-equation dt{font-size:11px}.capital-operator{display:none}.summary-pnl-split{gap:10px 18px}}

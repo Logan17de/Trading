@@ -36,6 +36,12 @@ owner record through protected loopback POST and fixed SSH/socket accounting
 command. Idempotent request IDs survive retries/restarts; conflicts are rejected.
 This does not transfer money, change broker cash, P&L, margin or trading readiness.
 Cached prior-month totals wait for Oracle's fee update; no desktop fee booking.
+Deployed and verified October 5 at 16:00 JST: observer release
+`b5a54faa59370771320bb822e745527fd19913ec`; all four amounts in owner Edge and
+email preview. Production has October's fee and zero withdrawal records. The
+November arithmetic check used an isolated fixture, never a future production
+charge. Pre/post journal backups verified; post-update off-host hash matched.
+238 tests passed, four platform skips; Ubuntu/Windows runtime CI passed.
 
 ## Schedules and faults
 
