@@ -1042,6 +1042,9 @@ def handler(state):
                 from .visual_report import build
                 bundle=build(state.read(),datetime.now(JST).date().isoformat())
                 content=bundle["mail"]["html"].replace("19:30 JST report","Visual email preview · current observations")
+                content=content.replace('<html><body','<html><head><title>Options Trader · Email preview</title></head><body',1)
+                end=content.index('>',content.index('<body'))+1
+                content=content[:end]+'<div style="padding:12px;text-align:center"><a href="/">← Dashboard</a></div>'+content[end:]
                 for attachment in bundle["mail"]["attachments"]:
                     content=content.replace("cid:"+attachment["content_id"],"data:image/png;base64,"+attachment["content"])
                 return self.respond(200,content.encode(),"text/html; charset=utf-8")

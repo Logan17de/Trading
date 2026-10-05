@@ -29,7 +29,7 @@ from P&L/investment value. Net strategy results still need the reviewed ledger.
 
 ## Schedules and faults
 
-- Visual email: 19:30 JST every calendar day; frozen durable retry outbox; existing
+- Visual email: attempts start 19:29 JST, targeting by 19:30 every calendar day; frozen retry outbox; existing
   approved sender/recipient. Provider acceptance, recipient-server acceptance and
   inbox evidence are distinct. Missing values stay unknown.
 - Existing heartbeat `trading-news-and-barrier-check` is now named **Trading noon
@@ -37,8 +37,8 @@ from P&L/investment value. Net strategy results still need the reviewed ledger.
   existing Codex key when Expired, verify Approved and retest read-only access.
   Wakeups are best effort; actual completion needs evidence. The old 12:55 barrier
   follow-up is superseded, not duplicated.
-- PC liveness uses SSH plus advancing heartbeat/sequence. After 30 seconds
-  unavailable/stuck, alert by approved mail; deduplicate incidents and retry mail
+- PC liveness uses SSH plus advancing heartbeat/sequence. After stale/unreachable detection and three bad reads, alert by approved mail;
+  deduplicate incidents through restarts, require 60 healthy seconds for recovery, and retry mail
   failures. PC must be awake, signed in and online. No always-on external cloud
   outage monitor is installed. Never auto-reboot/shut down Oracle. Retain On.
 
@@ -66,3 +66,8 @@ status records actual tests, deployment and receipts, separately from schedules.
 Preserve `.trader-paused`, `.secrets`, private journals, production Supabase keys/
 ciphertext and shared Oracle services. Never place/modify orders, enable LIVE,
 rotate keys, change broker permissions, merge or shut down Oracle in a check.
+
+October 5 deployment and visual-preview inbox verification are complete; the first
+real scheduled EOD email remains later today. See the current status table for
+exact release, test and backup evidence. The persistent On setting still cannot
+place orders while the executor is unfinished and the pause remains.
