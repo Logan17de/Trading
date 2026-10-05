@@ -25,9 +25,12 @@ def build(view, day):
             if points and at-points[-1][0]>20:points.append((at-.001,None))
             points.append((at,r.get("value")))
         if not any(v is not None for _,v in points):return '<div style="padding:35px;color:#718096">No recorded prices</div>'
-        png=chart(points,width,height,color)
+        png=chart(points,width,height,color,zero_baseline=not name.startswith("index-"))
         attachments.append({"filename":name+".png","content_id":name,"content":base64.b64encode(png).decode()})
-        return f'<img src="cid:{name}" width="{width}" style="width:100%;height:auto" alt="{name}">'
+        first=stamp(rows[0]["at"]).astimezone(JST).strftime("%H:%M")
+        last=stamp(rows[-1]["at"]).astimezone(JST).strftime("%H:%M")
+        values=[v for _,v in points if v is not None]
+        return f'<img src="cid:{name}" width="{width}" style="width:100%;height:auto" alt="{name}"><div style="font-size:10px;color:#587287">{first}–{last} JST · {money(min(values))}–{money(max(values))}</div>'
     def tile(title,value,sub="",color="#18334b"):
         return f'<td width="50%" style="padding:16px;background:#f4faf8;border:4px solid white;border-radius:12px"><div style="font-size:12px;color:#587287">{esc(title)}</div><div style="font-size:27px;font-weight:bold;color:{color}">{esc(value)}</div><div style="font-size:11px;color:#587287">{esc(sub)}</div></td>'
     pnl=view.get("broker_pnl",{}); buckets=pnl.get("buckets",{}); funds=view.get("funds",{})

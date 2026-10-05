@@ -17,7 +17,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from .contracts import IST, dumps, identity, stamp
 
 
-def chart(points, width=620, height=160, color=(24, 110, 160)):
+def chart(points, width=620, height=160, color=(24, 110, 160), zero_baseline=True):
     """Small dependency-free PNG. Missing observations break, not interpolate, the line."""
     pixels = bytearray([248, 250, 252] * width * height)
     def dot(x, y, rgb):
@@ -26,12 +26,15 @@ def chart(points, width=620, height=160, color=(24, 110, 160)):
             pixels[offset:offset + 3] = bytes(rgb)
     known = [v for _, v in points if v is not None]
     low, high = (min(0, min(known)), max(0, max(known))) if known else (0, 1)
+    if known and not zero_baseline:
+        padding=max((max(known)-min(known))*.1,.05)
+        low,high=min(known)-padding,max(known)+padding
     span = max(high - low, 1)
     first, last = (points[0][0], points[-1][0]) if points else (0, 1)
     def ycoord(v):
         return int(height - 12 - (v - low) / span * (height - 24))
     for x in range(10, width - 10):
-        dot(x, ycoord(0), (180, 190, 205))
+        dot(x, ycoord(0) if low<=0<=high else height-12, (180, 190, 205))
     previous = None
     for at, value in points:
         if value is None:

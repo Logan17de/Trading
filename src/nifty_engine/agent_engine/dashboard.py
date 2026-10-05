@@ -1037,6 +1037,14 @@ def handler(state):
         def do_GET(self):
             if not self.local():
                 return self.respond(403, {"status": "LOCAL_ACCESS_ONLY"})
+            if self.path == "/report":
+                import base64
+                from .visual_report import build
+                bundle=build(state.read(),datetime.now(JST).date().isoformat())
+                content=bundle["mail"]["html"].replace("19:30 JST report","Visual email preview · current observations")
+                for attachment in bundle["mail"]["attachments"]:
+                    content=content.replace("cid:"+attachment["content_id"],"data:image/png;base64,"+attachment["content"])
+                return self.respond(200,content.encode(),"text/html; charset=utf-8")
             assets = {"/": ("index.html", "text/html; charset=utf-8"),
                 "/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
                 "/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
