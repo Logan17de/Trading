@@ -59,8 +59,9 @@ unchanged. No strategy has a validated net-profit probability or executable plan
   passed. Trading and manual-position protection are unchanged.
 
 - Weekday **12:55 JST** Codex thread follow-up installed as
-  `trading-news-and-barrier-check`; configured ACTIVE, first scheduled run not yet
-  observed. The persistent app collects RBI + ET Markets evidence independently
+  `trading-news-and-barrier-check`; configured ACTIVE. Its first observed heartbeat
+  arrived at **13:18:09 JST on October 5**, rather than at the configured time.
+  The persistent app collects RBI + ET Markets evidence independently
   every 120 seconds during 12:40–19:45 JST. Support/resistance requests run from
   12:55, with 15:00/17:00 reassessment and changed-news/barrier triggers. Eight
   daily attempts remain the global cap; crossings take queue priority. Missing
@@ -139,7 +140,15 @@ demo completed with synthetic inputs and no mail/orders. Actual pinned Windows
 Codex accepted the expanded structured schema, returned WAIT for missing market
 evidence and emitted zero tool events. Real Groww money read passed. ET yielded
 15 dated items; RBI supplied no item within the 24-hour policy, so news remained
-UNKNOWN. This evidence does not verify the first scheduled market-session run.
+UNKNOWN. The later heartbeat check verified both app research jobs were created
+at **12:55:01 JST** and completed successfully with `WAIT / DATA_REQUIRED`;
+no levels or action rules were applied. This does not establish insufficient
+history as the cause: each request contained 143 completed historical prices.
+At **13:20 JST**, the collector, money reads and independent news refresh were
+current, the Codex executable/version pin and authentication passed, and manual
+positions remained protected. RBI still lacked fresh mandatory evidence, so news
+remained UNKNOWN. No repair or activation was required. Complete-session coverage
+and Windows OS privilege isolation remain unverified.
 
 ## Protected state
 

@@ -50,7 +50,8 @@ Installed in the PC app: independent two-minute RBI/ET evidence collection;
 structured Codex news assessment with exact cited IDs and 180-second expiry;
 12:55/15:00/17:00 level research plus coalesced news/crossing triggers. The shared
 eight-attempt daily cap and stale level status are visible. A weekday 12:55 JST
-Codex thread heartbeat is ACTIVE; its first scheduled run has not yet occurred.
+Codex thread heartbeat is ACTIVE; its first observed delivery arrived at 13:18:09
+JST on October 5. The configured time and actual delivery time are distinct.
 Oracle execution, recurring mail and off-host backups are not activated by this.
 
 The journal now persists strategy ownership per slot. An everyday carry blocks
@@ -70,8 +71,16 @@ Actual ET fetch returned 15 current articles; RBI returned no item within the
 readiness. A real pinned Windows Codex run accepted the new strict output schema,
 returned WAIT for missing market evidence and emitted zero tool events. The full
 local suite passed (192 tests, four POSIX-only skips) and the offline demo produced
-synthetic report artifacts without mail/orders. First scheduled level updates and
-a full unattended session remain unverified.
+synthetic report artifacts without mail/orders. The 13:18 heartbeat verified both
+12:55:01 app research requests completed with `WAIT / DATA_REQUIRED`, two of eight
+daily attempts used, and no applied levels or rules. Each request contained 143
+historical prices; the limited reason code does not identify exactly which
+evidence the analyst considered insufficient. At 13:20 JST, current collector
+timestamps, separate money reads and continuing two-minute news refreshes passed;
+the existing Codex 0.160.0 pin/authentication passed. RBI still lacked fresh
+mandatory evidence and news stayed UNKNOWN. Manual positions remained protected,
+with no broker writes, activation or repairs. A full unattended session remains
+unverified. Private dated evidence is `.agent-state/heartbeat-check-20261005-1318.json`.
 
 **Installed in the local PC app:** option charts now require confirmed nonzero
 positions. Historical fills, pending orders and closed positions do not qualify.
