@@ -2,6 +2,9 @@
 
 This section is current; older entries below are dated verification history.
 Premium policy v3 supersedes offset/barrier/swing/reversal entries.
+The owner's October 5 follow-up retired active news collection and news gates.
+Read-only basket preparation and a replay-only write-ahead order gateway are now
+implemented; see EXECUTION_PREPARATION.md. Real trading remains disabled.
 
 | Component | Actual result |
 | --- | --- |
@@ -13,7 +16,7 @@ Premium policy v3 supersedes offset/barrier/swing/reversal entries.
 | Owner control | On/Off intent persists in Oracle journal until explicit change; isolated VM restart test passed; production intent remains Off |
 | Strategy policy | Everyday ₹20 NIFTY / ₹80 SENSEX, one basket/max two lots, 14:00–19:00 JST; expiry Late-session at 18:00, 3 strike intervals; deterministic review functions tested |
 | Actual reads | VM Groww authentication, current NIFTY/SENSEX/BANKNIFTY quotes, positions, money and expiry/master evidence passed; five-second target remains subject to read/CPU/network delays |
-| News | ET: 15 dated items; RBI missing/stale within policy; remains UNKNOWN; no news entries |
+| News | Retired by owner: no active news fetch worker, readiness gate or dashboard/email news wording. Historical dated evidence retained |
 | Email | Visual integration preview sent at **15:08 JST** to approved existing recipient/sender; 5 actual PNG charts, balances, positions and Self/Algo P&L; Resend accepted, recipient server accepted, Gmail Inbox label and rendered body verified |
 | Daily scheduler | Observer checks every 30 seconds, starts attempts at **19:29 JST**, targeting **by 19:30** every calendar day; frozen content/retries do not change trading state; first actual scheduled EOD run remains pending |
 | Noon API job | Existing heartbeat updated to **Trading noon API and VM check**, weekdays **12:00 JST**; best-effort configured schedule, not proof of exact noon execution |
@@ -23,9 +26,11 @@ Premium policy v3 supersedes offset/barrier/swing/reversal entries.
 | Isolation/shared VM | Separate service identity; root-owned source, root0600 reused credentials/mail, private state/socket; memory capped240MB/CPU35%; shared Qwen/mail/tunnels stayed active; old trader disabled/inactive; all pause markers preserved |
 | Verification | **238 tests passed, 4 POSIX skips** on Windows, config/compile/JS checks and offline demo passed; capital runtime source CI on Ubuntu3.12 and Windows3.13 passed. Capital widths 320/390/768/1440 checked; narrow live money-card clipping fixed. No broker order writes, key rotations, permission changes, merges or VM shutdown |
 
-**Not complete:** broker order executor, actual margin/book candidate ranking,
-initial protective stops, partial-fill/crash reconciliation and execution replay
-sessions. ₹2,000 is an undeployed basket-stop trigger, not a guaranteed cap.
+**Not complete:** production broker executor, persistent protective stops,
+generated-child ownership, rollover/replacement/exit orchestration and actual
+execution sessions. Bounded actual margin/book sampling is implemented separately
+from the collector; replay gateway recovery is tested with injected brokers.
+₹2,000 is an undeployed basket-stop trigger, not a guaranteed cap.
 No validated strategy profit probability exists. Net strategy accounting remains
 unconnected. The PC alert monitor is not an always-on external cloud watchdog.
 Windows reboot/sign-in and complete-session continuity remain unverified.

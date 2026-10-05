@@ -179,8 +179,10 @@ function renderControl() {
   $("monitor-schedule").textContent="14:00–19:00 JST · expiry strategy at 18:00";
   const expiry=c?.expiry_check;
   $("expiry-status").textContent=expiry?Object.entries(expiry).map(([index,e])=>`${index}: ${e.is_expiry_day===true?"expiry — Everyday skips; Late-session eligible":e.is_expiry_day===false?"non-expiry — Everyday eligible":"expiry unverified — no entry"}`).join(" · "):"Actual expiry dates must be confirmed from Groww";
-  const news=c?.news;
-  $("news-status").textContent=news?`News evidence: ${news.risk||'UNKNOWN'} · source freshness remains visible · no news-based entry strategy`:"News evidence unavailable";
+  const prep=data.execution_preparation;
+  $("preparation-status").hidden=!prep;
+  const prepLabels={RANKED_CURRENT_CANDIDATES:"sampled margin comparison prepared",NO_VERIFIED_AFFORDABLE_HEDGED_CANDIDATE:"no verified affordable spread",CURRENT_EXPIRY_REQUIRED:"waiting for expiry evidence",ACTUAL_EXPIRY_DAY_SKIPPED:"Everyday skips expiry",WAIT_FOR_ACTUAL_EXPIRY_1800_JST:"waiting for expiry at 18:00",VERIFIED_DIRECTIONAL_TREND_REQUIRED:"waiting for an observed expiry trend",TARGET_SHORT_BOOK_OR_EXCLUSIVE_CONTRACT_REQUIRED:"target contract unavailable or protected",FRESH_COMPLETE_DATA_REQUIRED:"waiting for current data",OUTSIDE_1400_1900_JST:"outside entry window",BROKER_PREPARATION_UNAVAILABLE:"broker calculation unavailable",PREPARATION_NOT_STARTED:"waiting for broker preparation",PREPARATION_INPUT_UNAVAILABLE:"preparation data unavailable",ENGINE_SLOT_OCCUPIED_RECONCILE_BEFORE_ENTRY:"owned basket occupies the slot"};
+  $("preparation-status").textContent=prep?`Preparation: ${prepLabels[prep.reason]||prep.status}${prep.at?' · '+dateTime(prep.at):''} · broker writes disabled`:"";
   $("strategy-priority").textContent="NIFTY Mon/Tue/Fri; SENSEX Wed/Thu. Expiry: a matching position skips entry; otherwise replace only the algo-owned basket. Your trades are protected.";
   $("levels").hidden=true; $("rule-details").hidden=true;
   $("analysis-status").textContent="Short premium below ₹8: review closing the short and replacing it with the next listed premium above ₹8. Keep the bought hedge unless the basket's improvement after costs exceeds ₹100.";
@@ -190,7 +192,7 @@ function renderControl() {
   $("algo-start").textContent=on?"Algo On":"Algo Start";
   $("algo-stop").disabled=data.demo||algoStartPending||!on;
   const last=algoStartResult||c?.latest_start_request;
-  const labels={ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED:"Oracle order executor is unfinished",REPOSITORY_PAUSED:"trading is paused",NEWS_HIGH_UNKNOWN_OR_STALE:"mandatory news evidence is unknown/high/stale",FRESH_MARKET_DATA_REQUIRED:"current data is required",OUTSIDE_1400_1900_JST:"outside 14:00–19:00 JST",OFFLINE_VIEW:"offline view",MAXIMUM_LOTS_REQUIRED:"lot cap missing",PREMIUM_POLICY_REQUIRED:"strategy settings are missing",OWNER_ALGO_OFF:"owner setting is Off",VM_UNHEALTHY_OR_STALE:"VM heartbeat/data unavailable"};
+  const labels={ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED:"Oracle order executor is unfinished",REPOSITORY_PAUSED:"trading is paused",FRESH_MARKET_DATA_REQUIRED:"current data is required",OUTSIDE_1400_1900_JST:"outside 14:00–19:00 JST",OFFLINE_VIEW:"offline view",MAXIMUM_LOTS_REQUIRED:"lot cap missing",PREMIUM_POLICY_REQUIRED:"strategy settings are missing",OWNER_ALGO_OFF:"owner setting is Off",VM_UNHEALTHY_OR_STALE:"VM heartbeat/data unavailable"};
   $("algo-start-result").textContent=algoStartPending?"Saving owner setting…":on?`On is saved until you click Algo Off. Trading blocked: ${(algo.blockers||[]).map(k=>labels[k]||k).join('; ')}.`:last?.status==='TRANSPORT_FAILED'?"Could not save the setting on Oracle. No change confirmed.":"Algo Off. Start saves your On preference across restarts; it does not bypass blocked trading readiness.";
 }
 let withdrawalPending=false;

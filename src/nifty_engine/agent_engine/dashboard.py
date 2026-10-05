@@ -916,9 +916,10 @@ class DashboardState:
                 self.background_thread = threading.Thread(target=self.remote.run,args=(self.stop_event,),daemon=True)
                 self.background_thread.start()
                 return
-            self.news_thread = threading.Thread(target=self.monitor.news.run,args=(self.stop_event,),daemon=True,
-                name="trading-pc-news")
-            self.news_thread.start()
+            if premium_strategy.load(self.root) is None:
+                self.news_thread = threading.Thread(target=self.monitor.news.run,args=(self.stop_event,),daemon=True,
+                    name="trading-pc-news")
+                self.news_thread.start()
             self.background_thread = threading.Thread(target=self._monitor_loop,daemon=True)
             self.background_thread.start()
 
@@ -1023,6 +1024,21 @@ def handler(state):
             pass
 
         def respond(self, status, value, kind="application/json; charset=utf-8"):
+            # Windows may reset a connection closed with an unread POST body,
+            # hiding an otherwise valid 400/403 response. Discard only a small,
+            # declared body after rejection; never parse or act on it.
+            if self.command == "POST" and not getattr(self, "body_consumed", False):
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if 0 < length <= 4096 and not self.headers.get("Transfer-Encoding"):
+                        previous = self.connection.gettimeout()
+                        try:
+                            self.connection.settimeout(1)
+                            self.rfile.read(length)
+                        finally:
+                            self.connection.settimeout(previous)
+                except (ValueError, OSError):
+                    self.close_connection = True
             body = dumps(value).encode() if isinstance(value, (dict, list)) else value
             self.send_response(status)
             self.send_header("Content-Type", kind)
@@ -1081,7 +1097,9 @@ def handler(state):
                     length=int(self.headers.get("Content-Length","0"))
                     if not 0 < length <= 1024 or self.headers.get("Transfer-Encoding") or self.headers.get("Content-Type","").split(";")[0] != "application/json":
                         raise ValueError("INVALID_REQUEST")
-                    body=json.loads(self.rfile.read(length))
+                    raw=self.rfile.read(length)
+                    self.body_consumed=True
+                    body=json.loads(raw)
                     return self.respond(200,state.record_withdrawal(body))
                 except (ValueError,TypeError) as exc:
                     reasons={"INVALID_AMOUNT","POSITIVE_AMOUNT_REQUIRED","INVALID_RECORD_ID","INVALID_WITHDRAWAL_DATE","FUTURE_WITHDRAWAL_DATE","CAPITAL_NOT_CONFIGURED","WITHDRAWAL_ID_CONFLICT","WITHDRAWAL_LIMIT"}

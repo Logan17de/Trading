@@ -7,7 +7,7 @@ The active owner policy is premium v3; historical v1/v2 studies are provenance.
 ## Architecture
 
 Oracle hosts the existing five-second read-only Groww collector, SQLite journal,
-premium policy monitor, independent RBI/ET news and visual mail outbox. The PC
+premium policy monitor, read-only basket preparation and visual mail outbox. The PC
 loopback app displays/control-requests Oracle through private SSH and a fixed
 Unix-socket client; no public trading port. Keep Oracle running continuously for
 Qwen/Colab/mail/tunnels. The old trader remains disabled and paused.
@@ -17,6 +17,14 @@ windows and faults retain On but separately block trading readiness. The actual
 broker executor is unfinished: On must never be described as trading activated.
 Only Everyday and Late-session appear in strategy results. Manual/unknown/mixed
 contracts remain protected. Read exact premium/expiry/roll/stop rules in the guide.
+Owner retired news on October 5: no active fetch worker, entry gate or news UI.
+The noon API/VM automation was updated to preserve that choice.
+Read docs/EXECUTION_PREPARATION.md. The independent minute worker samples actual
+chain/master/books and hypothetical basket/hedge/exit margin/cost calculations.
+It labels sampled scope; a prepared comparison is never an order or global optimum.
+PreparedOrderGateway is replay-only, persists intent before a simulated write and
+reconciles original references/fills without duplicating uncertain submissions.
+Real broker transport remains rejected; the pause and actual owner Off are retained.
 
 ## Display/accounting
 
@@ -74,9 +82,11 @@ pause markers. SQLite backups use its backup API; restore only to a new path.
 
 ## Remaining blockers
 
-Real broker execution, initial protective orders, two-leg partial-fill/crash
-recovery, actual margin/quoted candidate ranking and execution replay sessions
-remain unfinished. No validated profit probability or guaranteed income exists.
+Real broker execution, persistent protective orders and generated-child ownership,
+replacement/roll/exit orchestration and actual execution sessions remain unfinished.
+Standard-order uncertain-write recovery and bounded margin ranking now have
+synthetic tests; these are not proof of live persistent broker protection.
+No validated profit probability or guaranteed income exists.
 Windows reboot/sign-in and external cloud monitoring are unverified. Inbox
 receipt requires mailbox evidence even after provider reports delivery. Dated
 status records actual tests, deployment and receipts, separately from schedules.

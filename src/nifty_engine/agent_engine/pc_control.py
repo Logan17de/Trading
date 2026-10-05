@@ -103,7 +103,7 @@ class PcJournal:
         if not isinstance(slot, str) or not 1 <= len(slot) <= 80 or not SYMBOL.fullmatch(symbol) or side not in ("BUY", "SELL"):
             raise ValueError("invalid engine intent")
         positive_int(quantity)
-        if strategy not in ("EVERYDAY", "SWING", "UNSPECIFIED"):
+        if strategy not in ("EVERYDAY", "LATE_SESSION", "SWING", "UNSPECIFIED"):
             raise ValueError("known strategy attribution required")
         reference = "GT" + uuid.uuid4().hex[:18]
         with self.store.transaction() as db:
@@ -431,7 +431,10 @@ class PcMonitor:
             "manual_trade_policy":"MANUAL_OR_UNKNOWN_PROTECTED", "everyday":None,
             "blockers":["ORACLE_EXECUTION_NOT_DEPLOYED","REPOSITORY_PAUSED"],
             "hedge_reference":cfg["hedge_reference"], "expiry_check":{},"levels":{},"requests":[]}
-        news = self.news.snapshot(now)
+        from . import premium_strategy
+        premium_policy = premium_strategy.load(self.root)
+        news = (self.news.snapshot(now) if not premium_policy else
+                {"status":"RETIRED_BY_OWNER","risk":"UNKNOWN","articles":[]})
         status["news"] = {k:v for k,v in news.items() if k not in ("articles", "fingerprint", "evidence_ids")}
         status["news"]["article_count"] = len(news["articles"])
         status["slot"] = self.journal.slot_status()
@@ -459,8 +462,6 @@ class PcMonitor:
             status["expiry_check"][index] = {"is_expiry_day":expiry_day,
                 "status":"SKIP_EXPIRY_DAY" if expiry_day else "NON_EXPIRY_DAY" if valid else "UNKNOWN_BLOCKED",
                 "source":"GROWW_EXPIRIES_AND_CURRENT_INSTRUMENT_MASTER" if valid else None}
-        from . import premium_strategy
-        premium_policy = premium_strategy.load(self.root)
         if premium_policy:
             status["strategy_rules"] = premium_policy
             status["owner_intent"] = premium_strategy.intent(self.journal.store)

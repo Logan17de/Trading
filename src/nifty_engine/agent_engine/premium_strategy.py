@@ -81,12 +81,12 @@ def readiness(policy, now, *, paused=True, offline=False, fresh=False, news_risk
     if not fresh:blockers.append("FRESH_MARKET_DATA_REQUIRED")
     if not entry_window(now):blockers.append("OUTSIDE_1400_1900_JST")
     if policy["maximum_lots"] is None:blockers.append("MAXIMUM_LOTS_REQUIRED")
-    if news_risk != "LOW":blockers.append("NEWS_HIGH_UNKNOWN_OR_STALE")
     return {"status":"ON_BLOCKED" if desired_enabled else "OFF","desired_enabled":desired_enabled,
         "execution_enabled":False,"broker_writes":False,
         "blockers":blockers,"index":preferred_index(now),"window_open":entry_window(now),
         "policy_version":policy["format"],"maximum_lots":policy["maximum_lots"],
-        "stop_loss_inr":policy["loss_stop_inr"],"stop_status":"NOT_DEPLOYED_TRIGGER_NOT_GUARANTEED_LOSS_CAP"}
+        "stop_loss_inr":policy["loss_stop_inr"],"stop_status":"NOT_DEPLOYED_TRIGGER_NOT_GUARANTEED_LOSS_CAP",
+        "news_required":False}
 
 
 def everyday_review(policy, position, now, *, end_of_day=False):

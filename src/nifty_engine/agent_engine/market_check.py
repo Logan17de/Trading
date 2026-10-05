@@ -40,12 +40,14 @@ def safe_error(exc):
             "code": code if re.fullmatch(r"(?:GA[0-9]{3}|[0-9]{3})", code) else None}
 
 
-def allowed_request(method, url, *, history=False, dashboard=False):
+def allowed_request(method, url, *, history=False, dashboard=False, calculations=False):
     parsed = urlsplit(url)
     if dashboard and method.upper() == "GET" and url == "https://growwapi-assets.groww.in/instruments/instrument.csv":
         return True
     if (parsed.scheme, parsed.netloc) != ("https", "api.groww.in") or parsed.fragment:
         return False
+    if calculations and method.upper() == "POST" and parsed.path == "/v1/margins/detail/orders" and not parsed.query:
+        return True  # Broker's hypothetical basket calculation, not order submission.
     read_paths = {"/v1/live-data/quote", "/v1/live-data/ltp", "/v1/historical/expiries", "/v1/user/detail"}
     if history:
         read_paths.update({"/v1/historical/candles", "/v1/historical/contracts"})
@@ -60,13 +62,13 @@ def allowed_request(method, url, *, history=False, dashboard=False):
 
 
 @contextlib.contextmanager
-def readonly_transport(audit, *, history=False, dashboard=False, deadline=None, timeout_seconds=15):
+def readonly_transport(audit, *, history=False, dashboard=False, calculations=False, deadline=None, timeout_seconds=15):
     """Guard this single-purpose process against order writes and auth redirects."""
     import requests
     original = requests.sessions.Session.request
 
     def guarded(session, method, url, **kwargs):
-        if not allowed_request(method, url, history=history, dashboard=dashboard):
+        if not allowed_request(method, url, history=history, dashboard=dashboard, calculations=calculations):
             raise PermissionError("request outside read-only diagnostic scope")
         kwargs["allow_redirects"] = False
         kwargs["timeout"] = timeout_seconds

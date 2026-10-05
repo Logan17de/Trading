@@ -33,6 +33,7 @@ class Runtime:
         self.mail=DailyMail(self.state.pnl_lines.store);self.next_mail=0
         self.mail_state={"status":"SCHEDULED_BY_1930_JST","provider_accepted":False,"inbox_verified":False}
         self.output=self.state.directory/"market-check-oracle-live.json"
+        self.preparer=None
 
     def read(self):
         view=self.state.read()
@@ -42,6 +43,8 @@ class Runtime:
             "heartbeat_at":self.at,"error":self.error,"orders_enabled":False,"collector_host":"ORACLE"}
         view["runtime"]["initializing"]=self.sequence==1
         view["daily_email"]=self.mail_state
+        view["execution_preparation"]=self.state.pnl_lines.store.meta("premium-preparation",
+            {"status":"WAIT","reason":"PREPARATION_NOT_STARTED","execution_enabled":False,"broker_writes":False})
         return view
 
     def command(self,value):
@@ -64,9 +67,26 @@ class Runtime:
         market=GrowwMarketData(token)
         self.collector=DashboardCollector(market,background_history=True,journal=self.state.monitor.journal,
             smart_loader=SmartOrderReader(market.groww,market.limiter))
-        self.collector.news_loader=lambda:self.state.monitor.news.snapshot(datetime.now(timezone.utc))
+        self.collector.news_loader=None
         self.collector.account_loader=lambda:None
+        from .execution_data import GrowwPreparation
+        self.preparer=GrowwPreparation(market,self.state.monitor.journal)
         self.token_day=now.date()
+
+    def preparation_loop(self):
+        # Analytical margin POSTs share the process's read-only HTTP guard. They
+        # cannot place, cancel, modify or arm broker orders. Never stall collection.
+        from . import premium_strategy
+        from .dashboard import load_json
+        while not self.stop.wait(60):
+            preparer=self.preparer
+            if preparer:
+                try:
+                    preparer.safe_check(load_json(self.output,8_000_000),premium_strategy.load(self.root))
+                except Exception:
+                    self.state.pnl_lines.store.set_meta("premium-preparation",{"status":"WAIT",
+                        "reason":"PREPARATION_INPUT_UNAVAILABLE","at":datetime.now(timezone.utc).isoformat(),
+                        "execution_enabled":False,"broker_writes":False,"selected":None})
 
     def report_loop(self):
         while not self.stop.wait(30):
@@ -82,11 +102,11 @@ class Runtime:
             except Exception as exc:self.mail_state={"status":"REPORT_"+type(exc).__name__,"provider_accepted":False,"inbox_verified":False}
 
     def run(self):
-        threading.Thread(target=self.state.monitor.news.run,args=(self.stop,),daemon=True).start()
         threading.Thread(target=self.report_loop,daemon=True).start()
         with open(os.devnull,"w") as muted,contextlib.redirect_stdout(muted),contextlib.redirect_stderr(muted):
             logging.disable(logging.CRITICAL)
-            with readonly_transport([],history=True,dashboard=True,timeout_seconds=5):
+            with readonly_transport([],history=True,dashboard=True,calculations=True,timeout_seconds=5):
+                threading.Thread(target=self.preparation_loop,daemon=True).start()
                 while not self.stop.is_set():
                     started=time.monotonic();now=datetime.now(timezone.utc)
                     try:
@@ -109,6 +129,7 @@ class Runtime:
                         self.next_auth=now.timestamp()+60
                         if self.collector:self.collector.close()
                         self.collector=None
+                        self.preparer=None
                         write_snapshot(self.output,{"finished_at":now.isoformat(),"status":"BLOCKED","failure":self.error,"order_capability":False})
                     self.sequence+=1;self.at=datetime.now(timezone.utc).isoformat()
                     self.stop.wait(max(0,5-(time.monotonic()-started)))

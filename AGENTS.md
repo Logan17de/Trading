@@ -36,8 +36,13 @@
   Never infer withdrawals from broker balances or count API fees again in P&L.
   The protected Record withdrawal action is bookkeeping, never a money transfer.
   Keep owner capital amounts and ledger exports out of Git.
-- Independent RBI/ET evidence remains dated and truthful. Missing/stale mandatory
-  sources stay UNKNOWN. Do not relax freshness automatically. No news entries.
+- Owner retired news on October 5. No active news collection, news entries or
+  news entry gate for premium v3. Preserve historical evidence for provenance.
+  GrowwPreparation independently compares actual books and hypothetical broker
+  basket/hedge/exit calculations, with explicit sampled scope; never calls order
+  methods. PreparedOrderGateway is replay-only and rejects a real broker even
+  if someone removes the pause or switches the owner preference On. Persistent
+  broker protection, generated-child ownership and live execution remain blocked.
 - Visual daily email at 19:30 JST every calendar day, minimal words, existing
   approved sender/recipient. Retry frozen content without changing trading state.
   Distinguish provider acceptance, recipient-server acceptance and inbox evidence.

@@ -24,8 +24,9 @@ Late-session only.
 Three strike intervals do not mean three lots/positions. Weekday routing never
 proves expiry. At/after 19:00, roll proposals wait for the next window.
 
-These are deterministic **review proposals**, not broker orders. Real margin/book
-ranking, initial protective-order placement, partial-fill/crash reconciliation and
-live execution remain unfinished. A payoff bound is not expected profit; no
-validated net-profit probability exists. Independent news evidence remains
-truthful UNKNOWN when missing/stale; there are no news-based entry strategies.
+These are deterministic **review proposals**, not broker orders. Bounded actual
+book/margin preparation and a replay-only durable order gateway are implemented;
+see EXECUTION_PREPARATION.md. Persistent protective-order/child-fill integration,
+roll/exit orchestration and real execution remain unfinished. A payoff bound is
+not expected profit; no validated net-profit probability exists. The owner retired
+news workers and news entry requirements on October 5.
