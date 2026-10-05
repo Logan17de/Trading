@@ -26,6 +26,7 @@ from .contracts import EXCHANGES, INDICES, IST, dumps, keys, number, stamp
 from .market_check import SDK_VERSION, finite, quote_summary, read_credentials, readonly_transport, safe_error
 from .owner_study import validate_protocol
 from .pc_control import JST, PcJournal, PcMonitor, collection_window, in_window
+from . import broker_pnl
 
 ASSETS = Path(__file__).with_name("dashboard_assets")
 STRATEGIES = (
@@ -238,6 +239,8 @@ def view_model(snapshot, protocol, account=None, *, now=None):
                 "quantity":quantity, "price_levels":public_price_levels(item),
                 "protective_levels_status":item.get("protective_levels_status") if item.get("protective_levels_status")
                     in ("AVAILABLE", "UNAVAILABLE") else "UNAVAILABLE",
+                "open_pnl_inr":finite(item.get("open_pnl_inr")) if age is not None and 0 <= age <= 15 else None,
+                "pnl_bucket":item.get("pnl_bucket") if item.get("pnl_bucket") in broker_pnl.BUCKETS else "unassigned",
                 "ownership":item.get("ownership") if item.get("ownership") in
                     ("ENGINE_VERIFIED","ENGINE_PENDING_VERIFIED") else "MANUAL_OR_UNKNOWN_PROTECTED"})
         markets.append({"index": index, "price": last, "change": change,
@@ -253,7 +256,8 @@ def view_model(snapshot, protocol, account=None, *, now=None):
     return {"format": "trading-dashboard-v1", "demo": False, "as_of": received,
         "freshness": "NO_DATA" if age is None else "FUTURE" if age < 0 else "RECENT" if age <= 15 else "STALE",
         "source": "Groww · read-only", "market_day": stamp(received).astimezone(IST).date().isoformat() if received else None,
-        "markets": markets, "account": acct, "funds":public_funds(snapshot,now), "strategies": strategies,
+        "markets": markets, "account": acct, "funds":public_funds(snapshot,now),
+        "broker_pnl":broker_pnl.public(snapshot.get("broker_pnl"),now), "strategies": strategies,
         "orders_status": snapshot.get("orders_status") if snapshot.get("orders_status") in ("AVAILABLE","INCOMPLETE","UNAVAILABLE") else "UNAVAILABLE",
         "positions_status": snapshot.get("positions_status") if snapshot.get("positions_status") in
             ("AVAILABLE", "UNAVAILABLE") else "UNAVAILABLE",
@@ -519,6 +523,7 @@ class DashboardCollector:
         self.smart_loader = smart_loader
         from .session import SessionJournal
         self.sessions = SessionJournal(journal.store) if journal else None
+        self.pnl_journal = broker_pnl.PnlJournal(journal.store) if journal else None
         self.account_loader = None
         self.news_loader = None
         self.funds, self.funds_next_at = {}, 0
@@ -709,6 +714,14 @@ class DashboardCollector:
                       cycle_duration_seconds=(finished-started).total_seconds(),
                       status="READ_ONLY_DATA_AVAILABLE" if all(probes[key + "_quote"]["ok"] for key in INDICES)
                       else "PARTIAL_MARKET_DATA")
+        owners = self.journal.pnl_owners(orders,positions,complete=complete) if self.journal else {}
+        result["broker_pnl"], legs = broker_pnl.summarize(positions,ordered,owners,now=finished,
+            received_at=probes["positions"]["received_at"], complete=complete and result["positions_status"] == "AVAILABLE")
+        for option in ordered:
+            option["open_pnl_inr"] = legs.get((option["symbol"],option["side"]))
+            option["pnl_bucket"] = owners.get(option["symbol"],"unassigned")
+        if self.pnl_journal:
+            self.pnl_journal.record(result["broker_pnl"],finished)
         if self.sessions:
             try:
                 self.sessions.record(result,finished)
@@ -816,6 +829,7 @@ class DashboardState:
         line_store = self.monitor.journal.store if self.monitor else PcJournal(self.root/".agent-state/pc-monitor.sqlite3").store
         SessionJournal(line_store)
         self.observed_lines = ObservedLines(line_store)
+        self.pnl_lines = broker_pnl.PnlJournal(line_store)
         self.snapshot = None
         self.stop_event = threading.Event()
         self.background_thread = None
@@ -866,6 +880,13 @@ class DashboardState:
             result["freshness"] = "NO_DATA" if age is None else "FUTURE" if age < 0 else "RECENT" if age <= 15 else "STALE"
             result.update(refreshing=self.refreshing, refresh_error=self.last_error, offline=self.offline)
             result["funds"] = public_funds(self.snapshot or {}, datetime.now(timezone.utc))
+            current = datetime.now(timezone.utc)
+            result["broker_pnl"] = broker_pnl.public((self.snapshot or {}).get("broker_pnl"),current)
+            result["broker_pnl"]["series"] = self.pnl_lines.series(current)
+            if result["broker_pnl"]["status"] != "AVAILABLE":
+                for market in result["markets"]:
+                    for option in market["options"]:
+                        option["open_pnl_inr"] = None
             result["background_monitor"] = self.background
             if self.monitor:
                 result["control"] = self.monitor.tick(self.snapshot,load_json(protocol_path,16384),datetime.now(timezone.utc))

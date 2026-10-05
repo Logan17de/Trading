@@ -15,11 +15,38 @@ runbook.
 | Historical study | 17,105 one-minute candles per index; 51,315 total; 41 observed sessions per index | Index moves are not option P&L; source identity/timestamp semantics remain unverified |
 | Owner protocol | Four reproducible hypotheses plus PC v2: NIFTY +500 Mon/Tue/Fri, SENSEX +1000 Wed/Thu, higher-call hedge ranked by supplied net-profit/margin | One slot/lot; exact expiry, costs, current books and executable plan remain unverified |
 | Call-spread comparison | Higher-strike hedge, equal units, payoff/cost arithmetic, separate broker margin and optional budget ranking at fixed quantity | Owner-supplied inputs; no loss cap, quote verification, hedge selection or order submission |
-| Runtime tests | 195 passed locally, four POSIX-only skips; live-line recovery/filtering and parallel-read coordination added to the retained suite | Functional verification is not strategy validation |
+| Runtime tests | 210 passed locally, four POSIX-only skips; actual P&L calculation, attribution, freshness and restart/day-rollover checks added | Functional verification is not strategy validation |
 | Offline demo | Two persisted analysis jobs and HTML/text/MIME/PNG artifacts | Synthetic inputs and fake analyst; no email sent |
 | SQLite operations | Backup API and restore-to-new-path preserved state/report identity | Automated off-host backups and retention are not installed |
 
 ## October 5 active-position charts and revised rule
+
+### Today's P&L: Self and Algo
+
+Installed locally on October 5: a full-width line chart of actual observed daily
+index-option P&L, with separate Self and Algo totals, realized/open breakdowns,
+and per-active-leg open P&L next to the option price. Groww's `realised_pnl` for
+the three closed contracts matched the owner website; the latest open long and
+short signed quantities, averages and quotes reconciled with the displayed total.
+The source is the existing read-only position/quote collector. See the
+[Groww portfolio field documentation](https://groww.in/trade-api/docs/python-sdk/portfolio).
+
+Amounts are **before charges**, not reviewed net income. Self includes trades
+outside this engine's journal, including external tools. Algo requires the exact
+reserved reference, acknowledged broker identity, matching fills and reconciled
+position quantity. Mixed symbols stay Unassigned; classification grants no
+execution authority. Pending and closed positions still create no option charts.
+The current Algo line is zero because no engine orders have been placed.
+
+The existing private SQLite DB records only whitelisted numerical totals and
+observation times; first actual P&L points are from 13:54 JST on October 5.
+There is no earlier manufactured curve. Restart recovery, day rollover, null
+failure gaps, missing quotes, duplicate rows, stale cached leg amounts and exact/
+mixed attribution are tested. Unknown carry-day accounting, unsupported F&O
+contracts and incomplete/stale reads keep totals unknown. Strategy performance
+and portfolio value continue to require the private reviewed ledger after costs.
+Configuration, JS syntax and offline demo passed. No real order, broker change,
+Oracle deployment or trading activation occurred.
 
 ### Live chart movement and refresh
 

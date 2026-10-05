@@ -182,6 +182,44 @@ class PcJournal:
                 or self.store.read("SELECT symbol FROM pc_protected WHERE symbol=?", (symbol,))):
             raise ValueError("manual or unverified order is protected")
 
+    def pnl_owners(self, orders, positions, *, complete):
+        """Accounting attribution only. Never grants permission to manage a trade.
+
+        Self means outside this engine's journal (including external trades).
+        Mixed symbols cannot be apportioned from a netted broker position.
+        """
+        symbols = {r.get("trading_symbol") for r in positions if isinstance(r,dict)}
+        if not complete:
+            return {s:"unassigned" for s in symbols if isinstance(s,str)}
+        stored = self.store.read("SELECT * FROM pc_orders")
+        protected = {r["symbol"] for r in self.store.read("SELECT symbol FROM pc_protected")}
+        result = {}
+        for symbol in symbols:
+            if not isinstance(symbol,str) or not SYMBOL.fullmatch(symbol):
+                continue
+            engine = [r for r in stored if r["symbol"] == symbol]
+            if not engine:
+                result[symbol] = "self"
+                continue
+            current = [r for r in orders if isinstance(r,dict) and r.get("trading_symbol") == symbol]
+            exact = bool(current) and symbol not in protected
+            refs = {r["reference"]:r for r in engine}
+            for order in current:
+                owned = refs.get(order.get("order_reference_id")) if isinstance(order.get("order_reference_id"),str) else None
+                filled = order.get("filled_quantity")
+                exact &= (owned is not None and isinstance(order.get("groww_order_id"),str)
+                    and owned["broker_hash"] == digest(order["groww_order_id"])
+                    and owned["side"] == order.get("transaction_type") and owned["quantity"] == order.get("quantity")
+                    and type(filled) is int and owned["filled"] == filled and 0 <= filled <= owned["quantity"])
+            net = sum(r["filled"]*(1 if r["side"] == "BUY" else -1) for r in engine)
+            broker_rows = [r for r in positions if r.get("trading_symbol") == symbol]
+            quantities = [r.get("quantity") for r in broker_rows]
+            exact &= all(type(q) is int for q in quantities) and sum(q for q in quantities if type(q) is int) == net
+            # Multiple products can net out differently; do not split them by symbol.
+            exact &= len(broker_rows) == 1 and any(r["filled"] > 0 and r["broker_hash"] for r in engine)
+            result[symbol] = "algo" if exact else "unassigned"
+        return result
+
     def enqueue(self, key, payload, now):
         request = dict(payload, request_id=key, snapshot_id=identity(payload), now=now.isoformat())
         with self.store.transaction() as db:

@@ -22,7 +22,13 @@
   charts. Plot the broker position average entry and matched pending SL/active OCO or GTT exits
   target/SL, including partial coverage; unknown prices stay absent. No recorded
   losses means 100% non-loss only when completed trades exist; absent results stay
-  unknown. Account/strategy P&L needs the private reviewed ledger, never index moves.
+  unknown. Today's index-option P&L uses actual Groww realised_pnl plus signed
+  open quantity * (LTP - position average), explicitly before charges. Self means
+  non-journal trades; Algo requires exact acknowledged journal identities and
+  reconciled fills. Mixed/unverified engine symbols stay Unassigned. Incomplete,
+  stale, unsupported or overnight rows with an unverified daily basis keep the
+  total unknown. Persist real observed P&L points in SQLite; never backfill values.
+  Strategy net results and portfolio value still need the private reviewed ledger.
 - Use the local PC for read-only Groww observation and strategy research. Oracle
   is the intended later execution host; execution remains unfinished and inactive.
 - Support/resistance research starts at 12:55 JST. Fresh barrier crossings queue

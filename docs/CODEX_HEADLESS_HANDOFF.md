@@ -48,6 +48,20 @@ unchanged. No strategy has a validated net-profit probability or executable plan
 
 ## Implemented and verified
 
+- October 5 today's P&L is installed in the local app, with separate Self and
+  verified Algo lines and an open-P&L amount beside each active option chart.
+  Actual Groww realized values include closed contracts; open P&L uses signed
+  quantity and current LTP/average. This is gross index-option P&L before charges,
+  separate from reviewed net strategy accounting. Non-journal trades are Self;
+  exact reserved/acknowledged identities and reconciled fills establish Algo.
+  Mixed engine/manual symbols stay Unassigned. Incomplete/stale reads and
+  unverified overnight daily accounting remain unknown. SQLite preserves actual
+  observations across restarts; the October 5 chart starts at 13:54 JST, without
+  synthesizing earlier P&L. Actual Edge totals reconciled with both open legs;
+  Groww's closed-position realized values matched the website. No broker writes.
+  The retained suite now passes 210 tests locally with four POSIX-only skips;
+  configuration, JS syntax and offline demo pass.
+
 - October 5 chart readability update reuses the existing local assets: responsive
   SVG geometry, a fixed thin price stroke, readable axes, labelled entry/SL/target
   lines, latest plotted-price badge, hover crosshair and Session/30-minute/15-minute
