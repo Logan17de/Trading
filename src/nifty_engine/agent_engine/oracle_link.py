@@ -61,6 +61,29 @@ def health(runtime, now, *, previous=None, progress_at=None):
     return state,identity,progress_at
 
 
+def revalidate(view,now):
+    """Every response rechecks each provider clock, including cached VM views."""
+    from .broker_pnl import public
+    series=view.get("broker_pnl",{}).get("series",[])
+    view["broker_pnl"]=dict(public(view.get("broker_pnl"),now),series=series)
+    def current(at,limit):
+        try:return 0<=(now-stamp(at)).total_seconds()<=limit
+        except (ValueError,TypeError):return False
+    funds=view.get("funds",{})
+    if not current(funds.get("received_at"),45):
+        funds["status"]="STALE"
+        for k in funds:
+            if k.endswith("_inr"):funds[k]=None
+    for market in view.get("markets",[]):
+        if not current(market.get("received_at"),15):
+            for k in ("price","change","change_pct","high","low"):market[k]=None
+        for option in market.get("options",[]):
+            if not current(option.get("received_at"),15):
+                for k in ("last_price","bid","ask","open_pnl_inr"):option[k]=None
+            if view["broker_pnl"]["status"]!="AVAILABLE":option["open_pnl_inr"]=None
+    return view
+
+
 def notify(root, status, incident_id):
     """Independent Windows mail key is DPAPI protected; values never leave this pipe."""
     helper=Path(root)/"scripts/Send-TradingAlert.ps1"
@@ -109,6 +132,7 @@ class RemoteViewer:
         now=datetime.now(timezone.utc)
         with self.lock:view=copy.deepcopy(self.cache)
         if view is None:view=view_model(None,load_json(self.root/"config/owner_strategies.json"),now=now)
+        revalidate(view,now)
         at=view.get("as_of")
         fresh=bool(at and 0<=(now-stamp(at)).total_seconds()<=15 and self.status=="HEALTHY")
         view.update(source="Oracle VM · Groww read-only",background_monitor=True,offline=False,

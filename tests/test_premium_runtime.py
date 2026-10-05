@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from nifty_engine.agent_engine import premium_strategy as p
 from nifty_engine.agent_engine.pc_control import JST,PcJournal
-from nifty_engine.agent_engine.oracle_link import health,request,RemoteViewer
+from nifty_engine.agent_engine.oracle_link import health,request,RemoteViewer,revalidate
 from nifty_engine.agent_engine.visual_report import build,DailyMail
 from nifty_engine.agent_engine.dashboard import view_model,DashboardState
 
@@ -118,6 +118,16 @@ def test_visual_report_has_only_active_strategies_real_curves_and_unknowns():
     assert 'Everyday' in bundle['mail']['html'] and 'Late-session' in bundle['mail']['html']
     assert not bundle['mail']['attachments']
     assert 'before charges' in bundle['mail']['html']
+
+def test_cached_vm_response_rechecks_independent_money_quote_and_pnl_clocks():
+    view=model();view['as_of']=NOW.isoformat()
+    view['funds'].update(status='AVAILABLE',clear_cash_inr=9999,received_at=(NOW-timedelta(seconds=46)).isoformat())
+    view['markets'][0].update(price=25000,received_at=(NOW-timedelta(seconds=16)).isoformat())
+    view['broker_pnl']['series']=[{'at':NOW.isoformat(),'self':10,'algo':0,'unassigned':0}]
+    revalidate(view,NOW)
+    assert view['funds']['clear_cash_inr'] is None and view['funds']['status']=='STALE'
+    assert view['markets'][0]['price'] is None
+    assert view['broker_pnl']['total_inr'] is None and len(view['broker_pnl']['series'])==1
 
 def test_remote_outage_is_deduplicated_and_retries_without_mutating_intent(tmp_path):
     (tmp_path/'.agent-state').mkdir()

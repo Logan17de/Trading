@@ -36,6 +36,8 @@ class Runtime:
 
     def read(self):
         view=self.state.read()
+        from .oracle_link import revalidate
+        revalidate(view,datetime.now(timezone.utc))
         view["runtime"]={"host":"ORACLE","boot_id":self.boot_id,"heartbeat_sequence":self.sequence,
             "heartbeat_at":self.at,"error":self.error,"orders_enabled":False,"collector_host":"ORACLE"}
         view["runtime"]["initializing"]=self.sequence==1
