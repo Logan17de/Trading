@@ -142,3 +142,17 @@ def test_remote_outage_is_deduplicated_and_retries_without_mutating_intent(tmp_p
     assert remote.poll(NOW+timedelta(seconds=31),fetch=failed,alert=alert)=='VM_UNREACHABLE'
     remote.poll(NOW+timedelta(seconds=100),fetch=failed,alert=alert)
     assert len(alerts)==1 and p.intent(store)['enabled']
+
+def test_heartbeat_clock_is_checked_after_ssh_response_not_before(tmp_path,monkeypatch):
+    import nifty_engine.agent_engine.oracle_link as link
+    (tmp_path/'.agent-state').mkdir()
+    cfg={'format':'trading-oracle-viewer-v1','host':'example.test','user':'ubuntu',
+         'identity_file':str((tmp_path/'key').resolve()),'python':'/opt/growing-trader/releases/'+'a'*40+'/venv/bin/python','root':'/var/lib/trading-observer'}
+    (tmp_path/'.agent-state/oracle-viewer.json').write_text(json.dumps(cfg))
+    remote=RemoteViewer(tmp_path,PcJournal(tmp_path/'j.sqlite3').store)
+    current=[NOW]
+    monkeypatch.setattr(link,'datetime',SimpleNamespace(now=lambda tz:current[0]))
+    def fetch(*args):
+        current[0]=NOW+timedelta(seconds=5)
+        return {'runtime':{'boot_id':'boot','heartbeat_sequence':2,'heartbeat_at':(NOW+timedelta(seconds=3)).isoformat()}}
+    assert remote.poll(fetch=fetch,alert=lambda *args:pytest.fail('false alert'))=='HEALTHY'

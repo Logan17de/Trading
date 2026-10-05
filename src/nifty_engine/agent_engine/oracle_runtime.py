@@ -92,7 +92,11 @@ class Runtime:
                             write_snapshot(self.output,value)
                             if value.get("status")=="BLOCKED" or any(r.get("code")=="403" for r in value.get("probes",{}).values()):
                                 raise ConnectionError("read unavailable")
-                        self.state.read()
+                        # Collection already persists observations. Building full
+                        # chart views here duplicates SSH-reader work and delays ticks.
+                        if self.collector:
+                            from .dashboard import load_json
+                            self.state.monitor.tick(value,load_json(self.root/"config/owner_strategies.json",16384),datetime.now(timezone.utc))
                         self.error=None
                     except Exception as exc:
                         self.error=safe_error(exc)

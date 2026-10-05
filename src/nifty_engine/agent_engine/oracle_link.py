@@ -103,14 +103,17 @@ class RemoteViewer:
         self.incident=None; self.alert_status=None
 
     def poll(self, now=None, *, fetch=request, alert=notify):
+        fixed_clock=now is not None
         now=now or datetime.now(timezone.utc)
         try:
             view=fetch(self.config,{"action":"read"})
+            if not fixed_clock:now=datetime.now(timezone.utc)
             state,self.previous,self.progress_at=health(view.get("runtime",{}),now,
                 previous=self.previous,progress_at=self.progress_at)
             with self.lock:self.cache=view
             self.failed_since=None
         except Exception:
+            if not fixed_clock:now=datetime.now(timezone.utc)
             self.failed_since=self.failed_since or now.timestamp()
             state="VM_UNREACHABLE" if now.timestamp()-self.failed_since>=30 else "RECONNECTING"
         if state in ("VM_UNREACHABLE","WORKER_STUCK","INVALID_HEARTBEAT"):
