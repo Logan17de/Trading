@@ -17,6 +17,7 @@ def build(view, day):
             for k in ("price","change","change_pct"):market[k]=None
     esc=lambda v:html.escape(str(v))
     money=lambda v:"—" if v is None else f"₹{v:,.2f}"
+    level=lambda v:"—" if v is None else f"{v:,.2f}"
     attachments=[]
     def image(name, rows, color, width=620, height=170):
         points=[]
@@ -30,12 +31,14 @@ def build(view, day):
         first=stamp(rows[0]["at"]).astimezone(JST).strftime("%H:%M")
         last=stamp(rows[-1]["at"]).astimezone(JST).strftime("%H:%M")
         values=[v for _,v in points if v is not None]
-        return f'<img src="cid:{name}" width="{width}" style="width:100%;height:auto" alt="{name}"><div style="font-size:10px;color:#587287">{first}–{last} JST · {money(min(values))}–{money(max(values))}</div>'
+        fmt=level if name.startswith("index-") else money
+        unit=" pts" if name.startswith("index-") else ""
+        return f'<img src="cid:{name}" width="{width}" style="width:100%;height:auto" alt="{name}"><div style="font-size:10px;color:#587287">{first}–{last} JST · {fmt(min(values))}–{fmt(max(values))}{unit}</div>'
     def tile(title,value,sub="",color="#18334b"):
         return f'<td width="50%" style="padding:16px;background:#f4faf8;border:4px solid white;border-radius:12px"><div style="font-size:12px;color:#587287">{esc(title)}</div><div style="font-size:27px;font-weight:bold;color:{color}">{esc(value)}</div><div style="font-size:11px;color:#587287">{esc(sub)}</div></td>'
     pnl=view.get("broker_pnl",{}); buckets=pnl.get("buckets",{}); funds=view.get("funds",{})
     series=[r for r in pnl.get("series",[]) if stamp(r["at"]).astimezone(JST).date().isoformat()==day]
-    cards=tile("Today · before charges",money(pnl.get("total_inr")),pnl.get("status","UNKNOWN"))
+    cards=tile("Today · before charges",money(pnl.get("total_inr")),f'Realised {money(pnl.get("realized_inr"))} · Open {money(pnl.get("unrealized_inr"))} · Closed contracts {pnl.get("closed_contracts") if pnl.get("closed_contracts") is not None else "—"}')
     cards+=tile("Clear cash",money(funds.get("clear_cash_inr")),funds.get("received_at") or "Unknown")
     split=tile("Self",money(buckets.get("self",{}).get("total_inr")),"Non-journal trades", "#007da6")
     split+=tile("Algo",money(buckets.get("algo",{}).get("total_inr")),"Exact journal ownership", "#069e62")
@@ -46,7 +49,7 @@ def build(view, day):
         images+=f'<div style="margin:16px 0"><b style="font-size:13px">{esc(b.title())} · observed P&amp;L</b>'+image("pnl-"+b,rows,color)+"</div>"
     markets=""; positions=[]
     for m in view.get("markets",[]):
-        markets+=f'<td width="33%" style="padding:12px;background:#f8fbfc;border:3px solid white"><b>{esc(m["index"])}</b><div style="font-size:21px;margin:8px 0">{esc(money(m.get("price")))}</div>'+image("index-"+m["index"],m.get("series",[]),(6,158,98),200,90)+"</td>"
+        markets+=f'<td width="33%" style="padding:12px;background:#f8fbfc;border:3px solid white"><b>{esc(m["index"])}</b><div style="font-size:21px;margin:8px 0">{esc(level(m.get("price")))}</div>'+image("index-"+m["index"],m.get("series",[]),(6,158,98),200,90)+"</td>"
         for o in m.get("options",[]):
             entry=next((p.get("price") for p in o.get("price_levels",[]) if p.get("kind")=="ENTRY"),None)
             owner="Algo" if o.get("ownership")=="ENGINE_VERIFIED" else "Self / protected"
