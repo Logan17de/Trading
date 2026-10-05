@@ -30,6 +30,12 @@
   charges. Split Self / exact Algo / Unassigned. Persist actual points; stale,
   incomplete or unverified carry-day basis stays unknown. Cash is not investment
   value. Net strategy returns require reviewed ledger; no outcomes means unknown.
+- Capital is an independent owner-declared ledger in private Oracle SQLite meta
+  `capital-ledger-v1`: investment minus recorded withdrawals minus monthly API
+  fees. Fee months accrue once on the first JST day, with downtime catch-up.
+  Never infer withdrawals from broker balances or count API fees again in P&L.
+  The protected Record withdrawal action is bookkeeping, never a money transfer.
+  Keep owner capital amounts and ledger exports out of Git.
 - Independent RBI/ET evidence remains dated and truthful. Missing/stale mandatory
   sources stay UNKNOWN. Do not relax freshness automatically. No news entries.
 - Visual daily email at 19:30 JST every calendar day, minimal words, existing

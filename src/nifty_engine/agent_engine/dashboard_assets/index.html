@@ -26,10 +26,21 @@
   <main>
     <div class="session-line"><div><span id="data-status" class="status-pill">Loading market data</span><span id="as-of">Connecting to your local engine…</span></div><span class="pause-label"><span class="pause-bars">Ⅱ</span> Execution paused</span></div>
     <div id="notice" class="notice" role="status" hidden></div>
+    <section class="card capital-card" aria-label="Capital summary">
+      <div class="section-heading"><h2><svg class="icon orange"><use href="#icon-coins"/></svg>Capital</h2><button id="record-withdrawal" class="button" type="button" disabled>Record withdrawal</button></div>
+      <dl class="capital-equation">
+        <div><dt>Invested</dt><dd id="capital-invested">—</dd><span class="capital-operator" aria-hidden="true">−</span></div>
+        <div><dt>Withdrawn</dt><dd id="capital-withdrawn">—</dd><span class="capital-operator" aria-hidden="true">−</span></div>
+        <div><dt>API fees</dt><dd id="capital-api-fees">—</dd><span class="capital-operator" aria-hidden="true">=</span></div>
+        <div class="capital-total"><dt>Remaining capital</dt><dd id="capital-remaining">—</dd></div>
+      </dl>
+      <p id="capital-ledger-status" class="summary-caption">Checking owner ledger</p>
+    </section>
     <section class="summary-grid" aria-label="Account overview">
       <article class="card summary-card profit-card"><div class="summary-icon positive"><svg><use href="#icon-up"/></svg></div><div class="summary-main"><h1>Today’s P&amp;L</h1><div class="big-number-line"><strong id="today-pnl" class="big-number">—</strong><span id="today-return" class="percent-badge">—</span></div><p id="account-status" class="summary-caption">Waiting for Groww P&amp;L</p></div><dl class="summary-details"><div><dt>Realised P&amp;L</dt><dd id="realized">—</dd></div><div><dt>Unrealised P&amp;L</dt><dd id="unrealized">—</dd></div><div><dt>Closed contracts today</dt><dd id="trade-count">—</dd></div></dl></article>
       <article class="card summary-card invested-card"><div class="summary-icon orange"><svg><use href="#icon-coins"/></svg></div><div class="summary-main"><h2>Groww money</h2><strong id="capital" class="big-number">—</strong><p id="funds-status" class="summary-caption">Clear cash · checking Groww</p></div><dl class="summary-details"><div><dt>Used margin (total)</dt><dd id="used-margin">—</dd></div><div><dt>Available to sell</dt><dd id="available-margin">—</dd></div><div><dt>Available to buy</dt><dd id="option-buy-money">—</dd></div><div><dt>Collateral available</dt><dd id="collateral-money">—</dd></div></dl></article>
     </section>
+    <div id="summary-pnl-split" class="summary-pnl-split" aria-label="Today's Self and Algo P&L"></div>
     <section id="indices" class="index-grid" aria-label="Market indices"></section>
     <section class="card monitor-card" aria-label="PC engine and strategy rules">
       <div class="section-heading"><h2 id="engine-heading">Trading engine</h2><div class="algo-actions"><span id="monitor-status" class="status-pill">Starting</span><button id="algo-start" class="button primary" type="button">Algo Start</button><button id="algo-stop" class="button" type="button">Algo Off</button><a class="button" href="/report">Email preview</a></div></div><p id="algo-start-result" class="monitor-caption" role="status">Checking trading readiness</p><p id="vm-status" class="monitor-caption" role="status"></p><p id="email-status" class="monitor-caption"></p>
@@ -56,6 +67,16 @@
     </section>
     <footer><span>Indian markets <b>·</b> Local options dashboard</span><span id="footer-source">Read-only observation</span><span>Plan your trade. Trade your plan.</span></footer>
   </main>
+  <dialog id="withdrawal-dialog" aria-labelledby="withdrawal-title">
+    <form id="withdrawal-form">
+      <div class="dialog-heading"><h2 id="withdrawal-title">Record withdrawal</h2><button id="withdrawal-close" type="button" class="icon-button" aria-label="Close withdrawal">×</button></div>
+      <p class="withdrawal-note">Record money already withdrawn. This does not transfer money.</p>
+      <label class="withdrawal-field" for="withdrawal-amount">Amount · INR<input id="withdrawal-amount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required></label>
+      <label class="withdrawal-field" for="withdrawal-date">Date · JST<input id="withdrawal-date" name="date" type="date" required></label>
+      <p id="withdrawal-result" role="status" class="withdrawal-note"></p>
+      <button id="withdrawal-save" type="submit" class="button primary">Save record</button>
+    </form>
+  </dialog>
   <dialog id="settings-dialog" aria-labelledby="settings-title"><form method="dialog"><div class="dialog-heading"><h2 id="settings-title">Dashboard settings</h2><button class="icon-button" aria-label="Close settings" value="close">×</button></div><label class="setting"><span><strong>Auto-refresh view</strong><small>Refresh this view every 5 seconds. The background monitor continues during its Japan-time window. Lines use actual observed prices; delayed reads are reflected by their timestamps.</small></span><input id="auto-refresh" type="checkbox" checked></label><label class="setting"><span><strong>Chart detail</strong><small>Live lines show recorded Groww LTP observations on a five-minute time grid. Five-minute closes remain available for comparison and strategy research.</small></span><select id="chart-detail"><option value="live">Live price · 5s target</option><option value="bars">Five-minute closes</option></select></label><label class="setting"><span><strong>Preview with sample data</strong><small>Try the layout and charts with clearly labelled examples.</small></span><input id="demo-toggle" type="checkbox"></label><label class="setting"><span><strong>Chart time zone</strong><small>Strategy schedules always stay in Japan time.</small></span><select id="timezone"><option value="Asia/Tokyo">Japan · JST</option><option value="Asia/Kolkata">India · IST</option></select></label><div class="settings-note"><strong>Your strategy bars</strong><p>Green is the share of closed trades with net P&amp;L ≥ 0; red is the share with net P&amp;L &lt; 0. No recorded losses gives a 100% green bar. No completed trades gives “No results”. The separate P&amp;L percentage is net profit divided by reviewed strategy capital.</p></div><button class="button primary" value="done">Done</button></form></dialog>
   <noscript><p class="notice">Enable JavaScript to view local market data. Trading remains paused.</p></noscript>
 </body>

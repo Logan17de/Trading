@@ -26,8 +26,12 @@ def settings(value):
 
 def request(config, command, *, run=subprocess.run):
     settings(config)
-    if command not in ({"action":"read"},{"action":"intent","enabled":True},{"action":"intent","enabled":False}):
-        raise ValueError("fixed read/intent command required")
+    accounting = isinstance(command,dict) and set(command)=={"action","withdrawal"} and command["action"]=="record_withdrawal"
+    if accounting:
+        from .capital import withdrawal
+        withdrawal(command["withdrawal"],datetime.now(timezone.utc))
+    elif command not in ({"action":"read"},{"action":"intent","enabled":True},{"action":"intent","enabled":False}):
+        raise ValueError("fixed read, intent or accounting command required")
     ssh=Path(os.environ.get("SYSTEMROOT","C:/Windows"))/"System32/OpenSSH/ssh.exe"
     args=[str(ssh),"-F","NUL","-T","-i",config["identity_file"],"-o","BatchMode=yes",
         "-o","StrictHostKeyChecking=yes","-o","UpdateHostKeys=no","-o","IdentitiesOnly=yes",
@@ -66,6 +70,8 @@ def health(runtime, now, *, previous=None, progress_at=None):
 def revalidate(view,now):
     """Every response rechecks each provider clock, including cached VM views."""
     from .broker_pnl import public
+    from .capital import revalidate as capital_revalidate
+    view["capital_summary"]=capital_revalidate(view.get("capital_summary"),now)
     series=view.get("broker_pnl",{}).get("series",[])
     view["broker_pnl"]=dict(public(view.get("broker_pnl"),now),series=series)
     def current(at,limit):
@@ -158,6 +164,9 @@ class RemoteViewer:
             freshness="RECENT" if fresh else "STALE",refreshing=self.status=="HEALTHY",refresh_error=None)
         view["vm"]={"status":self.status,"alert_status":self.alert_status,"monitor_host":"PC",
             "requires_pc_awake":True,"incident":bool(self.incident)}
+        if self.status!="HEALTHY":
+            from .capital import revalidate as capital_revalidate
+            capital_revalidate(view["capital_summary"],now,cached=True)
         if not fresh:
             from .broker_pnl import empty
             series=view.get("broker_pnl",{}).get("series",[])
@@ -179,6 +188,16 @@ class RemoteViewer:
         if type(enabled) is not bool:raise ValueError("explicit owner boolean required")
         result=request(self.config,{"action":"intent","enabled":enabled})
         self.poll()
+        return result
+
+    def record_withdrawal(self,body):
+        result=request(self.config,{"action":"record_withdrawal","withdrawal":body})
+        if result.get("status")=="INVALID_WITHDRAWAL":
+            raise ValueError(result.get("reason","INVALID_WITHDRAWAL"))
+        if result.get("status") not in ("RECORDED","ALREADY_RECORDED") or result.get("money_moved") is not False or result.get("broker_writes") is not False:
+            raise ConnectionError("Accounting response unavailable")
+        with self.lock:
+            if self.cache is not None:self.cache["capital_summary"]=result["capital_summary"]
         return result
 
     def run(self,stop):

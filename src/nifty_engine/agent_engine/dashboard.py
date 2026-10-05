@@ -834,6 +834,8 @@ class DashboardState:
         SessionJournal(line_store)
         self.observed_lines = ObservedLines(line_store)
         self.pnl_lines = broker_pnl.PnlJournal(line_store)
+        from .capital import CapitalLedger
+        self.capital_ledger = CapitalLedger(line_store)
         self.snapshot = None
         self.stop_event = threading.Event()
         self.background_thread = None
@@ -891,6 +893,7 @@ class DashboardState:
             current = datetime.now(timezone.utc)
             result["broker_pnl"] = broker_pnl.public((self.snapshot or {}).get("broker_pnl"),current)
             result["broker_pnl"]["series"] = self.pnl_lines.series(current)
+            result["capital_summary"] = self.capital_ledger.summary(current)
             if result["broker_pnl"]["status"] != "AVAILABLE":
                 for market in result["markets"]:
                     for option in market["options"]:
@@ -901,6 +904,11 @@ class DashboardState:
                 result["control"]["analysis_error"] = self.analysis_error
                 result["control"]["reader_active"] = self.refreshing
             return result
+
+    def record_withdrawal(self, body):
+        if self.remote:
+            return self.remote.record_withdrawal(body)
+        return self.capital_ledger.record_withdrawal(body,datetime.now(timezone.utc))
 
     def start_background(self):
         if self.background and self.background_thread is None:
@@ -1068,6 +1076,19 @@ def handler(state):
         def do_POST(self):
             if not self.local() or not secrets.compare_digest(self.headers.get("X-Local-Token", ""), state.token):
                 return self.respond(403, {"status": "LOCAL_ACCESS_ONLY"})
+            if self.path == "/api/capital/withdrawals":
+                try:
+                    length=int(self.headers.get("Content-Length","0"))
+                    if not 0 < length <= 1024 or self.headers.get("Transfer-Encoding") or self.headers.get("Content-Type","").split(";")[0] != "application/json":
+                        raise ValueError("INVALID_REQUEST")
+                    body=json.loads(self.rfile.read(length))
+                    return self.respond(200,state.record_withdrawal(body))
+                except (ValueError,TypeError) as exc:
+                    reasons={"INVALID_AMOUNT","POSITIVE_AMOUNT_REQUIRED","INVALID_RECORD_ID","INVALID_WITHDRAWAL_DATE","FUTURE_WITHDRAWAL_DATE","CAPITAL_NOT_CONFIGURED","WITHDRAWAL_ID_CONFLICT","WITHDRAWAL_LIMIT"}
+                    reason=str(exc) if str(exc) in reasons else "INVALID_REQUEST"
+                    return self.respond(409 if reason=="WITHDRAWAL_ID_CONFLICT" else 400,{"status":"INVALID_WITHDRAWAL","reason":reason,"money_moved":False})
+                except Exception:
+                    return self.respond(503,{"status":"ACCOUNTING_UNAVAILABLE","money_moved":False})
             if self.path not in ("/api/refresh","/api/algo/start","/api/algo/stop") or self.headers.get("Content-Length", "0") != "0":
                 return self.respond(400, {"status": "UNSUPPORTED_REQUEST"})
             if self.path == "/api/algo/start":

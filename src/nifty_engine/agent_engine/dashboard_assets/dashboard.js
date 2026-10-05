@@ -193,6 +193,21 @@ function renderControl() {
   const labels={ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED:"Oracle order executor is unfinished",REPOSITORY_PAUSED:"trading is paused",NEWS_HIGH_UNKNOWN_OR_STALE:"mandatory news evidence is unknown/high/stale",FRESH_MARKET_DATA_REQUIRED:"current data is required",OUTSIDE_1400_1900_JST:"outside 14:00–19:00 JST",OFFLINE_VIEW:"offline view",MAXIMUM_LOTS_REQUIRED:"lot cap missing",PREMIUM_POLICY_REQUIRED:"strategy settings are missing",OWNER_ALGO_OFF:"owner setting is Off",VM_UNHEALTHY_OR_STALE:"VM heartbeat/data unavailable"};
   $("algo-start-result").textContent=algoStartPending?"Saving owner setting…":on?`On is saved until you click Algo Off. Trading blocked: ${(algo.blockers||[]).map(k=>labels[k]||k).join('; ')}.`:last?.status==='TRANSPORT_FAILED'?"Could not save the setting on Oracle. No change confirmed.":"Algo Off. Start saves your On preference across restarts; it does not bypass blocked trading readiness.";
 }
+let withdrawalPending=false;
+const pendingWithdrawalKey='options-trader-pending-withdrawal-v1';
+function jstDay() {return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+function renderCapital() {
+  const ledger=data.capital_summary;
+  setAmount('capital-invested',ledger?.invested_inr);
+  setAmount('capital-withdrawn',ledger?.withdrawn_inr);
+  setAmount('capital-api-fees',ledger?.api_fees_inr);
+  setAmount('capital-remaining',ledger?.remaining_capital_inr);
+  const month=ledger?.fees_through_month;
+  const through=month?new Intl.DateTimeFormat('en',{month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(month+'-01T00:00:00Z')):'—';
+  const state=ledger?.status;
+  $('capital-ledger-status').textContent=data.demo?'Sample capital · design preview':state==='AVAILABLE'?`Owner ledger · API ${inr(ledger.monthly_api_fee_inr)}/month · through ${through}`:state==='CACHED'?`Saved owner ledger · ${dateTime(ledger.updated_at)}`:state==='FEE_UPDATE_PENDING'?'Monthly fee update pending · waiting for Oracle':state==='INVALID_LEDGER'?'Capital ledger unavailable':'Capital ledger not configured';
+  $('record-withdrawal').disabled=demo||withdrawalPending||state!=='AVAILABLE'||Boolean(data.vm&&data.vm.status!=='HEALTHY');
+}
 function renderAccount() {
   const a=data.account;
   const p=data.broker_pnl, actual=!data.demo, split=Boolean(p);
@@ -213,6 +228,7 @@ function renderAccount() {
   if(p?.buckets?.unassigned?.contracts>0||(p?.series||[]).some(r=>known(r.unassigned)&&r.unassigned!==0)) groups.push({key:'unassigned',name:'Unassigned / mixed',color:'#b46c15'});
   $("pnl-breakdown").hidden=!split;
   $("pnl-breakdown").innerHTML=groups.map(g=>`<div class="pnl-bucket"><span><i style="background:${g.color}"></i>${g.name}</span><strong class="${known(p?.buckets?.[g.key]?.total_inr)?p.buckets[g.key].total_inr<0?'negative':'positive':''}">${escapeHTML(signed(p?.buckets?.[g.key]?.total_inr))}</strong><small>Realised ${escapeHTML(signed(p?.buckets?.[g.key]?.realized_inr))} · Open ${escapeHTML(signed(p?.buckets?.[g.key]?.unrealized_inr))}</small></div>`).join('');
+  $('summary-pnl-split').innerHTML=groups.map(g=>`<span><i style="background:${g.color}"></i>${g.name} <b class="${known(p?.buckets?.[g.key]?.total_inr)?p.buckets[g.key].total_inr<0?'negative':'positive':''}">${escapeHTML(signed(p?.buckets?.[g.key]?.total_inr))}</b></span>`).join('');
   if(split&&(p?.series||[]).some(r=>known(r.self)||known(r.algo)||known(r.unassigned))) {
     const lines=groups.map(g=>({...g,points:p.series.map(r=>({at:r.at,value:r[g.key]}))}));
     const points=p.series.map(r=>({at:r.at,value:known(r.self)?r.self:known(r.algo)?r.algo:r.unassigned}));
@@ -228,7 +244,7 @@ function renderAccount() {
 }
 function render() {
   if(!data) return;
-  renderIndices(); renderOptions(); renderAccount(); renderControl();
+  renderCapital(); renderIndices(); renderOptions(); renderAccount(); renderControl();
   const recent=data.freshness==="RECENT";
   $("data-status").textContent=data.demo?"Sample data":data.freshness==="NO_DATA"?"No market data":recent?"Latest snapshot":"Saved snapshot";
   $("data-status").className="status-pill"+(data.demo?" demo":!recent?" stale":"");
@@ -282,6 +298,41 @@ async function setAlgo(enabled){
 }
 $("algo-start").addEventListener("click",()=>setAlgo(true));
 $("algo-stop").addEventListener("click",()=>setAlgo(false));
+function pendingWithdrawal() {try{return JSON.parse(sessionStorage.getItem(pendingWithdrawalKey));}catch{return null;}}
+$('record-withdrawal').addEventListener('click',()=>{
+  const pending=pendingWithdrawal();
+  $('withdrawal-date').max=jstDay();
+  $('withdrawal-date').value=pending?.effective_date||jstDay();
+  $('withdrawal-amount').value=pending?.amount_inr||'';
+  $('withdrawal-result').textContent=pending?'Retry the pending record with the same amount and date.':'';
+  $('withdrawal-dialog').showModal();
+  $('withdrawal-amount').focus();
+});
+$('withdrawal-close').addEventListener('click',()=>{if(!withdrawalPending)$('withdrawal-dialog').close();});
+$('withdrawal-dialog').addEventListener('cancel',event=>{if(withdrawalPending)event.preventDefault();});
+$('withdrawal-form').addEventListener('submit',async event=>{
+  event.preventDefault();if(withdrawalPending||demo)return;
+  const amount=$('withdrawal-amount').value, day=$('withdrawal-date').value;
+  const pending=pendingWithdrawal();
+  const body=pending&&pending.amount_inr===amount&&pending.effective_date===day?pending:{id:crypto.randomUUID(),amount_inr:amount,effective_date:day};
+  try {sessionStorage.setItem(pendingWithdrawalKey,JSON.stringify(body));}
+  catch {$('withdrawal-result').textContent='Browser storage unavailable. Reopen the app before recording.';return;}
+  withdrawalPending=true;$('withdrawal-save').disabled=true;$('withdrawal-close').disabled=true;
+  $('withdrawal-result').textContent='Saving…';renderCapital();
+  try {
+    const response=await fetch('/api/capital/withdrawals',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':document.querySelector('meta[name="local-token"]').content},body:JSON.stringify(body),cache:'no-store'});
+    const result=await response.json();
+    if(!response.ok||!['RECORDED','ALREADY_RECORDED'].includes(result.status)) {
+      const messages={INVALID_AMOUNT:'Enter an INR amount with at most two decimals.',POSITIVE_AMOUNT_REQUIRED:'Enter an amount above zero.',FUTURE_WITHDRAWAL_DATE:'Choose today or an earlier JST date.',INVALID_WITHDRAWAL_DATE:'Choose a valid date.',WITHDRAWAL_ID_CONFLICT:'This record ID already has different details. Keep the pending record for review.',CAPITAL_NOT_CONFIGURED:'The capital ledger is not configured.'};
+      $('withdrawal-result').textContent=messages[result.reason]||'Oracle did not confirm the record. Retry with the same amount and date.';
+      return;
+    }
+    sessionStorage.removeItem(pendingWithdrawalKey);
+    $('withdrawal-result').textContent=result.status==='ALREADY_RECORDED'?'Already recorded · no duplicate':'Withdrawal recorded';
+    $('withdrawal-amount').value='';await load();
+  } catch {$('withdrawal-result').textContent='Connection interrupted. Retry with the same amount and date.';}
+  finally {withdrawalPending=false;$('withdrawal-save').disabled=false;$('withdrawal-close').disabled=false;renderCapital();}
+});
 $("refresh").addEventListener("click",refresh);
 $("settings").addEventListener("click",()=>$("settings-dialog").showModal());
 $("settings-dialog").addEventListener("click",event=>{if(event.target===$("settings-dialog")) {const r=$("settings-dialog").getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) $("settings-dialog").close();}});

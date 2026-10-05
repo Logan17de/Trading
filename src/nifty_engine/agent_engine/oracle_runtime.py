@@ -48,7 +48,12 @@ class Runtime:
         if value=={"action":"read"}:return self.read()
         if isinstance(value,dict) and set(value)=={"action","enabled"} and value["action"]=="intent" and type(value["enabled"]) is bool:
             return self.state.algo_set(value["enabled"])
-        raise ValueError("read or explicit owner intent only")
+        if isinstance(value,dict) and set(value)=={"action","withdrawal"} and value["action"]=="record_withdrawal":
+            try:
+                return self.state.record_withdrawal(value["withdrawal"])
+            except ValueError as exc:
+                return {"status":"INVALID_WITHDRAWAL","reason":str(exc),"money_moved":False,"broker_writes":False}
+        raise ValueError("fixed read, owner intent or accounting command only")
 
     def connect(self,now):
         from growwapi import GrowwAPI
@@ -67,6 +72,7 @@ class Runtime:
         while not self.stop.wait(30):
             try:
                 now=datetime.now(timezone.utc)
+                self.state.capital_ledger.accrue(now)
                 self.mail_state=self.mail.tick(self.read(),now)
                 from .pc_control import JST
                 local=now.astimezone(JST);day=local.date().isoformat()

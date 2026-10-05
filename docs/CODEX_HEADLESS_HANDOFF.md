@@ -27,6 +27,16 @@ Self / exact Algo / Unassigned, before charges. Stale/incomplete/carry-day basis
 stays unknown. Groww cash, used margin and option-buy/sell balances are separate
 from P&L/investment value. Net strategy results still need the reviewed ledger.
 
+Capital accounting uses private Oracle SQLite meta `capital-ledger-v1`, provisioned
+once from approved stdin rather than tracked configuration. Dashboard, preview
+and daily email share `capital_summary`: invested, withdrawn, accumulated API fees
+and remaining capital. Fees start in October 2026, once per month at the first JST
+day, catching up missed months. The small Record withdrawal form sends a dated
+owner record through protected loopback POST and fixed SSH/socket accounting
+command. Idempotent request IDs survive retries/restarts; conflicts are rejected.
+This does not transfer money, change broker cash, P&L, margin or trading readiness.
+Cached prior-month totals wait for Oracle's fee update; no desktop fee booking.
+
 ## Schedules and faults
 
 - Visual email: attempts start 19:29 JST, targeting by 19:30 every calendar day; frozen retry outbox; existing
