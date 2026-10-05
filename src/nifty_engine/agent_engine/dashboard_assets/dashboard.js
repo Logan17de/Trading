@@ -121,23 +121,30 @@ function renderControl() {
   $("monitor-status").textContent=data.demo?"Sample preview":data.background_monitor?"Background monitor on":"Use the Options Trader app shortcut";
   $("everyday-rule").textContent=c?.everyday?.minimum_short_call_strike?`${c.everyday.index} · sell call ≥ ${numeric.format(c.everyday.minimum_short_call_strike)}`:"NIFTY +500 · SENSEX +1,000 · from 13:15 JST";
   $("slot-policy").textContent="1 active slot · 1 lot · higher-call hedge";
-  $("monitor-schedule").textContent="Research 12:55 · rules 13:00–18:15 JST";
+  $("monitor-schedule").textContent="Research 12:55 / 15:00 / 17:00 · rules 13:00–18:15 JST";
+  const news=c?.news;
+  $("news-status").textContent=data.demo?"Sample news status":news?`News ${news.risk} · ${news.article_count} dated articles · ${news.feeds.map(f=>`${f.feed.includes('rbi.org')?'RBI':'ET'}: ${f.status.toLowerCase().replaceAll('_',' ')}`).join(' · ')} · ${news.fetched_at?`Fetched ${dateTime(news.fetched_at)}`:'Waiting for collection'}${news.risk!=='LOW'?' · New-position readiness blocked':''}`:"News worker not connected";
+  $("strategy-priority").textContent=`${c?.slot?.new_entry_blocked?`${c.slot.strategy} occupies the slot; new entries blocked.`:'One slot shared by all engine strategies.'} Everyday carries retain ownership. Swing 18:45 is research-only, outside the 18:15 cutoff. Manual trades stay protected.`;
   const expiry=c?.expiry_check;
   $("expiry-status").textContent=expiry?Object.entries(expiry).map(([index,e])=>`${index}: ${e.is_expiry_day===true?"expiry — skip":e.is_expiry_day===false?"non-expiry":"expiry unverified"}`).join(" · "):"Expiry dates must be confirmed from Groww";
-  $("levels").innerHTML=["NIFTY","SENSEX"].map(index=>{const level=c?.levels?.[index];return `<div class="level-item"><strong>${index}</strong><span>Support <b>${level?.support?.length?level.support.map(v=>numeric.format(v)).join(" · "):"—"}</b></span><span>Resistance <b>${level?.resistance?.length?level.resistance.map(v=>numeric.format(v)).join(" · "):"—"}</b></span><small>${level?`Updated ${escapeHTML(dateTime(level.updated_at))}`:"Waiting for 12:55 JST and fresh evidence"}</small></div>`;}).join("");
+  $("levels").innerHTML=["NIFTY","SENSEX"].map(index=>{const level=c?.levels?.[index];return `<div class="level-item"><strong>${index}</strong><span>Support <b>${level?.support?.length?level.support.map(v=>numeric.format(v)).join(" · "):"—"}</b></span><span>Resistance <b>${level?.resistance?.length?level.resistance.map(v=>numeric.format(v)).join(" · "):"—"}</b></span><small>${level?`Updated ${escapeHTML(dateTime(level.updated_at))}${level.status==='STALE_RESEARCH'?' · stale research':''}`:"Waiting for 12:55 JST and fresh evidence"}</small></div>`;}).join("");
   const latest=c?.requests?.find(r=>r.rule);
   $("rule-details").hidden=!latest;$("rule-json").textContent=latest?JSON.stringify(latest.rule,null,2):"";
   $("control-note").textContent=c?.analysis_error?"Codex research needs attention. Review the local verification status.":`Manual and unknown trades are protected. ${c?.blockers?.includes("ATM_HEDGE_PAYOFF_REVIEW_REQUIRED")?"Historical ATM policy needs payoff review. ":""}Live entry and broker SL synchronization remain blocked until the Oracle executor and stop parameters are verified.`;
-  $("analysis-status").textContent=c?.requests?.length?c.requests.map(r=>r.status.toLowerCase()).join(" · "):"No barrier requests yet";
+  $("analysis-status").textContent=(c?.requests?.length?c.requests.map(r=>r.status.toLowerCase()).join(" · "):"No barrier requests yet")+(c?.analysis_budget?` · Codex ${c.analysis_budget.used}/${c.analysis_budget.limit} attempts${c.analysis_budget.status==='DAILY_CAP_REACHED'?' — daily cap reached':''}`:'');
   $("trailing-status").textContent=c?.trailing?.plans?`${c.trailing.plans} trailing SL update proposal(s) · Oracle synchronization not deployed`:"No verified engine trailing stops · manual trades protected";
 }
 function renderAccount() {
   const a=data.account;
   setAmount("today-pnl",a.today_pnl_inr,true); $("today-return").textContent=percent(a.today_return_pct); tone($("today-return"),a.today_return_pct);
   setAmount("realized",a.realized_today_inr,true); setAmount("unrealized",a.unrealized_inr,true); $("trade-count").textContent=a.trade_count_today??"—";
-  setAmount("capital",a.capital_inr); setAmount("used-margin",a.used_margin_inr); setAmount("available-margin",a.available_margin_inr);
-  $("margin-percent").textContent=known(a.margin_utilization_pct)?a.margin_utilization_pct.toFixed(0)+"%":"—";
-  $("margin-meter").style.width=known(a.margin_utilization_pct)?Math.max(0,Math.min(100,a.margin_utilization_pct))+"%":"0%";
+  const funds=data.funds;
+  setAmount("capital",data.demo?a.capital_inr:funds?.clear_cash_inr);
+  setAmount("used-margin",data.demo?a.used_margin_inr:funds?.total_margin_used_inr);
+  setAmount("available-margin",data.demo?a.available_margin_inr:funds?.option_sell_available_inr);
+  setAmount("option-buy-money",data.demo?a.available_margin_inr:funds?.option_buy_available_inr);
+  setAmount("collateral-money",data.demo?0:funds?.collateral_available_inr);
+  $("funds-status").textContent=data.demo?"Sample cash · design preview":funds?.status==='AVAILABLE'?`Clear cash · Groww ${dateTime(funds.received_at)} · refresh 30s`:funds?.status==='STALE'?"Groww money is stale · waiting for a new read":"Groww money unavailable · amounts stay unknown";
   $("account-status").textContent=data.demo?"Sample results · design preview":a.status==="NOT_CONNECTED"?"Trade ledger not connected":a.status==="STALE_LEDGER"?"Ledger is from an earlier trading day":a.status==="INVALID_LEDGER"?"Trade ledger needs review":"Owner-reviewed ledger · after costs";
   setAmount("chart-pnl",a.today_pnl_inr,true); setAmount("portfolio-value",a.portfolio_value_inr);
   if(a.pnl_series?.length>=2) chart($("pnl-chart"),a.pnl_series,{area:true,pnl:true,label:"Today's net profit and loss"});

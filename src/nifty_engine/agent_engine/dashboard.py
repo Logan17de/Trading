@@ -158,6 +158,35 @@ def account_summary(account, now):
     return result
 
 
+def funds_summary(raw):
+    """Provider money fields only; cash is not total investment value or P&L."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("fno_margin_details"), dict):
+        raise ValueError("Groww money details unavailable")
+    fno = raw["fno_margin_details"]
+    result = {"clear_cash_inr":finite(raw.get("clear_cash")),
+        "total_margin_used_inr":finite(raw.get("net_margin_used")),
+        "fno_margin_used_inr":finite(fno.get("net_fno_margin_used")),
+        "option_buy_available_inr":finite(fno.get("option_buy_balance_available")),
+        "option_sell_available_inr":finite(fno.get("option_sell_balance_available")),
+        "collateral_available_inr":finite(raw.get("collateral_available"))}
+    if result["clear_cash_inr"] is None:
+        raise ValueError("clear cash unavailable")
+    return result
+
+
+def public_funds(snapshot, now):
+    raw = snapshot.get("funds", {})
+    result = {k:None for k in ("clear_cash_inr", "total_margin_used_inr", "fno_margin_used_inr",
+        "option_buy_available_inr", "option_sell_available_inr", "collateral_available_inr")}
+    at = clean_time(raw.get("received_at"))
+    age = (now-stamp(at)).total_seconds() if at else None
+    status = "AVAILABLE" if raw.get("status") == "AVAILABLE" and age is not None and 0 <= age <= 45 else "STALE" if at else "UNAVAILABLE"
+    if status == "AVAILABLE":
+        result.update({k:finite(raw.get(k)) for k in result})
+    return dict(result, status=status, received_at=at, refresh_interval_seconds=30,
+                source="GROWW_AVAILABLE_MARGIN_DETAILS")
+
+
 def view_model(snapshot, protocol, account=None, *, now=None):
     now = now or datetime.now(timezone.utc)
     validate_protocol(protocol)
@@ -224,7 +253,7 @@ def view_model(snapshot, protocol, account=None, *, now=None):
     return {"format": "trading-dashboard-v1", "demo": False, "as_of": received,
         "freshness": "NO_DATA" if age is None else "FUTURE" if age < 0 else "RECENT" if age <= 15 else "STALE",
         "source": "Groww · read-only", "market_day": stamp(received).astimezone(IST).date().isoformat() if received else None,
-        "markets": markets, "account": acct, "strategies": strategies,
+        "markets": markets, "account": acct, "funds":public_funds(snapshot,now), "strategies": strategies,
         "orders_status": snapshot.get("orders_status") if snapshot.get("orders_status") in ("AVAILABLE","INCOMPLETE","UNAVAILABLE") else "UNAVAILABLE",
         "positions_status": snapshot.get("positions_status") if snapshot.get("positions_status") in
             ("AVAILABLE", "UNAVAILABLE") else "UNAVAILABLE",
@@ -492,6 +521,7 @@ class DashboardCollector:
         self.sessions = SessionJournal(journal.store) if journal else None
         self.account_loader = None
         self.news_loader = None
+        self.funds, self.funds_next_at = {}, 0
 
     def close(self):
         if self.history_pool:
@@ -519,8 +549,19 @@ class DashboardCollector:
         def index_quote(index):
             read(index + "_quote", self.market.groww.get_quote, lambda raw: quote_summary(raw, self.clock()),
                  exchange=EXCHANGES[index], segment="CASH", trading_symbol=index)
+        def money():
+            self.funds_next_at = started.timestamp() + 30
+            method = getattr(self.market.groww,"get_available_margin_details",None)
+            raw = read("available_money",method,funds_summary) if method else None
+            self.funds = dict(probes["available_money"]["value"],status="AVAILABLE",
+                received_at=probes["available_money"]["received_at"]) if raw is not None else {"status":"UNAVAILABLE"}
         with ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(index_quote, INDICES))
+            jobs = [pool.submit(index_quote,index) for index in INDICES]
+            if started.timestamp() >= self.funds_next_at:
+                jobs.append(pool.submit(money))
+            for job in jobs:
+                job.result()
+        result["funds"] = self.funds
         orders, positions, complete, succeeded = [], [], True, 0
         for page in range(4):
             def order_summary(raw):
@@ -759,6 +800,7 @@ class DashboardState:
         self.stop_event = threading.Event()
         self.background_thread = None
         self.analysis_thread = None
+        self.news_thread = None
         self.analysis_error = None
 
     def read(self):
@@ -787,6 +829,7 @@ class DashboardState:
             age = (datetime.now(timezone.utc) - stamp(at)).total_seconds() if at else None
             result["freshness"] = "NO_DATA" if age is None else "FUTURE" if age < 0 else "RECENT" if age <= 15 else "STALE"
             result.update(refreshing=self.refreshing, refresh_error=self.last_error, offline=self.offline)
+            result["funds"] = public_funds(self.snapshot or {}, datetime.now(timezone.utc))
             result["background_monitor"] = self.background
             if self.monitor:
                 result["control"] = self.monitor.tick(self.snapshot,load_json(protocol_path,16384),datetime.now(timezone.utc))
@@ -796,6 +839,9 @@ class DashboardState:
 
     def start_background(self):
         if self.background and self.background_thread is None:
+            self.news_thread = threading.Thread(target=self.monitor.news.run,args=(self.stop_event,),daemon=True,
+                name="trading-pc-news")
+            self.news_thread.start()
             self.background_thread = threading.Thread(target=self._monitor_loop,daemon=True)
             self.background_thread.start()
 

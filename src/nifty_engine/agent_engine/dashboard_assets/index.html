@@ -28,13 +28,15 @@
     <div id="notice" class="notice" role="status" hidden></div>
     <section class="summary-grid" aria-label="Account overview">
       <article class="card summary-card profit-card"><div class="summary-icon positive"><svg><use href="#icon-up"/></svg></div><div class="summary-main"><h1>Today’s Profit</h1><div class="big-number-line"><strong id="today-pnl" class="big-number">—</strong><span id="today-return" class="percent-badge">—</span></div><p id="account-status" class="summary-caption">Waiting for your trade ledger</p></div><dl class="summary-details"><div><dt>Realised P&amp;L</dt><dd id="realized">—</dd></div><div><dt>Unrealised P&amp;L</dt><dd id="unrealized">—</dd></div><div><dt>Closed trades today</dt><dd id="trade-count">—</dd></div></dl></article>
-      <article class="card summary-card invested-card"><div class="summary-icon orange"><svg><use href="#icon-coins"/></svg></div><div class="summary-main"><h2>Invested</h2><strong id="capital" class="big-number">—</strong><p class="summary-caption">Reviewed capital · INR</p></div><dl class="summary-details"><div><dt>Used margin</dt><dd id="used-margin">—</dd></div><div><dt>Available</dt><dd id="available-margin">—</dd></div><div class="margin-row"><dt>Margin utilisation</dt><dd><span class="meter"><span id="margin-meter"></span></span><span id="margin-percent">—</span></dd></div></dl></article>
+      <article class="card summary-card invested-card"><div class="summary-icon orange"><svg><use href="#icon-coins"/></svg></div><div class="summary-main"><h2>Groww money</h2><strong id="capital" class="big-number">—</strong><p id="funds-status" class="summary-caption">Clear cash · checking Groww</p></div><dl class="summary-details"><div><dt>Used margin (total)</dt><dd id="used-margin">—</dd></div><div><dt>Available to sell</dt><dd id="available-margin">—</dd></div><div><dt>Available to buy</dt><dd id="option-buy-money">—</dd></div><div><dt>Collateral available</dt><dd id="collateral-money">—</dd></div></dl></article>
     </section>
     <section id="indices" class="index-grid" aria-label="Market indices"></section>
     <section class="card monitor-card" aria-label="PC engine and strategy rules">
       <div class="section-heading"><h2>PC engine</h2><span id="monitor-status" class="status-pill">Starting</span></div>
       <div class="monitor-facts"><div><small>Everyday rule</small><strong id="everyday-rule">From 13:15 JST</strong></div><div><small>Position policy</small><strong id="slot-policy">1 active slot · 1 lot</strong></div><div><small>Japan schedule</small><strong id="monitor-schedule">12:55 research · 13:00–18:15 rules</strong></div></div>
       <p id="expiry-status" class="monitor-caption">Checking actual expiry dates</p>
+      <p id="news-status" class="monitor-caption">Checking mandatory news evidence</p>
+      <p id="strategy-priority" class="monitor-caption">Everyday and swing share one engine slot</p>
       <div id="levels" class="levels"></div>
       <p id="analysis-status" class="monitor-caption">No barrier requests yet</p>
       <p id="trailing-status" class="monitor-caption">No verified engine trailing stops</p>

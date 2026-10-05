@@ -253,7 +253,7 @@ def test_historical_private_atm_policy_still_requires_review(tmp_path):
 
 def result_for(request):
     return dict(request_id=request['request_id'],snapshot_id=request['snapshot_id'],decision='PROPOSE_REVIEW',
-        support=[79],resistance=[131],rule=None,reason='LEVELS_IDENTIFIED')
+        support=[79],resistance=[131],rule=None,reason='LEVELS_IDENTIFIED',news_assessment=None)
 
 
 def test_daily_codex_requests_deduplicate_across_restart_and_touch_is_separate(tmp_path):

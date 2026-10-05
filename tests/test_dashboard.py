@@ -10,10 +10,58 @@ import pytest
 
 from nifty_engine.agent_engine.contracts import IST, dumps
 from nifty_engine.agent_engine.dashboard import (DashboardCollector, account_summary, collect_charts,
-    five_minute_candles, handler, instrument_metadata, ordered_contracts, polling_loop, viewer_active, view_model)
+    five_minute_candles, funds_summary, public_funds, handler, instrument_metadata, ordered_contracts, polling_loop, viewer_active, view_model)
 from nifty_engine.agent_engine.market_check import allowed_request
 
 NOW = datetime(2026, 10, 1, 9, tzinfo=timezone.utc)
+
+
+def test_groww_money_is_whitelisted_separate_from_investment_value_and_pnl():
+    raw = dict(clear_cash=10000, net_margin_used=3000, collateral_available=2000, account_id='PRIVATE',
+        fno_margin_details=dict(net_fno_margin_used=2500, option_buy_balance_available=7000,
+            option_sell_balance_available=6000))
+    value = funds_summary(raw)
+    value.update(status='AVAILABLE', received_at=NOW.isoformat())
+    model = view_model(dict(funds=value), protocol(), now=NOW)
+    assert model['funds']['clear_cash_inr'] == 10000
+    assert model['funds']['option_sell_available_inr'] == 6000
+    assert model['account']['portfolio_value_inr'] is None
+    assert model['account']['today_pnl_inr'] is None
+    assert 'PRIVATE' not in dumps(model)
+    for at in (NOW + timedelta(seconds=46), NOW - timedelta(seconds=1)):
+        assert public_funds(dict(funds=value),at)['clear_cash_inr'] is None
+    with pytest.raises(ValueError):funds_summary(dict(clear_cash=float('nan'), fno_margin_details={}))
+    zero = funds_summary(dict(clear_cash=0, fno_margin_details={}))
+    assert zero['clear_cash_inr'] == 0 and zero['option_buy_available_inr'] is None
+
+
+def test_money_endpoint_remains_get_only_and_cannot_place_or_calculate_orders():
+    url = 'https://api.groww.in/v1/margins/detail/user'
+    assert allowed_request('GET',url,dashboard=True)
+    assert not allowed_request('GET',url)
+    assert not allowed_request('POST',url,dashboard=True)
+    assert not allowed_request('POST','https://api.groww.in/v1/margins/detail/orders',dashboard=True)
+
+
+def test_money_reads_every_thirty_seconds_and_failed_reads_do_not_keep_fresh_cash():
+    current=[NOW]; calls=[]
+    def money(**kwargs):
+        calls.append(current[0])
+        if len(calls)>1:raise OSError('PRIVATE error')
+        return dict(clear_cash=10000,fno_margin_details=dict(option_sell_balance_available=5000))
+    broker=SimpleNamespace(get_quote=lambda **kwargs:{'last_price':100},
+        get_order_list=lambda **kwargs:{'order_list':[]},get_positions_for_user=lambda **kwargs:{'positions':[]},
+        get_historical_candles=lambda **kwargs:{'interval_in_minutes':5,'candles':[]},
+        get_available_margin_details=money)
+    collector=DashboardCollector(SimpleNamespace(groww=broker,limiter=SimpleNamespace(wait=lambda:None)),
+        clock=lambda:current[0],background_history=False)
+    assert collector.sample()['funds']['clear_cash_inr']==10000
+    current[0]+=timedelta(seconds=5)
+    assert collector.sample()['funds']['clear_cash_inr']==10000 and len(calls)==1
+    current[0]+=timedelta(seconds=25)
+    result=collector.sample()
+    assert result['funds']['status']=='UNAVAILABLE' and len(calls)==2
+    assert 'PRIVATE' not in dumps(result)
 
 
 def protocol():

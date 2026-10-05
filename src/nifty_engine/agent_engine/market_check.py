@@ -50,7 +50,7 @@ def allowed_request(method, url, *, history=False, dashboard=False):
     if history:
         read_paths.update({"/v1/historical/candles", "/v1/historical/contracts"})
     if dashboard:
-        read_paths.update({"/v1/order/list", "/v1/positions/user"})
+        read_paths.update({"/v1/order/list", "/v1/positions/user", "/v1/margins/detail/user"})
         read_paths.add("/v1/order-advance/list")
         if method.upper() == "GET" and re.fullmatch(r"/v1/order-advance/status/FNO/(?:OCO|GTT)/internal/[A-Za-z0-9_-]{1,128}",parsed.path):
             return True

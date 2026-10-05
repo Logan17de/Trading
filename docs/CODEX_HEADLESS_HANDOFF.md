@@ -45,6 +45,26 @@ unchanged. No strategy has a validated net-profit probability or executable plan
 
 ## Implemented and verified
 
+- Weekday **12:55 JST** Codex thread follow-up installed as
+  `trading-news-and-barrier-check`; configured ACTIVE, first scheduled run not yet
+  observed. The persistent app collects RBI + ET Markets evidence independently
+  every 120 seconds during 12:40–19:45 JST. Support/resistance requests run from
+  12:55, with 15:00/17:00 reassessment and changed-news/barrier triggers. Eight
+  daily attempts remain the global cap; crossings take queue priority. Missing
+  news stays UNKNOWN; assessments must cite actual IDs from both hosts for LOW
+  and expire after 180 seconds. LOW is not a forecast. Level updates are research.
+- Strategy ownership is persisted for each reserved slot, including overnight.
+  Same-slot reuse cannot reattribute everyday orders to swing. An occupied slot
+  blocks a second entry; no automatic release/reassignment is implemented. Owned
+  exit/protection review takes priority. Swing's recorded **18:45 JST** entry is
+  outside the 18:15 cutoff and remains research-only. Both strategies may be
+  analysed concurrently; manual positions remain protected.
+- Groww money is now read using the existing SDK's read-only available-margin
+  endpoint every 30 seconds, independently of account/strategy P&L. The app shows
+  clear cash, total used margin, option-buy/sell balances and collateral with the
+  provider response timestamp; stale/failing reads show unknown amounts. Clear
+  cash is not investment value. Strategy accounting remains unconnected.
+
 - PC app installed locally: Desktop and Start **Options Trader**, plus a hidden
   Windows Startup shortcut for its background monitor. The same startup entry
   point was run successfully; an actual logout/reboot has not been tested.
@@ -98,6 +118,13 @@ back off for 60 seconds. Credentials and authentication details stay private.
 5. Connect reviewed accounting/strategy attribution and local observations to the
    existing report publisher. Recurring visual daily email is not activated;
    provider acceptance and inbox delivery must remain separate evidence.
+
+October 5 news/funds verification: 192 tests passed, four POSIX-only skips; offline
+demo completed with synthetic inputs and no mail/orders. Actual pinned Windows
+Codex accepted the expanded structured schema, returned WAIT for missing market
+evidence and emitted zero tool events. Real Groww money read passed. ET yielded
+15 dated items; RBI supplied no item within the 24-hour policy, so news remained
+UNKNOWN. This evidence does not verify the first scheduled market-session run.
 
 ## Protected state
 

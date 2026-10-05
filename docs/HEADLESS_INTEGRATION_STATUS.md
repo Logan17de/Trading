@@ -15,11 +15,40 @@ runbook.
 | Historical study | 17,105 one-minute candles per index; 51,315 total; 41 observed sessions per index | Index moves are not option P&L; source identity/timestamp semantics remain unverified |
 | Owner protocol | Four reproducible hypotheses plus PC v2: NIFTY +500 Mon/Tue/Fri, SENSEX +1000 Wed/Thu, higher-call hedge ranked by supplied net-profit/margin | One slot/lot; exact expiry, costs, current books and executable plan remain unverified |
 | Call-spread comparison | Higher-strike hedge, equal units, payoff/cost arithmetic, separate broker margin and optional budget ranking at fixed quantity | Owner-supplied inputs; no loss cap, quote verification, hedge selection or order submission |
-| Runtime tests | 183 passed locally, four POSIX-only skips; PC monitoring, ownership, expiry and trailing tests added to retained Linux/Windows CI | Functional verification is not strategy validation |
+| Runtime tests | 192 passed locally, four POSIX-only skips; news freshness/assessment, strategy slot attribution and money reads added to retained Linux/Windows CI | Functional verification is not strategy validation |
 | Offline demo | Two persisted analysis jobs and HTML/text/MIME/PNG artifacts | Synthetic inputs and fake analyst; no email sent |
 | SQLite operations | Backup API and restore-to-new-path preserved state/report identity | Automated off-host backups and retention are not installed |
 
 ## October 5 active-position charts and revised rule
+
+### News, scheduling, conflict policy and Groww money
+
+Installed in the PC app: independent two-minute RBI/ET evidence collection;
+structured Codex news assessment with exact cited IDs and 180-second expiry;
+12:55/15:00/17:00 level research plus coalesced news/crossing triggers. The shared
+eight-attempt daily cap and stale level status are visible. A weekday 12:55 JST
+Codex thread heartbeat is ACTIVE; its first scheduled run has not yet occurred.
+Oracle execution, recurring mail and off-host backups are not activated by this.
+
+The journal now persists strategy ownership per slot. An everyday carry blocks
+another entry and cannot be relabelled as swing; restart/legacy cases are tested.
+Swing 18:45 is outside the 18:15 action cutoff, so it is research-only. No slot
+is automatically released. Manual trades remain protected.
+
+Real read-only Groww funds verification passed at 12:36 JST. The money card reads
+clear cash, total used margin, separate option buying/selling balances and
+collateral every 30 seconds. Signed provider fields are preserved; cash is not
+treated as portfolio value, net P&L or permission to spend. Failed/stale reads
+display unknown. The available-margin endpoint is GET-only in the existing
+transport; broker writes and order-margin POST remain blocked.
+
+Actual ET fetch returned 15 current articles; RBI returned no item within the
+24-hour freshness policy. The app therefore shows UNKNOWN and blocks new-position
+readiness. A real pinned Windows Codex run accepted the new strict output schema,
+returned WAIT for missing market evidence and emitted zero tool events. The full
+local suite passed (192 tests, four POSIX-only skips) and the offline demo produced
+synthetic report artifacts without mail/orders. First scheduled level updates and
+a full unattended session remain unverified.
 
 **Installed in the local PC app:** option charts now require confirmed nonzero
 positions. Historical fills, pending orders and closed positions do not qualify.

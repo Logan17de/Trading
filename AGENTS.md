@@ -22,6 +22,14 @@
 - Support/resistance research starts at 12:55 JST. Fresh barrier crossings queue
   bounded, deduplicated structured Codex proposals. Action rules are restricted to
   13:00 inclusive–18:15 exclusive JST; everyday entry still starts at 13:15.
+  Independent RBI/ET news collection runs every two minutes during observation;
+  missing/stale sources stay UNKNOWN. Level reassessment is 15:00 and 17:00, with
+  changed-news/crossing requests within the same eight-attempt daily cap. A weekday
+  12:55 Codex thread follow-up checks the installed workers. Slot strategy ownership
+  persists overnight; never relabel everyday orders as swing. Swing's recorded
+  18:45 entry is outside the action cutoff and remains research-only.
+  Groww clear cash and option-buy/sell money are read every 30 seconds, separately
+  from reviewed P&L/investment value. Failed/stale balances remain unknown.
 - Engine ownership needs a reserved journal reference AND the exact acknowledged
   broker order identity. Manual/unknown and mixed/netted contracts are protected
   persistently. Never adopt a manual trade or infer ownership from a prefix.

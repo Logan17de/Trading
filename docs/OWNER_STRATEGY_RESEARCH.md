@@ -41,6 +41,41 @@ are persistently protected. No net-profit probability has been validated.
 are retained for historical reproducibility; the PC v2 overlay supplies the latest
 short offsets and higher-call profit comparison.
 
+## Everyday and swing arbitration
+
+Both strategies share one journal-owned slot and one lot. Reserving an everyday
+spread records its strategy ownership durably; carrying overnight keeps that
+ownership and blocks a separate swing spread or another everyday entry. A weekday
+change does not switch a held position's index or relabel its P&L. Same-slot reuse
+under a different strategy is rejected, including after a restart. Legacy
+reservations remain unattributed; they are never automatically adopted. Slot
+release after verified flat legs, cancelled/reconciled pending orders and review
+belongs to the unfinished executor; the PC does not release slots automatically.
+
+Owned exit/protection review has priority over any entry. Manual/unknown and mixed
+contracts stay protected. Read-only strategy research may run concurrently. The
+recorded swing entry is **18:45 JST**, outside the current **18:15** action cutoff,
+so swing remains research-only under this policy. No silent time change or separate
+second slot is allowed. Actual Oracle entry/exit execution remains inactive.
+
+## Automatic news and level research
+
+The PC's independent worker fetches the mandatory RBI and ET Markets pair every
+two minutes during the weekday observation window. Evidence includes publication
+and fetch times, URLs and IDs. Failed or stale feeds remain UNKNOWN. Structured
+Codex assessment must cite supplied IDs; LOW requires both hosts, expires after
+three minutes and is not a claim of safety or profit. News uncertainty blocks
+new-position readiness but does not prevent evidence-based level research.
+
+Level requests are scheduled from 12:55 JST, again at 15:00 and 17:00. Changed
+news is coalesced by index into 30-minute buckets; crossings are deduplicated in
+five-minute buckets and take queue priority. Requests expire after five minutes;
+the combined daily cap is eight attempts, including retries. The app shows that
+budget and stale research labels; reaching the cap does not imply a fresh update.
+The installed weekday 12:55 Codex thread follow-up checks these workers and alerts
+only for meaningful changes/failures. Both the app and scheduled follow-up require
+the PC to be awake, signed in and online; Codex scheduling also depends on Codex.
+
 ## Recorded research rules, through October 1
 
 There are four strategy hypotheses. All owner times use Japan time, which is
