@@ -54,7 +54,8 @@ print(json.dumps({'status':'READ_ONLY_RELEASE_STAGED','pause':True,'orders_enabl
 $taskSetup | & $taskSsh @taskSshArgs "sudo -n python3 - $Commit"
 if ($LASTEXITCODE -ne 0) {throw 'Deployment staging failed'}
 # Credentials go from the existing DPAPI vault straight into SSH stdin.
-Add-Type -AssemblyName System.Security.Cryptography.ProtectedData -ErrorAction SilentlyContinue
+try { Add-Type -AssemblyName System.Security.Cryptography.ProtectedData }
+catch { Add-Type -AssemblyName System.Security }
 $taskVault=Join-Path (Split-Path $taskRoot -Parent) '.secrets\growing-trader'
 $taskBytes=@();$taskPayload=$null
 try {

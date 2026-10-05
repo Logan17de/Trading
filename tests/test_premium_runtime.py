@@ -80,6 +80,9 @@ def test_heartbeat_requires_actual_advancement_and_bounded_timestamps():
     v['heartbeat_sequence']=2
     assert health(v,NOW+timedelta(seconds=31),previous=old,progress_at=at)[0]=='HEALTHY'
     assert health(v,NOW)[0]=='WORKER_STUCK'
+    startup=dict(boot_id='new',heartbeat_sequence=1,heartbeat_at=NOW.isoformat(),initializing=True)
+    assert health(startup,NOW+timedelta(seconds=119))[0]=='STARTING'
+    assert health(startup,NOW+timedelta(seconds=121))[0]=='WORKER_STUCK'
 
 def model():
     protocol=json.loads((ROOT/'config/owner_strategies.json').read_text())

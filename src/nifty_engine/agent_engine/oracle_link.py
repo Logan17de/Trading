@@ -55,6 +55,8 @@ def health(runtime, now, *, previous=None, progress_at=None):
         return "INVALID_HEARTBEAT",previous,progress_at
     changed=identity!=previous
     progress_at=now.timestamp() if changed or progress_at is None else progress_at
+    if runtime.get("initializing") is True and identity[1]==1 and 0<=age<=120:
+        return "STARTING",identity,progress_at
     state="WORKER_STUCK" if not 0<=age<=30 or now.timestamp()-progress_at>30 else "HEALTHY"
     return state,identity,progress_at
 
