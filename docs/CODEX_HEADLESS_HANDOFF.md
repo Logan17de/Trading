@@ -15,14 +15,19 @@ Read [current status](HEADLESS_INTEGRATION_STATUS.md),
 
 - Local Options Trader PC app; Desktop/Start access and automatic Windows sign-in
   startup. All charts are lines. Groww reads target five seconds; chart points use
-  completed five-minute prices. Buy/sell panels require actual matching orders or
-  open positions. Pending orders are not fills.
-- Monitor in the background from 12:50–18:15 JST on weekdays. Research support/
+  completed five-minute prices. Buy/sell panels require confirmed nonzero open
+  positions; pending orders, historical fills and closed positions do not qualify.
+  Show broker average entry, matching pending SL and active OCO/GTT exit target/SL lines.
+  Missing protection prices stay absent; a failed protection read is labelled.
+- Observe in the background from 12:40–19:45 JST on weekdays. Research support/
   resistance from 12:55. Barrier-rule validity is 13:00 inclusive–18:15 exclusive.
   Everyday entry starts at 13:15. The PC must be awake, signed in and online.
-- One active slot and one lot. Everyday short: NIFTY spot +400 on Mon/Tue/Fri;
-  SENSEX spot +800 on Wed/Thu. Buy a same-expiry call near index ATM, up to three
-  listed strikes away. The owner says budget ranking is not part of this rule.
+- One active slot and one lot. Everyday short: NIFTY spot +500 on Mon/Tue/Fri;
+  SENSEX spot +1000 on Wed/Thu. Buy a higher call with the same expiry and quantity.
+  Rank candidate hedges by quoted maximum net expiry profit after costs within
+  available margin. The earlier fixed +1000 hedge example is not a strike floor:
+  the owner subsequently allowed alternative higher strikes to improve profit.
+  Missing costs/margin/quotes block recommendation; payoff bounds are not forecasts.
 - Skip actual expiry day. Cross-check Groww's expiry API against current instrument
   metadata, including holiday-shifted dates. Missing/disagreeing evidence blocks
   entry. Do not infer expiry from the weekday or ask Codex to invent a calendar.
@@ -33,11 +38,10 @@ Read [current status](HEADLESS_INTEGRATION_STATUS.md),
 - Keep Oracle running continuously for shared Qwen/Colab/mail/tunnels. Oracle is
   the intended execution host; new trading services remain inactive.
 
-Buying an ATM call while selling a higher call normally creates a **bullish debit
-spread**. That conflicts with the previously recorded flat/down-hold, up-exit rule.
-The app records both instructions and exposes a payoff-review blocker. No strategy
-has a validated net-profit probability. Version 1/2 studies remain reproducible;
-`config/pc_app.example.json` records the newer PC overlay.
+The owner confirmed BUY for the higher call and superseded the earlier ATM buy.
+PC policy version 2 records the +500/+1000 short offsets and higher-call comparison.
+Historical PC v1 retains its payoff-review blocker; historical research v1/v2 is
+unchanged. No strategy has a validated net-profit probability or executable plan.
 
 ## Implemented and verified
 
@@ -80,7 +84,7 @@ back off for 60 seconds. Credentials and authentication details stay private.
 
 1. Verify complete market-session collection and current five-minute option history
    after the session opens. Before open, the app labels current-day charts as waiting.
-2. Resolve the ATM-spread payoff/direction conflict and approve exact contracts,
+2. Verify/approve exact contracts, affordable hedge, costs,
    selected expiry, lot/tick, stop/target and basket sequencing. No size increase
    follows from a monthly target. Overnight carried-position review is still a
    review output; the new 18:15 action cutoff must not imply overnight protection.

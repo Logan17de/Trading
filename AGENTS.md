@@ -7,11 +7,14 @@
   Codex, a visual daily email for the owner. Preserve the existing runtime.
   The owner also authorized the local loopback-only Options Trader PC app, Desktop/
   Start shortcuts and Windows sign-in startup. The background observer targets
-  five-second Groww reads from 12:50–18:15 JST on weekdays, independently of the
-  window. A visible window may request reads anytime. All charts are lines using
+  five-second Groww reads from 12:40–19:45 JST on weekdays, independently of the
+  action window, covering normal-session observation and end-of-day preparation.
+  A visible window may request reads anytime. All charts are lines using
   completed five-minute prices; never render candles.
-  Show each buy/sell panel only for that side's actual orders or open positions;
-  chain samples must not create charts. Pending orders are not fills. No recorded
+  Show each buy/sell panel only for confirmed nonzero open option positions.
+  Historical fills, pending orders, closed positions and chain samples create no
+  charts. Plot the broker position average entry and matched pending SL/active OCO or GTT exits
+  target/SL, including partial coverage; unknown prices stay absent. No recorded
   losses means 100% non-loss only when completed trades exist; absent results stay
   unknown. Account/strategy P&L needs the private reviewed ledger, never index moves.
 - Use the local PC for read-only Groww observation and strategy research. Oracle
@@ -38,16 +41,18 @@
 - Evaluate the owner's fixed Japan-time hypotheses with costs, fills and chronological
   holdouts before selecting any strategy. Profit targets never increase exposure,
   leverage or loss limits; record insufficient evidence and NO_TRADE when appropriate.
-- Latest everyday direction: at/after 13:15 JST, NIFTY +400 on Mon/Tue/Fri and
-  SENSEX +800 on Wed/Thu; one active slot, one lot; buy a same-expiry call near the
-  index ATM, up to three listed strikes away. No budget-based hedge ranking is
-  required for this revised rule. Skip the underlying's actual expiry day using
+- Latest everyday direction: at/after 13:15 JST, NIFTY +500 on Mon/Tue/Fri and
+  SENSEX +1000 on Wed/Thu; one active slot, one lot. Buy a higher-strike call with
+  the same expiry and equal quantity. Compare alternative hedges by quoted maximum
+  net expiry profit after costs within verified available margin; show loss exposure
+  and never represent that bound as expected profit. Missing inputs block ranking.
+  Skip the underlying's actual expiry day using
   Groww expiry dates AND current contract metadata, including holiday shifts;
   unknown/disagreeing evidence blocks entry. Weekday routing does not prove expiry.
-- The ATM long / higher short normally forms a bullish debit spread, conflicting
-  with the earlier flat/down-hold, up-exit direction. Record the conflict; do not
-  silently change the owner's rule or activate it. Version 1/2 research remains
-  reproducible; `pc_app.example.json` is the latest PC policy overlay.
+- The owner clarified BUY for the higher call; this supersedes the former ATM-buy
+  instruction and resolves that leg-direction conflict. Retain historical v1/v2
+  research and historical PC v1 settings for reproducibility; PC v2 is current.
+  No strategy-profit probability or executable contracts/expiry are established.
 - Trailing SL source is present but disabled and undeployed. Modify only an exact,
   already-owned protective SL; ratchet only favorably, confirm provider readback
   before advancing state, and reconcile timeouts before another broker write.

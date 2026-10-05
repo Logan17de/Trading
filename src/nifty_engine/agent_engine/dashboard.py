@@ -29,7 +29,7 @@ from .pc_control import JST, PcJournal, PcMonitor, collection_window, in_window
 
 ASSETS = Path(__file__).with_name("dashboard_assets")
 STRATEGIES = (
-    ("everyday", "Everyday hedged call", "13:15 JST · NIFTY +400 / SENSEX +800"),
+    ("everyday", "Everyday hedged call", "13:15 JST · NIFTY +500 / SENSEX +1,000"),
     ("late_session", "Late-session decay", "17:45–18:45 JST · Hedged calls"),
     ("swing", "Swing call spread", "Overnight · 10 / 20 strike study"),
     ("expiry_reversal", "Expiry reversal", "SENSEX · 18:50 JST onward"),
@@ -180,13 +180,16 @@ def view_model(snapshot, protocol, account=None, *, now=None):
         last, previous = finite(quote.get("last_price")), finite(ohlc.get("close"))
         change = last - previous if last is not None and previous and previous > 0 else None
         options = []
-        # Only real broker order/position contracts enter buy/sell charts.
+        # Latest owner direction: only confirmed nonzero open positions qualify.
         ordered = snapshot.get("ordered_options", [])
         for item in (ordered if isinstance(ordered, list) else [])[:40]:
             if not isinstance(item, dict):
                 continue
             symbol = item.get("symbol")
             if item.get("index") != index or item.get("side") not in ("BUY","SELL"):
+                continue
+            quantity = finite(item.get("quantity"))
+            if item.get("order_status") != "POSITION" or quantity is None or quantity <= 0:
                 continue
             if not isinstance(symbol, str) or not OPTION_SYMBOL.fullmatch(symbol):
                 continue
@@ -203,7 +206,9 @@ def view_model(snapshot, protocol, account=None, *, now=None):
                     else "LOADING_OPTION_HISTORY" if snapshot.get("history_refreshing") is True
                     and symbol not in charts else "NO_OPTION_HISTORY",
                 "book_time_verified": False, "order_status":item.get("order_status") if item.get("order_status") in ("OPEN","TRIGGER_PENDING","EXECUTED","DELIVERY_AWAITED","POSITION","PARTIAL_FILL") else "RECORDED",
-                "quantity":finite(item.get("quantity")),
+                "quantity":quantity, "price_levels":public_price_levels(item),
+                "protective_levels_status":item.get("protective_levels_status") if item.get("protective_levels_status")
+                    in ("AVAILABLE", "UNAVAILABLE") else "UNAVAILABLE",
                 "ownership":item.get("ownership") if item.get("ownership") in
                     ("ENGINE_VERIFIED","ENGINE_PENDING_VERIFIED") else "MANUAL_OR_UNKNOWN_PROTECTED"})
         markets.append({"index": index, "price": last, "change": change,
@@ -221,6 +226,8 @@ def view_model(snapshot, protocol, account=None, *, now=None):
         "source": "Groww · read-only", "market_day": stamp(received).astimezone(IST).date().isoformat() if received else None,
         "markets": markets, "account": acct, "strategies": strategies,
         "orders_status": snapshot.get("orders_status") if snapshot.get("orders_status") in ("AVAILABLE","INCOMPLETE","UNAVAILABLE") else "UNAVAILABLE",
+        "positions_status": snapshot.get("positions_status") if snapshot.get("positions_status") in
+            ("AVAILABLE", "UNAVAILABLE") else "UNAVAILABLE",
         "market_status": snapshot.get("status") if snapshot.get("status") in ("READ_ONLY_DATA_AVAILABLE","PARTIAL_MARKET_DATA","BLOCKED") else "UNKNOWN",
         "poll_interval_seconds":POLL_SECONDS, "candle_interval_minutes":5,
         "sequence": snapshot.get("sequence") if type(snapshot.get("sequence")) is int else None,
@@ -238,32 +245,113 @@ def option_identity(row):
     return {"symbol": symbol, "index": index, "exchange": EXCHANGES[index]}
 
 
-def ordered_contracts(orders, positions):
-    """Contract-level chart eligibility; pending orders are never labelled fills."""
+def public_price_levels(item):
+    """Only prices and their provenance reach the browser; never broker identities."""
+    result = []
+    levels = item.get("price_levels", [])
+    for level in levels[:40] if isinstance(levels, list) else []:
+        if not isinstance(level, dict):
+            continue
+        price = finite(level.get("price"))
+        if (level.get("kind") not in ("ENTRY", "SL", "TARGET") or price is None
+                or not 0 < price < 1e7 or level.get("source") not in
+                ("GROWW_POSITION_NET_PRICE", "GROWW_CARRY_FORWARD_PRICE", "GROWW_PENDING_SL", "GROWW_ACTIVE_OCO", "GROWW_ACTIVE_GTT_EXIT")):
+            continue
+        result.append({"kind":level["kind"], "price":price, "source":level["source"],
+            "quantity":finite(level.get("quantity")),
+            "product":level.get("product") if level.get("product") in ("NRML", "MIS") else None})
+    return result
+
+
+def ordered_contracts(orders, positions, smart_orders=()):
+    """Open position charts only; read-only order records supply verified levels."""
     result = {}
-    for row in orders:
-        item = option_identity(row) if isinstance(row, dict) else None
-        if item is None or row.get("transaction_type") not in ("BUY", "SELL"):
-            continue
-        status = row.get("order_status")
-        filled = finite(row.get("filled_quantity")) or 0
-        if status not in ("OPEN", "TRIGGER_PENDING", "EXECUTED", "DELIVERY_AWAITED") and filled <= 0:
-            continue
-        quantity = finite(row.get("quantity"))
-        if quantity is None or quantity <= 0:
-            continue
-        if status not in ("OPEN", "TRIGGER_PENDING", "EXECUTED", "DELIVERY_AWAITED"):
-            status = "PARTIAL_FILL"
-        item.update(side=row["transaction_type"], order_status=status, quantity=quantity)
-        result[item["symbol"], item["side"]] = item
     for row in positions:
         item = option_identity(row) if isinstance(row, dict) else None
         quantity = finite(row.get("quantity")) if isinstance(row, dict) else None
         if item is None or quantity is None or quantity == 0:
             continue
-        item.update(side="BUY" if quantity > 0 else "SELL", order_status="POSITION", quantity=abs(quantity))
-        result[item["symbol"], item["side"]] = item
+        side = "BUY" if quantity > 0 else "SELL"
+        entry = finite(row.get("net_price"))
+        source = "GROWW_POSITION_NET_PRICE"
+        if (entry is None or entry <= 0) and finite(row.get("net_carry_forward_quantity")) == quantity:
+            entry = finite(row.get("net_carry_forward_price"))
+            source = "GROWW_CARRY_FORWARD_PRICE"
+        product = row.get("product")
+        item.update(side=side, order_status="POSITION", quantity=abs(quantity), price_levels=[])
+        if entry is not None and 0 < entry < 1e7:
+            item["price_levels"].append({"kind":"ENTRY","price":entry,"source":source,
+                "quantity":abs(quantity), "product":product})
+        for order in orders:
+            if (not isinstance(order, dict) or option_identity(order) != option_identity(row)
+                    or product not in ("NRML", "MIS") or order.get("product") != product
+                    or order.get("transaction_type") != ("SELL" if side == "BUY" else "BUY")
+                    or order.get("order_status") not in ("OPEN","TRIGGER_PENDING")
+                    or order.get("order_type") not in ("SL","SL_M")
+                    or finite(order.get("filled_quantity")) != 0
+                    or finite(order.get("quantity")) is None or not 0 < order["quantity"] <= abs(quantity)):
+                continue
+            price = finite(order.get("trigger_price"))
+            if price is not None and 0 < price < 1e7:
+                item["price_levels"].append({"kind":"SL","price":price,"source":"GROWW_PENDING_SL",
+                    "quantity":finite(order["quantity"]), "product":product})
+        for order in smart_orders:
+            if (not isinstance(order, dict) or order.get("trading_symbol") != item["symbol"] or order.get("exchange") != item["exchange"]
+                    or order.get("segment") != "FNO" or order.get("status") != "ACTIVE"
+                    or product not in ("NRML", "MIS") or order.get("smart_order_type") not in ("OCO", "GTT")
+                    or order.get("product_type") != product
+                    or finite(order.get("quantity")) is None or not 0 < order["quantity"] <= abs(quantity)):
+                continue
+            prices = {}
+            if order["smart_order_type"] == "GTT":
+                exit_order = order.get("order")
+                direction = order.get("trigger_direction")
+                if (not isinstance(exit_order, dict) or exit_order.get("transaction_type") !=
+                        ("SELL" if side == "BUY" else "BUY") or direction not in ("UP", "DOWN")):
+                    continue
+                price = smart_price(order.get("trigger_price"))
+                if price is not None:
+                    kind = "SL" if direction == ("DOWN" if side == "BUY" else "UP") else "TARGET"
+                    item["price_levels"].append({"kind":kind, "price":price, "source":"GROWW_ACTIVE_GTT_EXIT",
+                        "quantity":finite(order["quantity"]), "product":product})
+                continue
+            for field,kind in (("stop_loss","SL"),("target","TARGET")):
+                leg = order.get(field)
+                value = leg.get("trigger_price") if isinstance(leg, dict) else None
+                price = smart_price(value)
+                if price is not None:
+                    prices[kind] = price
+            if len(prices) == 2 and not (prices["SL"] < prices["TARGET"] if side == "BUY" else prices["TARGET"] < prices["SL"]):
+                continue
+            for kind, price in prices.items():
+                item["price_levels"].append({"kind":kind,"price":price,"source":"GROWW_ACTIVE_OCO",
+                    "quantity":finite(order["quantity"]), "product":product})
+        key = item["symbol"], side
+        if key in result:
+            prior = result[key]
+            total = item["quantity"] + prior["quantity"]
+            old_entry = next((r for r in prior["price_levels"] if r["kind"] == "ENTRY"), None)
+            new_entry = next((r for r in item["price_levels"] if r["kind"] == "ENTRY"), None)
+            levels = [r for r in prior["price_levels"]+item["price_levels"] if r["kind"] != "ENTRY"]
+            # Same-contract, same-side rows have a quantity-weighted position average.
+            # Missing averages remain unknown rather than using a previous fill.
+            if old_entry and new_entry:
+                levels.insert(0, {"kind":"ENTRY", "price":(old_entry["price"]*prior["quantity"]+
+                    new_entry["price"]*item["quantity"])/total, "source":"GROWW_POSITION_NET_PRICE",
+                    "quantity":total, "product":None})
+            item.update(quantity=total, price_levels=levels)
+        result[key] = item
     return list(result.values())
+
+
+def smart_price(value):
+    if type(value) not in (str, int, float) or isinstance(value, str) and len(value) > 32:
+        return None
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    return price if math.isfinite(price) and 0 < price < 1e7 else None
 
 
 def instrument_metadata(text, requested):
@@ -391,7 +479,7 @@ def collect_charts(market, snapshot, now, *, previous=None, refresh_all=True):
 
 class DashboardCollector:
     def __init__(self, market, *, clock=lambda: datetime.now(timezone.utc), metadata_loader=download_metadata,
-                 background_history=True, journal=None, calendar_loader=download_calendar):
+                 background_history=True, journal=None, calendar_loader=download_calendar, smart_loader=None):
         self.market, self.clock, self.metadata_loader = market, clock, metadata_loader
         self.metadata, self.charts, self.chart_bucket, self.metadata_attempt = {}, {}, None, None
         self.sequence = 0
@@ -399,6 +487,11 @@ class DashboardCollector:
         self.history_future = None
         self.journal, self.calendar_loader = journal, calendar_loader
         self.expiry_evidence, self.expiry_day, self.expiry_next_at = {}, None, 0
+        self.smart_loader = smart_loader
+        from .session import SessionJournal
+        self.sessions = SessionJournal(journal.store) if journal else None
+        self.account_loader = None
+        self.news_loader = None
 
     def close(self):
         if self.history_pool:
@@ -448,6 +541,7 @@ class DashboardCollector:
                 break
         else:
             complete = False
+        orders_complete = complete
 
         def position_summary(raw):
             if not isinstance(raw.get("positions"), list):
@@ -460,7 +554,17 @@ class DashboardCollector:
             succeeded += 1
             positions = raw["positions"][:1000]
             complete &= len(raw["positions"]) <= 1000
-        ordered = ordered_contracts(orders, positions)
+        result["positions_status"] = "AVAILABLE" if raw is not None and len(raw["positions"]) <= 1000 else "UNAVAILABLE"
+        smart = []
+        if self.smart_loader and positions:
+            try:
+                smart = self.smart_loader(positions,started)
+                probes["smart_orders"] = {"ok":True,"record_count":len(smart)}
+            except Exception as exc:
+                probes["smart_orders"] = safe_error(exc)
+        ordered = ordered_contracts(orders, positions, smart)
+        for option in ordered:
+            option["protective_levels_status"] = "AVAILABLE" if orders_complete and probes.get("smart_orders", {}).get("ok") else "UNAVAILABLE"
         complete &= len(ordered) <= 40
         ordered = ordered[:40]
         result["orders_status"] = "AVAILABLE" if complete else "INCOMPLETE" if succeeded else "UNAVAILABLE"
@@ -548,6 +652,15 @@ class DashboardCollector:
                       cycle_duration_seconds=(finished-started).total_seconds(),
                       status="READ_ONLY_DATA_AVAILABLE" if all(probes[key + "_quote"]["ok"] for key in INDICES)
                       else "PARTIAL_MARKET_DATA")
+        if self.sessions:
+            try:
+                self.sessions.record(result,finished)
+                self.sessions.publish(result,finished,
+                    account=self.account_loader() if self.account_loader else None,
+                    news=self.news_loader() if self.news_loader else None)
+                result["journal_status"] = "RECORDED_AND_PUBLISHED"
+            except Exception as exc:
+                result["journal_status"] = "JOURNAL_"+type(exc).__name__
         return result
 
 
@@ -590,7 +703,16 @@ def run_reader(output, *, lease_file=None, root=None):
                 finally:
                     credentials.clear()
                 journal = PcJournal(Path(root)/".agent-state"/"pc-monitor.sqlite3") if root else None
-                collector = DashboardCollector(GrowwMarketData(token), background_history=lease_file is not None, journal=journal)
+                market = GrowwMarketData(token)
+                from .smart_read import SmartOrderReader
+                collector = DashboardCollector(market, background_history=lease_file is not None, journal=journal,
+                    smart_loader=SmartOrderReader(market.groww,market.limiter))
+                if root:
+                    def private_json(name):
+                        p=Path(root)/".agent-state"/name
+                        return load_json(p) if p.is_file() else None
+                    collector.account_loader=lambda:private_json("dashboard-account.json")
+                    collector.news_loader=lambda:private_json("pc-news.json")
                 del token
                 try:
                     if lease_file is None:

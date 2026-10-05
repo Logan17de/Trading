@@ -13,11 +13,48 @@ runbook.
 | Local Groww REST reader | October 5 at 10:45 JST: authentication and all 22 read-only probes passed after reapproving the existing expired key in Edge | Pre-market last-session observations; API success does not prove executable book freshness |
 | Options Trader PC app | Desktop/Start shortcuts and sign-in startup installed; real quote/order/position and metadata reads; both actual-expiry checks agree | Awake, signed-in PC required; actual reboot and a full unattended market session not tested |
 | Historical study | 17,105 one-minute candles per index; 51,315 total; 41 observed sessions per index | Index moves are not option P&L; source identity/timestamp semantics remain unverified |
-| Owner protocol | Four reproducible hypotheses plus current one-slot/one-lot ATM-buy overlay and actual-expiry skip | ATM long/higher short conflicts with earlier flat/down-hold direction; selected expiry and payoff review remain |
+| Owner protocol | Four reproducible hypotheses plus PC v2: NIFTY +500 Mon/Tue/Fri, SENSEX +1000 Wed/Thu, higher-call hedge ranked by supplied net-profit/margin | One slot/lot; exact expiry, costs, current books and executable plan remain unverified |
 | Call-spread comparison | Higher-strike hedge, equal units, payoff/cost arithmetic, separate broker margin and optional budget ranking at fixed quantity | Owner-supplied inputs; no loss cap, quote verification, hedge selection or order submission |
-| Runtime tests | 151 passed locally, four POSIX-only skips; PC monitoring, ownership, expiry and trailing tests added to retained Linux/Windows CI | Functional verification is not strategy validation |
+| Runtime tests | 183 passed locally, four POSIX-only skips; PC monitoring, ownership, expiry and trailing tests added to retained Linux/Windows CI | Functional verification is not strategy validation |
 | Offline demo | Two persisted analysis jobs and HTML/text/MIME/PNG artifacts | Synthetic inputs and fake analyst; no email sent |
 | SQLite operations | Backup API and restore-to-new-path preserved state/report identity | Automated off-host backups and retention are not installed |
+
+## October 5 active-position charts and revised rule
+
+**Installed in the local PC app:** option charts now require confirmed nonzero
+positions. Historical fills, pending orders and closed positions do not qualify.
+Blue entry lines use the actual Groww position average, with a quantity-matched
+carry-forward fallback. Red SL/green target lines use matching pending SL orders
+and active OCO/GTT exits; partial coverage is labelled. IDs/credentials never enter
+the browser. Cancelled/completed/unrelated protection is excluded. Smart-order
+lookup is bounded to the last 28 days; older smart orders may be absent. No order
+was submitted or changed.
+
+**Real read-only verification:** both existing manual NIFTY positions remain
+protected. Groww supplied average entries and the OCO/GTT reads succeeded with zero
+matching records. No SL/target price was invented. Before the session opens,
+current-day chart history waits for completed five-minute prices. Labelled sample
+preview verifies all six entry/SL/target lines, empty and one-sided position gating,
+and a 390px layout without overflow; preview never enters the journal.
+
+**Current strategy overlay:** NIFTY +500 Mon/Tue/Fri and SENSEX +1000 Wed/Thu,
+from 13:15 JST; one active slot/lot; buy a higher same-expiry call. The comparison
+recommends the greatest supplied maximum net expiry-profit within supplied margin.
+Unknown costs/margin block recommendation. This is a payoff bound, not predicted
+profit. The owner confirmed the higher call is bought and superseded the ATM buy.
+Historical study/config versions remain reproducible. Execution remains inactive.
+
+**Durable observation:** the existing SQLite Store now records deduplicated
+whitelisted quote observations and completed five-minute bars, flags revisions and
+publishes validated OBSERVE snapshots. Reception/source timestamps, missing news
+assessment and unconnected accounting remain unknown. A live local capture reported
+`RECORDED_AND_PUBLISHED`. Full-session coverage is not yet verified.
+
+**Remaining broader integration:** the local maintenance/email-transport and Oracle
+report-receiver drafts are not wired or deployed. Recurring mail, independent
+outage monitoring, Oracle entry/protective execution, complete two-leg sessions
+and strategy holdouts remain unfinished. Shared Oracle services and both pause
+markers are preserved. This update does not activate any trading service.
 
 ## October 5 PC app integration
 
@@ -29,7 +66,7 @@ server reports `background_monitor=true`, `chart_style=LINE` and
 The startup entry point and a real read-only dashboard capture also passed using
 Windows PowerShell 5.1, the shell used by the installed sign-in shortcut.
 
-**Implemented:** independent collection from 12:50–18:15 JST on weekdays;
+**Implemented:** independent observation from 12:40–19:45 JST on weekdays;
 support/resistance research from 12:55; fresh barrier crossings queue deduplicated
 structured Codex requests. Rules cannot extend outside 13:00–18:15 JST, and the
 everyday reference retains its 13:15 start. Requests expire after five minutes,
@@ -68,7 +105,7 @@ have no document overflow at 320/390/768/1440 CSS pixels. Chart time-zone change
 do not change the Japan-time strategy schedule. Sample results remain labelled
 and client-only. Temporary viewport overrides were reset.
 
-**Local gates:** 151 tests passed with four POSIX-only skips. Configuration, Python
+**Local gates:** 183 tests passed with four POSIX-only skips. Configuration, Python
 compilation, seven PowerShell helper syntax checks, JavaScript syntax and
 `git diff --check` passed. The offline demo completed two persisted analysis jobs
 and generated HTML/text/MIME/PNG report artifacts using synthetic data without

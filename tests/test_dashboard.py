@@ -71,7 +71,7 @@ def snapshot():
             {'symbol':'NIFTY26O0625400CE','strike':25400,'listed_strike_offset':0,
              'quote':{'last_price':50,'bid_price':49,'offer_price':51,'private':'PRIVATE'}}]}}},
         'orders_status':'AVAILABLE', 'ordered_options':[{'symbol':'NIFTY26O0625400CE', 'index':'NIFTY',
-            'side':'SELL','exchange':'NSE','strike':25400,'expiry':'2026-10-06','order_status':'EXECUTED',
+            'side':'SELL','exchange':'NSE','strike':25400,'expiry':'2026-10-06','order_status':'POSITION',
             'groww_symbol':'NSE-NIFTY-06Oct26-25400-CE','quantity':65,
             'quote':{'last_price':50,'bid_price':49,'offer_price':51,'private':'PRIVATE'}}],
         'charts':{'NIFTY':{'candles':[{'at':'2026-10-01T09:15:00+05:30','close':24900}]},
@@ -117,15 +117,16 @@ def test_sampled_options_do_not_create_charts_without_orders():
     assert result['poll_interval_seconds']==5 and result['candle_interval_minutes']==5
 
 
-def test_only_actual_pending_filled_and_open_positions_qualify():
+def test_only_nonzero_active_positions_qualify_even_with_old_or_pending_orders():
     base={'trading_symbol':'NIFTY26O0625400CE','segment':'FNO','exchange':'NSE',
           'transaction_type':'SELL','quantity':65,'filled_quantity':0,'groww_order_id':'PRIVATE'}
     assert ordered_contracts([dict(base,order_status='REJECTED')],[])==[]
     assert ordered_contracts([dict(base,order_status='CANCELLED')],[])==[]
     pending=ordered_contracts([dict(base,order_status='OPEN')],[])
-    assert pending[0]['side']=='SELL' and pending[0]['order_status']=='OPEN'
+    assert pending==[]
     partial=ordered_contracts([dict(base,order_status='CANCELLED',filled_quantity=10)],[])
-    assert partial[0]['order_status']=='PARTIAL_FILL'
+    assert partial==[]
+    assert ordered_contracts([dict(base,order_status='EXECUTED',filled_quantity=65)],[])==[]
     positions=ordered_contracts([], [dict(base,quantity=-65),dict(base,quantity=0),
                          dict(base,trading_symbol='NIFTY26O0625800CE',quantity=65)])
     assert [p['side'] for p in positions]==['SELL','BUY']
@@ -164,7 +165,7 @@ def test_collector_rechecks_orders_each_cycle_and_caches_five_minute_history():
         calls.append(('candles',kwargs))
         return {'interval_in_minutes':5,'candles':[['2026-10-01T14:25:00',1,2,0,1]]}
     broker=SimpleNamespace(get_quote=lambda **kwargs:{'last_price':100,'secret':'PRIVATE'},
-        get_order_list=orders,get_positions_for_user=lambda **kwargs:{'positions':[]},
+        get_order_list=orders,get_positions_for_user=lambda **kwargs:{'positions':[dict(rows[0],quantity=-65)] if rows else []},
         get_historical_candles=candles)
     market=SimpleNamespace(groww=broker,limiter=SimpleNamespace(wait=lambda:None))
     collector=DashboardCollector(market,clock=lambda:current[0],background_history=False,

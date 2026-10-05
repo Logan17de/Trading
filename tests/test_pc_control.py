@@ -64,7 +64,7 @@ def test_japan_window_is_exact_and_timezone_independent(hhmm,expected,research):
 def test_owner_pc_policy_and_strict_nonsecret_config():
     assert settings(config())['expiry_rule']=='SKIP_ACTUAL_EXPIRY_DAY'
     for field,value in [('lots',2),('one_active_slot',False),('action_window_jst',['13:00','19:00']),
-                        ('hedge_reference','ABOVE_SHORT_CALL'),('api_key','SECRET')]:
+                        ('hedge_reference','INDEX_ATM'),('short_call_offset_points',{'NIFTY':400,'SENSEX':800}),('api_key','SECRET')]:
         bad=config();bad[field]=value
         with pytest.raises(ValueError):settings(bad)
 
@@ -210,22 +210,45 @@ def test_expiry_uses_actual_holiday_shifted_date_and_unknown_blocks_entry(tmp_pa
     out=monitor.tick(snapshot(expiry_day='2026-10-05'),owner_protocol(),NOW)
     assert out['expiry_check']['NIFTY']['is_expiry_day'] is True  # Monday, no weekday assumption
     assert out['everyday']['status']=='SKIP_EXPIRY_DAY'
-    assert out['everyday']['hedge_reference']=='INDEX_ATM'
+    assert out['everyday']['hedge_reference']=='MAX_NET_PROFIT_HIGHER_CALL'
     out=monitor.tick(snapshot(expiry_status='UNKNOWN_BLOCKED'),owner_protocol(),NOW)
     assert out['everyday']['status']=='EXPIRY_EVIDENCE_REQUIRED'
     out=monitor.tick(snapshot(),owner_protocol(),NOW)
     assert out['expiry_check']['NIFTY']['is_expiry_day'] is False
-    assert out['everyday']['minimum_short_call_strike']==500
-    assert not out['execution_enabled'] and 'ATM_HEDGE_PAYOFF_REVIEW_REQUIRED' in out['blockers']
+    assert out['everyday']['minimum_short_call_strike']==600
+    assert not out['execution_enabled'] and 'ATM_HEDGE_PAYOFF_REVIEW_REQUIRED' not in out['blockers']
+    assert out['everyday']['hedge_ranking']=='MAX_QUOTED_NET_PROFIT_WITHIN_MARGIN'
 
 
 def test_everyday_entry_keeps_1315_boundary_inside_barrier_window(tmp_path):
     monitor=PcMonitor(create_root(tmp_path))
-    for minute,status in [(14,'BEFORE_EVERYDAY_WINDOW'),(15,'ATM_HEDGE_REVIEW_ONLY')]:
+    for minute,status in [(14,'BEFORE_EVERYDAY_WINDOW'),(15,'CALL_CREDIT_SPREAD_REVIEW_ONLY')]:
         at=NOW.replace(minute=minute);value=snapshot();value['finished_at']=at.isoformat()
         for probe in value['probes'].values():probe['received_at']=at.isoformat()
         result=monitor.tick(value,owner_protocol(),at)
         assert result['window_open'] and result['everyday']['status']==status
+
+
+@pytest.mark.parametrize('day,index,offset',[(5,'NIFTY',500),(6,'NIFTY',500),
+    (7,'SENSEX',1000),(8,'SENSEX',1000),(9,'NIFTY',500)])
+def test_latest_index_routing_and_offsets(day,index,offset,tmp_path):
+    monitor=PcMonitor(create_root(tmp_path));at=NOW.replace(day=day)
+    value=snapshot(expiry_day='2026-10-15');value['finished_at']=at.isoformat()
+    for probe in value['probes'].values():probe['received_at']=at.isoformat()
+    for evidence in value['expiry_evidence'].values():evidence['day_jst']=at.date().isoformat()
+    rule=monitor.tick(value,owner_protocol(),at)['everyday']
+    assert rule['index']==index and rule['short_call_offset_points']==offset
+    assert rule['minimum_short_call_strike']==100+offset and not rule['execution_enabled']
+
+
+def test_historical_private_atm_policy_still_requires_review(tmp_path):
+    root=create_root(tmp_path);(root/'.agent-state').mkdir()
+    legacy=config();legacy['format']='trading-pc-app-v1';legacy['hedge_reference']='INDEX_ATM'
+    legacy.pop('short_call_offset_points');legacy['hedge_max_strike_steps']=3
+    (root/'.agent-state/pc-app.json').write_text(json.dumps(legacy))
+    result=PcMonitor(root).tick(snapshot(),owner_protocol(),NOW)
+    assert result['everyday']['minimum_short_call_strike']==500
+    assert 'ATM_HEDGE_PAYOFF_REVIEW_REQUIRED' in result['blockers']
 
 
 def result_for(request):

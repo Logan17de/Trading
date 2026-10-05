@@ -8,26 +8,26 @@ for deployment, completed checks and remaining work.
 
 ## Latest PC rule, October 5
 
-The owner's latest clarification overrides the earlier everyday hedge study:
-**one active slot, one lot, buy a same-expiry call near the index ATM, up to three
-listed strikes away**. No budget-based hedge ranking is required for this revised
-rule. The short still starts at/after 13:15 JST: NIFTY spot +400 on Mon/Tue/Fri;
-SENSEX spot +800 on Wed/Thu. A listed call strike must be at/above the offset.
+The latest owner clarification replaces the ATM buy: **one active slot, one lot,
+sell NIFTY calls at least 500 points above spot on Mon/Tue/Fri; sell SENSEX calls
+at least 1000 points above spot on Wed/Thu**. Entry remains at/after 13:15 JST.
+Buy a higher call with the same expiry and quantity. Compare nearby alternative
+hedge strikes to maximize quoted net expiry-profit after costs within available
+margin. Show each candidate's maximum spread loss; widening the hedge can increase
+both credit and loss exposure. No forecast or guaranteed income follows from the
+maximum payoff. `spread_review.compare` returns a review recommendation only when
+costs, candidate margins and the supplied margin budget are known.
 
-**Skip actual underlying expiry day**, including a date shifted by a holiday.
-The PC collector cross-checks Groww's expiry API against current listed contract
-metadata; missing/disagreeing evidence blocks entry. Codex receives that
-deterministic result and cannot invent an expiry date. The weekday preference is
-index routing, not an expiry calendar. A specific trading expiry is still unselected.
+**Skip actual underlying expiry day**, including holiday-shifted dates. Cross-check
+Groww's expiry API and current listed contracts; missing/disagreeing evidence blocks
+entry. Weekday preference routes the index and does not prove expiry. A specific
+trading expiry, verified current books and stop/target values remain unselected.
 [Groww expiry API](https://groww.in/trade-api/docs/python-sdk/backtesting)
 
-An ATM long call below the short call normally creates a **bull call debit spread**.
-Its payoff benefits from a rise, conflicting with the previously recorded rule
-that flat/down favors holding and up is adverse. The app records this conflict as
-`ATM_HEDGE_PAYOFF_REVIEW_REQUIRED`; it does not silently change either instruction
-or activate entries. This is a payoff inference from the specified legs, not a
-claim about future market direction.
-[OIC bull call spread](https://www.optionseducation.org/strategies/all-strategies/bull-call-spread-debit-call-spread)
+The owner explicitly confirmed BUY for the higher call. This restores the call
+credit-spread direction and supersedes the earlier ATM-buy conflict. PC policy v2
+is current; historical PC v1 retains its payoff-review blocker for reproducibility.
+There is still no validated net-profit probability.
 
 Background support/resistance research begins at 12:55 JST. Barrier proposals are
 valid only from 13:00 inclusive to 18:15 exclusive. This new action cutoff does not
@@ -38,7 +38,8 @@ are persistently protected. No net-profit probability has been validated.
 
 `config/pc_app.example.json` records the current PC overlay. The version 1/2
 `owner_strategies.json`, offline references and higher-call hedge comparisons below
-are retained for historical reproducibility; they do not choose the new ATM hedge.
+are retained for historical reproducibility; the PC v2 overlay supplies the latest
+short offsets and higher-call profit comparison.
 
 ## Recorded research rules, through October 1
 

@@ -282,11 +282,13 @@ def test_spread_profit_ranking_respects_margin_and_fixed_quantity():
     assert wide['within_margin_budget'] is False and wide['profit_rank_within_margin_budget'] is None
     assert narrow['within_margin_budget'] is True and narrow['profit_rank_within_margin_budget']==1
     assert result['quantity']==10 and result['selected_hedge'] is None
+    assert result['recommended_hedge_strike']==narrow['hedge_strike']
     assert result['maximum_loss_limit_applied'] is False
     assert narrow['net_max_expiry_loss_inr']==17300
     value['margin_budget_inr']=100000
-    wide,narrow=compare(value)['comparisons']
+    result=compare(value);wide,narrow=result['comparisons']
     assert wide['profit_rank_within_margin_budget']==1 and narrow['profit_rank_within_margin_budget']==2
+    assert result['recommended_hedge_strike']==wide['hedge_strike']
     value.update(instrument='NIFTY',exchange='NSE',lot_size=65,quantity=65)
     assert compare(value)['quantity']==65
     value['quantity']=64

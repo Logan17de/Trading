@@ -51,6 +51,9 @@ def allowed_request(method, url, *, history=False, dashboard=False):
         read_paths.update({"/v1/historical/candles", "/v1/historical/contracts"})
     if dashboard:
         read_paths.update({"/v1/order/list", "/v1/positions/user"})
+        read_paths.add("/v1/order-advance/list")
+        if method.upper() == "GET" and re.fullmatch(r"/v1/order-advance/status/FNO/(?:OCO|GTT)/internal/[A-Za-z0-9_-]{1,128}",parsed.path):
+            return True
     read_paths.update(f"/v1/option-chain/exchange/{EXCHANGES[index]}/underlying/{index}" for index in INDICES)
     return ((method.upper() == "POST" and parsed.path == "/v1/token/api/access" and not parsed.query)
             or (method.upper() == "GET" and parsed.path in read_paths))

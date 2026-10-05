@@ -16,12 +16,13 @@ Keep the PC awake and online.
 
 - Groww quotes/orders target a **five-second** cycle; all charts are **lines** with
   completed **five-minute** prices. Slow requests can extend a cycle.
-- Buy/sell charts appear only for actual matching orders or open positions.
+- Buy/sell charts appear only for nonzero open option positions; no position means
+  no chart. Broker average entry, matched SL and active OCO target prices are lines.
 - Manual, unknown and mixed trades are protected. Engine ownership requires exact
   private journal and broker-identity matches.
 - P&L and strategy outcomes need the reviewed private accounting ledger. Completed
   trades without losses show 100% green; no completed trades shows “No results”.
-- Background collection starts at 12:50 JST, support/resistance research at 12:55.
+- Background observation runs 12:40–19:45 JST; support/resistance research starts at 12:55.
   Structured barrier proposals are restricted to 13:00–18:15 JST.
 
 See [app setup and operations](docs/LOCAL_HEADLESS.md#local-options-dashboard).
@@ -29,13 +30,15 @@ For another installation, run `scripts/Install-TradingApp.ps1` after local setup
 
 ## Latest everyday rule
 
-From 13:15 JST: NIFTY spot +400 on Mon/Tue/Fri; SENSEX spot +800 on Wed/Thu.
-One active slot, one lot; buy a same-expiry call near index ATM, up to three listed
-strikes away. Skip actual expiry day using Groww expiry dates and current contract
+From 13:15 JST: NIFTY spot +500 on Mon/Tue/Fri; SENSEX spot +1000 on Wed/Thu.
+One active slot, one lot; buy a higher call with the same expiry and quantity.
+Compare higher-call hedges by quoted maximum profit after costs within available
+margin, with loss exposure shown. Missing inputs block recommendation.
+Skip actual expiry day using Groww expiry dates and current contract
 metadata, including holiday shifts. Unknown evidence blocks entry.
 
-The ATM buy changes the earlier call-credit study's payoff. The app exposes that
-conflict and prepares reviews. Automatic entry and broker SL updates are inactive.
+The confirmed higher-call buy supersedes the earlier ATM instruction. Historical
+studies/settings remain reproducible. Automatic entry and broker SL updates are inactive.
 Trailing-stop source has fake-broker verification; Oracle transport, initial
 protective-order placement, reviewed stop/target parameters and activation remain.
 See [strategy details](docs/OWNER_STRATEGY_RESEARCH.md).

@@ -20,14 +20,16 @@ function emptyChart(container, title, subtitle="") {
   delete container.dataset.chartSignature;
   container.innerHTML = `<div class="empty-chart"><svg class="icon" aria-hidden="true"><use href="#icon-bars"/></svg><strong>${escapeHTML(title)}</strong><small>${escapeHTML(subtitle)}</small></div>`;
 }
-function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=false, label="Chart"}={}) {
+function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=false, label="Chart",levels=[]}={}) {
   const rows = (points || []).filter(p => known(p.value) && Number.isFinite(Date.parse(p.at)));
-  if (rows.length < 2) {emptyChart(container, rows.length ? "Waiting for more observations" : "No chart data", "No prices are filled in or simulated."); return;}
-  const signature=JSON.stringify({rows,color,area,mini,pnl,label,timeZone});
+  if (!rows.length || (mini && rows.length < 2)) {emptyChart(container, rows.length ? "Waiting for more observations" : "No chart data", "No prices are filled in or simulated."); return;}
+  const markers=levels.filter(p=>known(p.price)&&p.price>0&&['ENTRY','SL','TARGET'].includes(p.kind));
+  const signature=JSON.stringify({rows,color,area,mini,pnl,label,markers,timeZone});
   if(container.dataset.chartSignature===signature) return;
   container.dataset.chartSignature=signature;
   const width=640, height=mini?120:250, left=mini?1:47, right=mini?4:15, top=mini?10:14, bottom=mini?7:29;
-  let low=Math.min(...rows.map(r=>r.value)), high=Math.max(...rows.map(r=>r.value));
+  const domain=[...rows.map(r=>r.value),...markers.map(p=>p.price)];
+  let low=Math.min(...domain), high=Math.max(...domain);
   if (pnl) {low=Math.min(low,0); high=Math.max(high,0);}
   let span=high-low || Math.max(Math.abs(high)*.02,1); low-=span*.09; high+=span*.09; if(!pnl) low=Math.max(0,low); span=high-low;
   const first=Date.parse(rows[0].at), last=Date.parse(rows.at(-1).at), duration=last-first||1;
@@ -49,7 +51,10 @@ function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=
     }
   }
   const segments=pnl?rows.slice(1).map((r,i)=>`<path d="M${x(rows[i])},${y(rows[i].value)} L${x(r)},${y(r.value)}" fill="none" stroke="${r.value>=0?"#08b75d":"#ef4b2c"}" stroke-width="2.5"/>`).join(""):`<path d="${path}" fill="none" stroke="${color}" stroke-width="${mini?2.7:2.6}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const markerColors={ENTRY:'#3974c8',SL:'#dc503f',TARGET:'#0e9c68'};
+  const levelLines=markers.map(p=>`<line class="price-level" data-level-kind="${p.kind}" x1="${left}" x2="${width-right}" y1="${y(p.price)}" y2="${y(p.price)}" stroke="${markerColors[p.kind]}" stroke-width="1.5" stroke-dasharray="6 4"><title>${p.kind==='ENTRY'?'Average entry':p.kind} ${escapeHTML(inr(p.price))}</title></line>`).join('');
   container.innerHTML=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHTML(label)} · ${rows.length} observations"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".2"/><stop offset="1" stop-color="${color}" stop-opacity=".015"/></linearGradient></defs>${grid}${area?`<path d="${fill}" fill="url(#${id})"/>`:""}${pnl?`<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#bdcec3"/>`:""}${segments}${mini?"":`<circle cx="${x(rows.at(-1))}" cy="${y(rows.at(-1).value)}" r="4.5" fill="${color}" stroke="white" stroke-width="2"/>`}</svg>`;
+  container.querySelector('svg').insertAdjacentHTML('beforeend',levelLines);
   if(mini) return;
   const tooltip=document.createElement("div"); tooltip.className="chart-tooltip"; tooltip.hidden=true; container.append(tooltip);
   container.onpointermove=event=> {
@@ -72,13 +77,14 @@ function renderIndices() {
   }
 }
 function renderOptions(reset=false) {
-  const withOrders=(data.markets||[]).filter(m=>m.options?.length);
+  const activeOptions=market=>(market?.options||[]).filter(o=>o.order_status==='POSITION'&&known(o.quantity)&&o.quantity>0);
+  const withOrders=(data.markets||[]).filter(m=>activeOptions(m).length);
   if(withOrders.length&&!withOrders.some(m=>m.index===selectedIndex)) selectedIndex=withOrders[0].index;
   $("chart-toolbar").hidden=!withOrders.length; $("option-grid").hidden=!withOrders.length;
   $("orders-empty").hidden=Boolean(withOrders.length);
-  $("orders-empty").textContent=data.orders_status==="AVAILABLE"?"No option orders or open positions. Buy and sell charts appear when those orders are present.":"Option orders could not be fully checked. Charts appear only for confirmed orders or open positions.";
+  $("orders-empty").textContent=data.positions_status==="AVAILABLE"?"No active option positions. Buy and sell charts appear only while a position is open.":"Positions could not be fully checked. Charts appear only for confirmed active positions.";
   for(const tab of document.querySelectorAll(".tab")) {const active=tab.dataset.index===selectedIndex; tab.classList.toggle("active",active); tab.setAttribute("aria-pressed",String(active));tab.disabled=!withOrders.some(m=>m.index===tab.dataset.index);}
-  const market=(data.markets||[]).find(m=>m.index===selectedIndex), options=market?.options||[];
+  const market=(data.markets||[]).find(m=>m.index===selectedIndex), options=activeOptions(market);
   let visible=0;
   for(const side of ["buy","sell"]) {
     const legs=options.filter(o=>o.side===side.toUpperCase());
@@ -93,28 +99,35 @@ function renderOptions(reset=false) {
   $("option-grid").classList.toggle("single",visible===1);
 }
 function drawOption(side, option) {
+  let legend=$(side+'-levels');
+  if(!legend) {legend=document.createElement('div');legend.id=side+'-levels';legend.className='level-legend';$(side+'-chart').before(legend);}
+  if(!option) {legend.innerHTML='';$(side+'-chart').innerHTML='';delete $(side+'-chart').dataset.chartSignature;return;}
+  const levels=option?.price_levels||[];
+  legend.innerHTML=levels.map(p=>`<span class="level-${p.kind.toLowerCase()}">${p.kind==='ENTRY'?(side==='buy'?'Bought avg':'Sold avg'):p.kind} <b>${escapeHTML(inr(p.price))}</b>${p.kind!=='ENTRY'&&known(p.quantity)&&p.quantity<option.quantity?` <small>(${p.quantity}/${option.quantity} units)</small>`:''}</span>`).join('');
+  if(!levels.some(p=>p.kind==='ENTRY')&&option) legend.insertAdjacentHTML('afterbegin','<span>Entry price unavailable</span>');
+  if(option&&option.protective_levels_status!=='AVAILABLE'&&!data.demo) legend.insertAdjacentHTML('beforeend','<span>SL/target check incomplete</span>');
   setAmount(side+"-price",option?.last_price);
   const initial=option?.series?.[0]?.value, change=known(initial)&&known(option?.last_price)?option.last_price-initial:null;
   $(side+"-change").textContent=known(change)?`${change>=0?"+":""}${change.toFixed(2)}${initial>0?` (${percent(change/initial*100)})`:""}`:"";
   $(side+"-change").title="Change versus the first completed 5-minute closing price"; tone($(side+"-change"),change);
   $(side+"-book").textContent=option?`Bid ${inr(option.bid)} · Ask ${inr(option.ask)}`:"Bid — · Ask —";
   const owner=option?.ownership==="ENGINE_VERIFIED"?"Engine verified":option?.ownership==="ENGINE_PENDING_VERIFIED"?"Engine pending":"Manual / unknown · protected";
-  $(side+"-expiry").textContent=option?`${owner} · ${option.order_status==="POSITION"?"Open position":option.order_status==="OPEN"||option.order_status==="TRIGGER_PENDING"?"Pending order":option.order_status==="PARTIAL_FILL"?"Partial fill":"Executed order"} · ${option.expiry||"Expiry unverified"}`:"Expiry —";
-  if(option?.series?.length) chart($(side+"-chart"),option.series,{color:change<0?"#ef4b2c":side==="buy"?"#08b75d":"#fb861c",label:side+" option premium · 5-minute line · "+option.symbol});
+  $(side+"-expiry").textContent=option?`${owner} · Open position · ${option.expiry||"Expiry unverified"}`:"Expiry —";
+  if(option?.series?.length) chart($(side+"-chart"),option.series,{color:change<0?"#ef4b2c":side==="buy"?"#08b75d":"#fb861c",label:side+" option premium · 5-minute line · "+option.symbol,levels});
   else emptyChart($(side+"-chart"),option?.series_status==="WAITING_FOR_SESSION"?"Waiting for the market session":option?.series_status==="LOADING_OPTION_HISTORY"?"Loading 5-minute prices":option?"Option history unavailable":"Choose an option contract",option?.series_status==="WAITING_FOR_SESSION"?"Today's line appears as five-minute prices complete.":option?.series_status==="LOADING_OPTION_HISTORY"?"Quotes continue updating while the line chart loads.":option?"This exact contract has no price history.":"Your selected strike and expiry will appear here.");
 }
 function renderControl() {
   const c=data.control;
   $("monitor-status").textContent=data.demo?"Sample preview":data.background_monitor?"Background monitor on":"Use the Options Trader app shortcut";
-  $("everyday-rule").textContent=c?.everyday?.minimum_short_call_strike?`${c.everyday.index} · sell call ≥ ${numeric.format(c.everyday.minimum_short_call_strike)}`:"NIFTY +400 · SENSEX +800 · from 13:15 JST";
-  $("slot-policy").textContent="1 active slot · 1 lot · ATM call buy";
+  $("everyday-rule").textContent=c?.everyday?.minimum_short_call_strike?`${c.everyday.index} · sell call ≥ ${numeric.format(c.everyday.minimum_short_call_strike)}`:"NIFTY +500 · SENSEX +1,000 · from 13:15 JST";
+  $("slot-policy").textContent="1 active slot · 1 lot · higher-call hedge";
   $("monitor-schedule").textContent="Research 12:55 · rules 13:00–18:15 JST";
   const expiry=c?.expiry_check;
   $("expiry-status").textContent=expiry?Object.entries(expiry).map(([index,e])=>`${index}: ${e.is_expiry_day===true?"expiry — skip":e.is_expiry_day===false?"non-expiry":"expiry unverified"}`).join(" · "):"Expiry dates must be confirmed from Groww";
   $("levels").innerHTML=["NIFTY","SENSEX"].map(index=>{const level=c?.levels?.[index];return `<div class="level-item"><strong>${index}</strong><span>Support <b>${level?.support?.length?level.support.map(v=>numeric.format(v)).join(" · "):"—"}</b></span><span>Resistance <b>${level?.resistance?.length?level.resistance.map(v=>numeric.format(v)).join(" · "):"—"}</b></span><small>${level?`Updated ${escapeHTML(dateTime(level.updated_at))}`:"Waiting for 12:55 JST and fresh evidence"}</small></div>`;}).join("");
   const latest=c?.requests?.find(r=>r.rule);
   $("rule-details").hidden=!latest;$("rule-json").textContent=latest?JSON.stringify(latest.rule,null,2):"";
-  $("control-note").textContent=c?.analysis_error?"Codex research needs attention. Review the local verification status.":"Manual and unknown trades are protected. ATM-buy / higher-call-sell payoff needs review. Live entry and broker SL synchronization remain blocked until the Oracle executor and stop parameters are verified.";
+  $("control-note").textContent=c?.analysis_error?"Codex research needs attention. Review the local verification status.":`Manual and unknown trades are protected. ${c?.blockers?.includes("ATM_HEDGE_PAYOFF_REVIEW_REQUIRED")?"Historical ATM policy needs payoff review. ":""}Live entry and broker SL synchronization remain blocked until the Oracle executor and stop parameters are verified.`;
   $("analysis-status").textContent=c?.requests?.length?c.requests.map(r=>r.status.toLowerCase()).join(" · "):"No barrier requests yet";
   $("trailing-status").textContent=c?.trailing?.plans?`${c.trailing.plans} trailing SL update proposal(s) · Oracle synchronization not deployed`:"No verified engine trailing stops · manual trades protected";
 }
@@ -170,10 +183,10 @@ function sampleData() {
   const start=Date.parse("2026-10-01T09:15:00+05:30");
   function series(initial,delta,n=72) {return Array.from({length:n},(_,i)=>{const value=initial+delta*i/(n-1)+Math.sin(i*.48)*Math.abs(delta)*.045+Math.sin(i*1.7)*Math.abs(delta)*.012, open=value+Math.sin(i*.77)*Math.abs(delta)*.03;return {at:new Date(start+i*300000).toISOString(),value,open,high:Math.max(open,value)+Math.abs(delta)*.02,low:Math.min(open,value)-Math.abs(delta)*.02};});}
   const specs=[["NIFTY",22368,124.5],["BANKNIFTY",48332.6,-120.45],["SENSEX",74967.18,456.1]];
-  const markets=specs.map(([index,price,change])=>({index,price,change,change_pct:change/(price-change)*100,high:price+74,low:price-210,previous:price-change,series:series(price-change,change),options:[0,1].map((n)=>({symbol:`SAMPLE-${index}-${n}-CE`,index,type:"CE",side:n?"BUY":"SELL",order_status:"POSITION",exchange:index==="SENSEX"?"BSE":"NSE",expiry:index==="SENSEX"?"2026-10-08":"2026-10-06",strike:Math.ceil(price/100)*100+n*(index==="SENSEX"?800:400),last_price:[198,82][n],bid:[197,81][n],ask:[199,83][n],series:series([245,120][n],[-47,-38][n]),series_status:"SAMPLE"}))}));
-  const rows=[{id:"everyday",name:"Everyday hedged call",description:"13:15 JST · NIFTY +400 / SENSEX +800",closed_trades:8,non_loss_pct:100,loss_pct:0,net_pnl_inr:8450,return_pct:28.2},{id:"late_session",name:"Late-session decay",description:"17:45–18:45 JST · Hedged calls",closed_trades:10,non_loss_pct:60,loss_pct:40,net_pnl_inr:-3200,return_pct:-12.8},{id:"swing",name:"Swing call spread",description:"Overnight · 10 / 20 strike study",closed_trades:12,non_loss_pct:75,loss_pct:25,net_pnl_inr:12600,return_pct:18},{id:"expiry_reversal",name:"Expiry reversal",description:"SENSEX · 18:50 JST onward",closed_trades:5,non_loss_pct:80,loss_pct:20,net_pnl_inr:6100,return_pct:24.4}];
+  const markets=specs.map(([index,price,change])=>({index,price,change,change_pct:change/(price-change)*100,high:price+74,low:price-210,previous:price-change,series:series(price-change,change),options:[0,1].map((n)=>({symbol:`SAMPLE-${index}-${n}-CE`,index,type:"CE",side:n?"BUY":"SELL",order_status:"POSITION",quantity:65,protective_levels_status:"AVAILABLE",price_levels:[{kind:"ENTRY",price:[220,100][n],quantity:65},{kind:"SL",price:[260,65][n],quantity:65},{kind:"TARGET",price:[130,150][n],quantity:65}],exchange:index==="SENSEX"?"BSE":"NSE",expiry:index==="SENSEX"?"2026-10-08":"2026-10-06",strike:Math.ceil(price/100)*100+n*(index==="SENSEX"?800:400),last_price:[198,82][n],bid:[197,81][n],ask:[199,83][n],series:series([245,120][n],[-47,-38][n]),series_status:"SAMPLE"}))}));
+  const rows=[{id:"everyday",name:"Everyday hedged call",description:"13:15 JST · NIFTY +500 / SENSEX +1,000",closed_trades:8,non_loss_pct:100,loss_pct:0,net_pnl_inr:8450,return_pct:28.2},{id:"late_session",name:"Late-session decay",description:"17:45–18:45 JST · Hedged calls",closed_trades:10,non_loss_pct:60,loss_pct:40,net_pnl_inr:-3200,return_pct:-12.8},{id:"swing",name:"Swing call spread",description:"Overnight · 10 / 20 strike study",closed_trades:12,non_loss_pct:75,loss_pct:25,net_pnl_inr:12600,return_pct:18},{id:"expiry_reversal",name:"Expiry reversal",description:"SENSEX · 18:50 JST onward",closed_trades:5,non_loss_pct:80,loss_pct:20,net_pnl_inr:6100,return_pct:24.4}];
   const pnl=series(0,24850,40).map((r,i)=>({...r,value:r.value-(i>2&&i<12?Math.sin((i-2)/10*Math.PI)*10000:0)}));
-  return {demo:true,orders_status:"AVAILABLE",as_of:new Date(start+71*300000).toISOString(),freshness:"SAMPLE",markets,strategies:rows,account:{status:"SAMPLE",capital_inr:150000,portfolio_value_inr:218450,used_margin_inr:112000,available_margin_inr:38000,margin_utilization_pct:74.67,today_pnl_inr:24850,today_return_pct:16.57,realized_today_inr:22300,unrealized_inr:2550,trade_count_today:8,pnl_series:pnl,portfolio_series:series(190000,28450,25)}};
+  return {demo:true,orders_status:"AVAILABLE",positions_status:"AVAILABLE",as_of:new Date(start+71*300000).toISOString(),freshness:"SAMPLE",markets,strategies:rows,account:{status:"SAMPLE",capital_inr:150000,portfolio_value_inr:218450,used_margin_inr:112000,available_margin_inr:38000,margin_utilization_pct:74.67,today_pnl_inr:24850,today_return_pct:16.57,realized_today_inr:22300,unrealized_inr:2550,trade_count_today:8,pnl_series:pnl,portfolio_series:series(190000,28450,25)}};
 }
 $("refresh").addEventListener("click",refresh);
 $("settings").addEventListener("click",()=>$("settings-dialog").showModal());

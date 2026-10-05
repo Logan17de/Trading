@@ -68,6 +68,7 @@ def compare(value):
     for rank,row in enumerate(eligible,1):
         row['profit_rank_within_margin_budget']=rank
     return {'status':'OWNER_REVIEW_ONLY','execution_enabled':False,'selected_hedge':None,
+        'recommended_hedge_strike':eligible[0]['hedge_strike'] if eligible else None,
         'instrument':value['instrument'],'expiry':value['expiry'],'quantity':value['quantity'],
         'margin_budget_inr':budget, 'maximum_loss_limit_applied':False,
         'comparison_objective':'NET_MAX_EXPIRY_PROFIT_WITHIN_SUPPLIED_MARGIN_AT_FIXED_QUANTITY',

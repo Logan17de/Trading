@@ -66,7 +66,7 @@ Download and evaluate the fixed historical study:
 
 See [owner strategies](OWNER_STRATEGY_RESEARCH.md) for the bounded recorder,
 Japan-time windows, study limits and offline spread comparison. Keep the PC awake
-and online; no login task or continuous collector has been installed.
+and online. The PC app sign-in startup and background observer are installed.
 
 Check holdings yourself using the small script requested by the owner:
 
@@ -129,17 +129,23 @@ appears. Only completed five-minute closing prices are plotted as **lines**. No
 candlesticks are rendered anywhere. Broker naive timestamps remain an explicit
 IST/bar-start assumption, not verified market timestamp semantics.
 
-Each buy/sell chart is visible only for that side's actual option orders or open
-positions. Rejected/cancelled unfilled orders and chain samples do not qualify.
-Pending orders, executed orders, partial fills and open positions have distinct
-labels. These are contract-level charts, not inferred spread pairings or fill
-reconciliation. Calls and puts retain their actual symbol, expiry and strike;
+Each buy/sell chart is visible only for that side's confirmed nonzero open option
+positions. Historical fills, pending orders, closed positions and chain samples do
+not create charts. The horizontal blue line is Groww's position average entry;
+carried-position average is used only when its signed quantity matches exactly.
+Red SL and green target lines require a matching pending SL or active OCO/GTT exit
+for the same contract, product and closing side. Cancelled/completed protection is
+excluded. Partial covered quantities are labelled. Missing/failed protection reads
+never invent prices. Smart-order lookup is bounded to orders created in the last
+28 days, matching the provider's maximum one-month query range. Older smart orders
+may be absent. These are contract-level charts, not inferred spread pairings or
+fill reconciliation. Calls and puts retain their actual symbol, expiry and strike;
 Groww's instrument master confirms the exact historical contract. A missing option
 history stays empty. A failed order read is shown as unavailable rather than zero
 orders. Reads are bounded to four order pages, 1,000 position rows and 40 option
 side/contract records; truncation is reported as incomplete.
 
-The PC app renews the collector lease independently of the page from **12:50–18:15
+The PC app renews the collector lease independently of the page from **12:40–19:45
 JST on weekdays**. Closing the app window leaves this monitor running. Outside
 that window, visible auto-refresh can request reads anytime; hiding the page,
 turning off view refresh or using sample preview stops those page renewals. When
@@ -149,6 +155,9 @@ Each viewer process has its own lease/snapshot file, avoiding overlapping output
 after a server restart. A worker has an eight-hour upper bound. It replaces one
 private snapshot per worker instead of writing a new file every five seconds.
 Snapshots, leases, PID and sanitized logs stay in ignored `.agent-state/`.
+The existing SQLite journal now durably retains whitelisted quote observations and
+completed bars for replay. The OBSERVE publisher keeps unverified timestamps, news
+and missing accounting unknown; no broker identities enter published snapshots.
 
 The browser receives whitelisted observations only. Broker credentials stay in
 the DPAPI reader subprocess, never browser assets/API responses. Loopback/Host/
@@ -171,7 +180,7 @@ The latest settings are [`config/pc_app.example.json`](../config/pc_app.example.
 machine-specific pins and approved parameters live in ignored
 `.agent-state/pc-app.json`. No broker credentials belong in this JSON. Current
 private settings pin the verified Codex executable/hash and reuse an auth-only
-home. Collection warms at 12:50 JST; support/resistance research starts at 12:55
+home. Collection warms at 12:40 JST; support/resistance research starts at 12:55
 using completed five-minute index history. Daily jobs and fresh barrier crossings
 are persisted and deduplicated, with a five-minute request lifetime and a daily
 eight-attempt bound. Independent analysis does not suspend quote monitoring.
@@ -184,7 +193,10 @@ rejected. The app displays the resulting levels, request state and latest rule.
 Rules remain proposals; no PC-to-Oracle execution transport is installed.
 
 The everyday reference keeps the 13:15 boundary, fixed index offsets, one active
-slot and one lot. The new ATM buy is recorded explicitly. The underlying's actual
+slot and one lot. PC policy v2 sells NIFTY +500 or SENSEX +1000, then buys a higher
+same-expiry call. The comparison recommends the highest supplied net expiry-profit
+bound within supplied margin at fixed quantity; absent costs/margin block ranking.
+This is a review output, not an order or expected-profit forecast. The underlying's actual
 expiry dates must agree between Groww's expiry API and current instrument master
 for the current month and nearest listed expiry;
 unknown evidence blocks entry. Dates refresh hourly when confirmed and retry after
