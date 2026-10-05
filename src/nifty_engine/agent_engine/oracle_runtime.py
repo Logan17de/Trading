@@ -31,7 +31,7 @@ class Runtime:
         self.stop=threading.Event();self.collector=None;self.next_auth=0;self.token_day=None
         self.boot_id=uuid.uuid4().hex;self.sequence=1;self.at=datetime.now(timezone.utc).isoformat();self.error=None
         self.mail=DailyMail(self.state.pnl_lines.store);self.next_mail=0
-        self.mail_state={"status":"SCHEDULED_1930_JST","provider_accepted":False,"inbox_verified":False}
+        self.mail_state={"status":"SCHEDULED_BY_1930_JST","provider_accepted":False,"inbox_verified":False}
         self.output=self.state.directory/"market-check-oracle-live.json"
 
     def read(self):

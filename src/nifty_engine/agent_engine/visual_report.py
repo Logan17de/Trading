@@ -70,7 +70,9 @@ class DailyMail:
 
     def tick(self,view,now, *, send=None,fetch=None):
         local=now.astimezone(JST);day=local.date().isoformat()
-        if local.time()<time(19,30):return {"status":"SCHEDULED_1930_JST","provider_accepted":False,"inbox_verified":False}
+        # Begin one minute before the owner's deadline; provider/inbox delays
+        # still cannot be guaranteed. Freeze only when the due attempt is made.
+        if local.time()<time(19,29):return {"status":"SCHEDULED_BY_1930_JST","provider_accepted":False,"inbox_verified":False}
         report_id=identity([day,"oracle-visual-eod-v1"])
         with self.store.transaction() as db:
             if not db.execute("SELECT 1 FROM reports WHERE id=?",(report_id,)).fetchone():

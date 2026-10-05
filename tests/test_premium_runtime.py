@@ -95,8 +95,8 @@ def test_visual_mail_only_due_at_1930_daily_frozen_retry_never_changes_intent(tm
     monkeypatch.setenv('TRADING_REPORT_FROM','sender@example.test')
     monkeypatch.setenv('TRADING_REPORT_TO','owner@example.test')
     mail=DailyMail(store);view=model();calls=[]
-    due=NOW.replace(hour=19,minute=30)
-    assert mail.tick(view,due-timedelta(seconds=1))['status']=='SCHEDULED_1930_JST'
+    due=NOW.replace(hour=19,minute=29)
+    assert mail.tick(view,due-timedelta(seconds=1))['status']=='SCHEDULED_BY_1930_JST'
     def failure(payload,key,rid):calls.append(copy.deepcopy(payload));raise TimeoutError('private')
     assert mail.tick(view,due,send=failure)['status']=='RETRY_PENDING'
     changed=model();changed['markets'][0]['price']=99999
