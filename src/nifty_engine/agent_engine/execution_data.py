@@ -133,18 +133,29 @@ class GrowwPreparation:
         protected = {r['symbol'] for r in active if r['ownership'] != 'ENGINE_VERIFIED'}
         protected.update(r['symbol'] for r in self.journal.store.read('SELECT symbol FROM pc_protected'))
         quotes = []
+        book_evidence = dict(sampled=len(wanted), protected=0, master_missing=0, invalid=0, valid=0)
         for _, _, symbol in wanted:
-            if symbol in protected or symbol not in self.contracts:
+            if symbol in protected:
+                book_evidence['protected'] += 1
+                continue
+            if symbol not in self.contracts:
+                book_evidence['master_missing'] += 1
                 continue
             raw = self.call(self.market.groww.get_quote, exchange=EXCHANGES[index], segment='FNO', trading_symbol=symbol)
             at = self.clock(); q = quote_summary(raw, at)
             try:
                 quotes.append(leg(dict(self.contracts[symbol], bid=q['bid_price'], ask=q['offer_price'],
                     bid_quantity=q['bid_quantity'], ask_quantity=q['offer_quantity'], received_at=at.isoformat())))
+                book_evidence['valid'] += 1
             except (ValueError, TypeError):
+                book_evidence['invalid'] += 1
                 continue
+        result['book_evidence'] = book_evidence
         if not any(r['symbol'] == short_sample[2] for r in quotes):
-            return dict(result, reason='TARGET_SHORT_BOOK_OR_EXCLUSIVE_CONTRACT_REQUIRED')
+            reason = ('TARGET_SHORT_MANUAL_PROTECTED' if short_sample[2] in protected else
+                      'TARGET_SHORT_MASTER_REQUIRED' if short_sample[2] not in self.contracts else
+                      'TARGET_SHORT_BOOK_REQUIRED')
+            return dict(result, reason=reason)
         short = next(r for r in quotes if r['symbol'] == short_sample[2]); margins = {}
         def order(q, side, qty):
             return dict(trading_symbol=q['symbol'], exchange=EXCHANGES[index], product='NRML',
@@ -168,6 +179,19 @@ class GrowwPreparation:
                     continue  # Failed calculation is unknown, never zero cost/margin.
         raw = self.call(self.market.groww.get_available_margin_details)
         at = self.clock(); funds = dict(funds_summary(raw), received_at=at.isoformat())
+        result.update(at=at.isoformat(), calculation_evidence=dict(available=len(margins)),
+                      candidate_scope='CHAIN_SAMPLE_ONLY',
+                      omitted_hedges=max(0, len(hedge_samples)-len(hedges)),
+                      globally_maximum_profit_verified=False)
+        # A slow sequence of analytical requests can outlive its original books.
+        # It proves neither affordability nor an executable price. Keep the same
+        # freshness gate and expose the actual failure instead of claiming that
+        # zero evaluated candidates were all unaffordable.
+        book_evidence['stale'] = sum(not fresh(q['received_at'], at) for q in quotes)
+        if not fresh(short['received_at'], at):
+            return dict(result, reason='SHORT_BOOK_EXPIRED_DURING_CALCULATIONS')
+        if not any(q['symbol'] != short['symbol'] and fresh(q['received_at'], at) for q in quotes):
+            return dict(result, reason='FRESH_EXCLUSIVE_HEDGE_BOOK_REQUIRED')
         # Expiry mapping needs the complete listed strike grid, while quotes are
         # deliberately bounded. Rank only the mapped short and sampled hedges.
         if strategy == 'LATE_SESSION':
@@ -176,7 +200,8 @@ class GrowwPreparation:
             prepared = rank_baskets(cfg, quotes, margins, funds, evidence, at, active=active, complete=True)
         prepared.update(at=at.isoformat(), execution_enabled=False, candidate_scope='CHAIN_SAMPLE_ONLY',
                         omitted_hedges=max(0, len(hedge_samples)-len(hedges)),
-                        globally_maximum_profit_verified=False)
+                        globally_maximum_profit_verified=False, book_evidence=book_evidence,
+                        calculation_evidence=result['calculation_evidence'])
         return prepared
 
     @staticmethod

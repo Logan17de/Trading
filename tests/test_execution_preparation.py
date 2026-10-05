@@ -278,7 +278,32 @@ def test_preparation_worker_uses_broker_calculations_never_order_methods(tmp_pat
     assert result['status'] == 'PREPARED'
     assert result['selected']['lots'] == 2 and result['selected']['hedge']['strike'] == 25400
     assert len(calls) == 12 and not result['globally_maximum_profit_verified']
+    assert result['book_evidence'] == dict(sampled=3, protected=0, master_missing=0, invalid=0, valid=3, stale=0)
+    assert result['calculation_evidence']['available'] == 4
     assert journal.store.meta('premium-preparation') == result
+    # Real broker requests can take long enough to invalidate their original
+    # quotes. Do not call this "unaffordable" or relax the 15-second quote gate.
+    clock = [NOW]
+    worker.clock = lambda:clock[0]
+    original = market.groww.get_order_margin_details
+    def slow_calculation(**kwargs):
+        clock[0] += timedelta(seconds=2)
+        return original(**kwargs)
+    market.groww.get_order_margin_details = slow_calculation
+    result = worker.safe_check(snapshot, CFG)
+    assert result['reason'] == 'SHORT_BOOK_EXPIRED_DURING_CALCULATIONS'
+    assert result['selected'] is None and result['book_evidence']['stale'] == 3
+    assert result['calculation_evidence']['available'] == 4
+    worker.clock = lambda:NOW
+    market.groww.get_order_margin_details = original
+    with journal.store.transaction() as db:
+        db.execute('INSERT INTO pc_protected VALUES(?)', ('NIFTY26O0625100CE',))
+    calls.clear()
+    result = worker.safe_check(snapshot, CFG)
+    assert result['reason'] == 'TARGET_SHORT_MANUAL_PROTECTED'
+    assert result['book_evidence']['protected'] == 1 and not calls
+    with journal.store.transaction() as db:
+        db.execute('DELETE FROM pc_protected')
     market.groww.get_order_margin_details = lambda **kwargs: (_ for _ in ()).throw(ConnectionError('secret payload'))
     result = worker.safe_check(snapshot, CFG)
     assert result['selected'] is None and 'secret payload' not in json.dumps(result)
