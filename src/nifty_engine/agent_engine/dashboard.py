@@ -27,6 +27,7 @@ from .market_check import SDK_VERSION, finite, quote_summary, read_credentials, 
 from .owner_study import validate_protocol
 from .pc_control import JST, PcJournal, PcMonitor, collection_window, in_window
 from . import broker_pnl
+from . import premium_strategy
 
 ASSETS = Path(__file__).with_name("dashboard_assets")
 STRATEGIES = (
@@ -35,6 +36,9 @@ STRATEGIES = (
     ("swing", "Swing call spread", "Overnight · 10 / 20 strike study"),
     ("expiry_reversal", "Expiry reversal", "SENSEX · 18:50 JST onward"),
 )
+ACTIVE_STRATEGIES = {"everyday", "late_session"}
+ACTIVE_DESCRIPTIONS = {"everyday":"14:00–19:00 JST · NIFTY ₹20 / SENSEX ₹80 call",
+    "late_session":"Actual expiry · 18:00 JST · 3 strike intervals from ATM"}
 POLL_SECONDS = 5
 LEASE_SECONDS = 20
 INSTRUMENT_CSV = "https://growwapi-assets.groww.in/instruments/instrument.csv"
@@ -249,10 +253,10 @@ def view_model(snapshot, protocol, account=None, *, now=None):
             "received_at": clean_time(probe.get("received_at")),
             "series": clean_series(charts.get(index, {}).get("candles", [])), "options": options})
     acct = account_summary(account, now)
-    strategies = [{"id": key, "name": name, "description": description,
+    strategies = [{"id": key, "name": name, "description": ACTIVE_DESCRIPTIONS.get(key,description),
         **acct["strategy_results"].get(key, {"closed_trades": 0, "non_loss_pct": None,
             "loss_pct": None, "net_pnl_inr": None, "return_pct": None})}
-        for key, name, description in STRATEGIES]
+        for key, name, description in STRATEGIES if key in ACTIVE_STRATEGIES]
     return {"format": "trading-dashboard-v1", "demo": False, "as_of": received,
         "freshness": "NO_DATA" if age is None else "FUTURE" if age < 0 else "RECENT" if age <= 15 else "STALE",
         "source": "Groww · read-only", "market_day": stamp(received).astimezone(IST).date().isoformat() if received else None,
@@ -836,8 +840,12 @@ class DashboardState:
         self.analysis_thread = None
         self.news_thread = None
         self.analysis_error = None
+        from .oracle_link import RemoteViewer
+        self.remote = RemoteViewer(self.root, self.pnl_lines.store) if (self.root/".agent-state/oracle-viewer.json").is_file() and not offline else None
 
     def read(self):
+        if self.remote:
+            return self.remote.read()
         files = list(self.directory.glob("market-check-*.json"))
         files += list((self.root / ".agent-state" / "market-checks").glob("market-check-*.json"))
         latest = max(files, key=lambda p: p.stat().st_mtime_ns, default=None)
@@ -896,11 +904,37 @@ class DashboardState:
 
     def start_background(self):
         if self.background and self.background_thread is None:
+            if self.remote:
+                self.background_thread = threading.Thread(target=self.remote.run,args=(self.stop_event,),daemon=True)
+                self.background_thread.start()
+                return
             self.news_thread = threading.Thread(target=self.monitor.news.run,args=(self.stop_event,),daemon=True,
                 name="trading-pc-news")
             self.news_thread.start()
             self.background_thread = threading.Thread(target=self._monitor_loop,daemon=True)
             self.background_thread.start()
+
+    def algo_set(self, enabled):
+        """Persist intent without enabling a blocked broker executor."""
+        if self.remote:
+            return self.remote.set_intent(enabled)
+        now = datetime.now(timezone.utc)
+        policy = premium_strategy.load(self.root)
+        if policy is None:
+            return {"status":"BLOCKED","execution_enabled":False,"broker_writes":False,
+                "blockers":["PREMIUM_POLICY_REQUIRED"]}
+        view = self.read()
+        owner_intent = premium_strategy.set_intent(self.pnl_lines.store,enabled,now)
+        risk = view.get("control",{}).get("news",{}).get("risk","UNKNOWN")
+        result = premium_strategy.readiness(policy,now,paused=(self.root/".trader-paused").exists(),
+            offline=self.offline,fresh=view["freshness"] == "RECENT",news_risk=risk,desired_enabled=enabled)
+        result["owner_intent"] = owner_intent
+        result["requested_at"] = now.isoformat()
+        self.pnl_lines.store.set_meta("premium-algo-start",result)
+        return result
+
+    def algo_start(self):
+        return self.algo_set(True)
 
     def close(self):
         self.stop_event.set()
@@ -939,6 +973,8 @@ class DashboardState:
             self.stop_event.wait(POLL_SECONDS)
 
     def refresh(self):
+        if self.remote:
+            return "REMOTE_OBSERVER_RUNNING"
         with self.lock:
             if self.offline:
                 return "OFFLINE"
@@ -1021,8 +1057,12 @@ def handler(state):
         def do_POST(self):
             if not self.local() or not secrets.compare_digest(self.headers.get("X-Local-Token", ""), state.token):
                 return self.respond(403, {"status": "LOCAL_ACCESS_ONLY"})
-            if self.path != "/api/refresh" or self.headers.get("Content-Length", "0") != "0":
+            if self.path not in ("/api/refresh","/api/algo/start","/api/algo/stop") or self.headers.get("Content-Length", "0") != "0":
                 return self.respond(400, {"status": "UNSUPPORTED_REQUEST"})
+            if self.path == "/api/algo/start":
+                return self.respond(200, state.algo_set(True))
+            if self.path == "/api/algo/stop":
+                return self.respond(200, state.algo_set(False))
             self.respond(202, {"status": state.refresh(), "order_capability": False})
     return Handler
 

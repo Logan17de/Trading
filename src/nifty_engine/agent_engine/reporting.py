@@ -17,7 +17,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from .contracts import IST, dumps, identity, stamp
 
 
-def chart(points, width=620, height=160):
+def chart(points, width=620, height=160, color=(24, 110, 160)):
     """Small dependency-free PNG. Missing observations break, not interpolate, the line."""
     pixels = bytearray([248, 250, 252] * width * height)
     def dot(x, y, rgb):
@@ -45,11 +45,11 @@ def chart(points, width=620, height=160):
             for step in range(steps + 1):
                 px, py = round(old_x + (x - old_x) * step / steps), round(old_y + (y - old_y) * step / steps)
                 for dy in (-1, 0, 1):
-                    dot(px, py + dy, (24, 110, 160))
+                    dot(px, py + dy, color)
         else:
             for dx in range(-2, 3):
                 for dy in range(-2, 3):
-                    dot(x + dx, y + dy, (24, 110, 160))
+                    dot(x + dx, y + dy, color)
         previous = (x, y)
     raw = b"".join(b"\x00" + bytes(pixels[y * width * 3:(y + 1) * width * 3]) for y in range(height))
     def chunk(kind, data):

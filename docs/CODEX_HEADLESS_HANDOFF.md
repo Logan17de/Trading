@@ -1,183 +1,68 @@
 # Current Trading handoff
 
-Reviewed 2026-10-05. Repository: `Logan17de/Trading`, branch `main`.
-Local checkout: `D:\Money Trader\Trading`.
+October 5, 2026 · `Logan17de/Trading` · `main` · `D:\Money Trader\Trading`.
+Read AGENTS.md, PREMIUM_STRATEGY.md and HEADLESS_INTEGRATION_STATUS.md.
+The active owner policy is premium v3; historical v1/v2 studies are provenance.
 
-Continue in the existing Python `src/nifty_engine/agent_engine/` runtime. The
-previous Growing-Trader checkout retains deployment provenance and private
-records. Oracle still uses `/opt/growing-trader` and `/etc/growing-trader`;
-source changes here do not deploy or rename those locations.
+## Architecture
 
-Read [current status](HEADLESS_INTEGRATION_STATUS.md),
-[local app/setup](LOCAL_HEADLESS.md) and [strategy definitions](OWNER_STRATEGY_RESEARCH.md).
+Oracle hosts the existing five-second read-only Groww collector, SQLite journal,
+premium policy monitor, independent RBI/ET news and visual mail outbox. The PC
+loopback app displays/control-requests Oracle through private SSH and a fixed
+Unix-socket client; no public trading port. Keep Oracle running continuously for
+Qwen/Colab/mail/tunnels. The old trader remains disabled and paused.
 
-## Latest owner direction
+Owner On/Off is durable. Only explicit button requests change it. Restarts,
+windows and faults retain On but separately block trading readiness. The actual
+broker executor is unfinished: On must never be described as trading activated.
+Only Everyday and Late-session appear in strategy results. Manual/unknown/mixed
+contracts remain protected. Read exact premium/expiry/roll/stop rules in the guide.
 
-- Local Options Trader PC app; Desktop/Start access and automatic Windows sign-in
-  startup. All charts are lines. Groww reads target five seconds; default index/
-  option lines use real journalled LTP observations at reception times with a
-  five-minute grid and update-time/point-count captions. Completed five-minute
-  closes remain selectable and are retained for research. Missing prices are not
-  fabricated; slow requests can extend the cycle. Buy/sell panels require confirmed nonzero open
-  positions; pending orders, historical fills and closed positions do not qualify.
-  Show broker average entry, matching pending SL and active OCO/GTT exit target/SL lines.
-  Missing protection prices stay absent; a failed protection read is labelled.
-- Observe in the background from 12:40–19:45 JST on weekdays. Research support/
-  resistance from 12:55. Barrier-rule validity is 13:00 inclusive–18:15 exclusive.
-  Everyday entry starts at 13:15. The PC must be awake, signed in and online.
-- One active slot and one lot. Everyday short: NIFTY spot +500 on Mon/Tue/Fri;
-  SENSEX spot +1000 on Wed/Thu. Buy a higher call with the same expiry and quantity.
-  Rank candidate hedges by quoted maximum net expiry profit after costs within
-  available margin. The earlier fixed +1000 hedge example is not a strike floor:
-  the owner subsequently allowed alternative higher strikes to improve profit.
-  Missing costs/margin/quotes block recommendation; payoff bounds are not forecasts.
-- Skip actual expiry day. Cross-check Groww's expiry API against current instrument
-  metadata, including holiday-shifted dates. Missing/disagreeing evidence blocks
-  entry. Do not infer expiry from the weekday or ask Codex to invent a calendar.
-- Never modify or exit manual trades. Exact journal reservations and acknowledged
-  broker IDs establish ownership; unknown or mixed contracts remain protected.
-- If a native trailing stop is unavailable, ratchet an engine-owned protective SL
-  and verify its broker readback. Stop distance, step and target remain unset.
-- Keep Oracle running continuously for shared Qwen/Colab/mail/tunnels. Oracle is
-  the intended execution host; new trading services remain inactive.
+## Display/accounting
 
-The owner confirmed BUY for the higher call and superseded the earlier ATM buy.
-PC policy version 2 records the +500/+1000 short offsets and higher-call comparison.
-Historical PC v1 retains its payoff-review blocker; historical research v1/v2 is
-unchanged. No strategy has a validated net-profit probability or executable plan.
+Actual line observations persist across restarts; five-minute grids, responsive
+labels, no fabricated points or outage bridges. Active option positions only,
+with evidence-based entry/SL/target lines. Today's gross index-option P&L splits
+Self / exact Algo / Unassigned, before charges. Stale/incomplete/carry-day basis
+stays unknown. Groww cash, used margin and option-buy/sell balances are separate
+from P&L/investment value. Net strategy results still need the reviewed ledger.
 
-## Implemented and verified
+## Schedules and faults
 
-- October 5 today's P&L is installed in the local app, with separate Self and
-  verified Algo lines and an open-P&L amount beside each active option chart.
-  Actual Groww realized values include closed contracts; open P&L uses signed
-  quantity and current LTP/average. This is gross index-option P&L before charges,
-  separate from reviewed net strategy accounting. Non-journal trades are Self;
-  exact reserved/acknowledged identities and reconciled fills establish Algo.
-  Mixed engine/manual symbols stay Unassigned. Incomplete/stale reads and
-  unverified overnight daily accounting remain unknown. SQLite preserves actual
-  observations across restarts; the October 5 chart starts at 13:54 JST, without
-  synthesizing earlier P&L. Actual Edge totals reconciled with both open legs;
-  Groww's closed-position realized values matched the website. No broker writes.
-  The retained suite now passes 210 tests locally with four POSIX-only skips;
-  configuration, JS syntax and offline demo pass.
+- Visual email: 19:30 JST every calendar day; frozen durable retry outbox; existing
+  approved sender/recipient. Provider acceptance, recipient-server acceptance and
+  inbox evidence are distinct. Missing values stay unknown.
+- Existing heartbeat `trading-news-and-barrier-check` is now named **Trading noon
+  API and VM check**, ACTIVE weekdays **12:00 JST**. In owner's Edge, approve only
+  existing Codex key when Expired, verify Approved and retest read-only access.
+  Wakeups are best effort; actual completion needs evidence. The old 12:55 barrier
+  follow-up is superseded, not duplicated.
+- PC liveness uses SSH plus advancing heartbeat/sequence. After 30 seconds
+  unavailable/stuck, alert by approved mail; deduplicate incidents and retry mail
+  failures. PC must be awake, signed in and online. No always-on external cloud
+  outage monitor is installed. Never auto-reboot/shut down Oracle. Retain On.
 
-- October 5 chart readability update reuses the existing local assets: responsive
-  SVG geometry, a fixed thin price stroke, readable axes, labelled entry/SL/target
-  lines, latest plotted-price badge, hover crosshair and Session/30-minute/15-minute
-  controls. Missing-read gaps remain disconnected and are shaded. Actual single-
-  position rendering and disappearance after Groww reported no positions passed.
-  Labelled sample preview verified both panels, all six protection/entry lines,
-  keyboard range selection and settled geometry at 320/390/768/1440px without
-  page overflow. Preview and viewport overrides were cleared afterward. Local
-  tests, configuration, JS syntax and offline demo passed; no broker writes.
+## Deployment/private state
 
-- October 5 live-line correction is installed locally. Both active option lines
-  recovered hundreds of actual same-day points from SQLite after restart and
-  changed automatically in Edge without a manual refresh. Independent quote,
-  order, position and protection reads overlap under the existing limiter;
-  no collector cycles overlap. A dated sample measured 4.26–5.86 seconds between
-  observations and a 3.14-second final cycle. This verifies the target cadence,
-  not a strict network timing guarantee or full-session coverage. Local tests:
-  195 passed, four POSIX-only skips; configuration, JS syntax and offline demo
-  passed. Trading and manual-position protection are unchanged.
+Immutable root-owned releases: `/opt/growing-trader/releases/<commit>`.
+Read-only service: `trading-observer.service`; state `/var/lib/trading-observer`,
+socket `observer.sock`, journal `.agent-state/pc-monitor.sqlite3`. Original
+approved mail source `/etc/growing-trader/call-seller.env`; isolated root0600
+`observer.env` reuses existing Groww pair/mail settings without rotation. The PC
+vault keeps a DPAPI mail copy for independent alerts. Never print these values.
+Private PC transport: `.agent-state/oracle-viewer.json`; SSH key remains in its
+original protected location. Preserve original journals, exact ownership and all
+pause markers. SQLite backups use its backup API; restore only to a new path.
 
-- Weekday **12:55 JST** Codex thread follow-up installed as
-  `trading-news-and-barrier-check`; configured ACTIVE. Its first observed heartbeat
-  arrived at **13:18:09 JST on October 5**, rather than at the configured time.
-  The persistent app collects RBI + ET Markets evidence independently
-  every 120 seconds during 12:40–19:45 JST. Support/resistance requests run from
-  12:55, with 15:00/17:00 reassessment and changed-news/barrier triggers. Eight
-  daily attempts remain the global cap; crossings take queue priority. Missing
-  news stays UNKNOWN; assessments must cite actual IDs from both hosts for LOW
-  and expire after 180 seconds. LOW is not a forecast. Level updates are research.
-- Strategy ownership is persisted for each reserved slot, including overnight.
-  Same-slot reuse cannot reattribute everyday orders to swing. An occupied slot
-  blocks a second entry; no automatic release/reassignment is implemented. Owned
-  exit/protection review takes priority. Swing's recorded **18:45 JST** entry is
-  outside the 18:15 cutoff and remains research-only. Both strategies may be
-  analysed concurrently; manual positions remain protected.
-- Groww money is now read using the existing SDK's read-only available-margin
-  endpoint every 30 seconds, independently of account/strategy P&L. The app shows
-  clear cash, total used margin, option-buy/sell balances and collateral with the
-  provider response timestamp; stale/failing reads show unknown amounts. Clear
-  cash is not investment value. Strategy accounting remains unconnected.
+## Remaining blockers
 
-- PC app installed locally: Desktop and Start **Options Trader**, plus a hidden
-  Windows Startup shortcut for its background monitor. The same startup entry
-  point was run successfully; an actual logout/reboot has not been tested.
-- Existing loopback server and local assets reused; no new GUI framework.
-  Background collector, journal and Codex worker operate independently of the
-  app window. Offline mode and sample preview remain explicitly labelled.
-- Persistent manual-trade protection, one-slot reservation, current-expiry checks,
-  support/resistance requests, crossing deduplication and strict structured-rule
-  validation are implemented. Codex receives market evidence without credentials
-  or broker IDs. Proposals are not executable orders.
-- Actual Windows CLI `codex-cli 0.160.0`, executable/hash pin and supported existing
-  authentication passed preflight and a non-interactive schema-validated WAIT run;
-  zero tool events. Windows OS privilege isolation is still unverified.
-- Trailing planner and disabled `OracleTrailingUpdater` source are implemented.
-  Fake-broker tests verify favorable-only ratchets, exact SL identity, manual/stale/
-  partial rejection, pause/time gates, acceptance-versus-readback and timeout
-  reconciliation. No real protective SL was placed or modified.
-- Retained tests, configuration checks and offline demo are required gates. See
-  current status for final counts and dated browser evidence.
+Real broker execution, initial protective orders, two-leg partial-fill/crash
+recovery, actual margin/quoted candidate ranking and execution replay sessions
+remain unfinished. No validated profit probability or guaranteed income exists.
+Windows reboot/sign-in and external cloud monitoring are unverified. Inbox
+receipt requires mailbox evidence even after provider reports delivery. Dated
+status records actual tests, deployment and receipts, separately from schedules.
 
-## Current broker access
-
-October 5 authentication initially returned HTTP 403. The existing Codex key was
-Expired in the owner's Edge session; the authorized Approve action changed it to
-Approved. A 10:45 JST read passed authentication and all 22 read-only probes.
-Current app order/position reads and exact contract metadata passed; both NIFTY
-and SENSEX expiry-day checks agree with current contract metadata. The 10:45 check
-used last-session observations before the market opened. Later live-line
-verification used current-session read-only quotes and preserved the existing
-manual positions; it does not certify executable book freshness.
-
-For a future authentication 403, inspect the same key in the owner's Edge.
-Approve is authorized only when it shows Expired; verify Approved and rerun reads.
-Do not create a replacement key, change permissions or purchase access. The page
-displays “Resets 6 AM tomorrow” without an established timezone. Failure retries
-back off for 60 seconds. Credentials and authentication details stay private.
-
-## Remaining integration
-
-1. Verify complete market-session collection and current five-minute option history
-   after the session opens. Before open, the app labels current-day charts as waiting.
-2. Verify/approve exact contracts, affordable hedge, costs,
-   selected expiry, lot/tick, stop/target and basket sequencing. No size increase
-   follows from a monthly target. Overnight carried-position review is still a
-   review output; the new 18:15 action cutoff must not imply overnight protection.
-3. Complete and review the Oracle transport/executor, initial protective-order
-   placement, partial-fill reconciliation, crash recovery and independent outage
-   monitoring. Deploy only after shared-resource and backup/restore review and
-   relevant owner activation approval. The trailing adapter is not deployment.
-4. Record complete sessions and evaluate the four hypotheses with two-leg books,
-   costs, realistic fills and chronological holdouts. Historical index moves are
-   not option P&L. Source time/indicative-series semantics remain unverified.
-5. Connect reviewed accounting/strategy attribution and local observations to the
-   existing report publisher. Recurring visual daily email is not activated;
-   provider acceptance and inbox delivery must remain separate evidence.
-
-October 5 news/funds verification: 192 tests passed, four POSIX-only skips; offline
-demo completed with synthetic inputs and no mail/orders. Actual pinned Windows
-Codex accepted the expanded structured schema, returned WAIT for missing market
-evidence and emitted zero tool events. Real Groww money read passed. ET yielded
-15 dated items; RBI supplied no item within the 24-hour policy, so news remained
-UNKNOWN. The later heartbeat check verified both app research jobs were created
-at **12:55:01 JST** and completed successfully with `WAIT / DATA_REQUIRED`;
-no levels or action rules were applied. This does not establish insufficient
-history as the cause: each request contained 143 completed historical prices.
-At **13:20 JST**, the collector, money reads and independent news refresh were
-current, the Codex executable/version pin and authentication passed, and manual
-positions remained protected. RBI still lacked fresh mandatory evidence, so news
-remained UNKNOWN. No repair or activation was required. Complete-session coverage
-and Windows OS privilege isolation remain unverified.
-
-## Protected state
-
-Preserve `.trader-paused`, private `.agent-state/`, the sibling DPAPI `.secrets`
-vault, existing Supabase ciphertext/keys and shared Oracle services. Private PC
-settings are `.agent-state/pc-app.json`; Codex authentication stays in the existing
-auth-only home. Do not put credentials in Git, logs, analysis or reports. There
-was no key rotation, broker-permission change, LIVE activation, real order or merge.
+Preserve `.trader-paused`, `.secrets`, private journals, production Supabase keys/
+ciphertext and shared Oracle services. Never place/modify orders, enable LIVE,
+rotate keys, change broker permissions, merge or shut down Oracle in a check.

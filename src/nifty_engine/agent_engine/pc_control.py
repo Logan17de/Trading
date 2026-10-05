@@ -459,6 +459,23 @@ class PcMonitor:
             status["expiry_check"][index] = {"is_expiry_day":expiry_day,
                 "status":"SKIP_EXPIRY_DAY" if expiry_day else "NON_EXPIRY_DAY" if valid else "UNKNOWN_BLOCKED",
                 "source":"GROWW_EXPIRIES_AND_CURRENT_INSTRUMENT_MASTER" if valid else None}
+        from . import premium_strategy
+        premium_policy = premium_strategy.load(self.root)
+        if premium_policy:
+            status["strategy_rules"] = premium_policy
+            status["owner_intent"] = premium_strategy.intent(self.journal.store)
+            status["algo"] = premium_strategy.readiness(premium_policy,now,
+                paused=(self.root/".trader-paused").exists(),fresh=bool(fresh),news_risk=news["risk"],
+                desired_enabled=status["owner_intent"]["enabled"])
+            status.update(schedule_jst="14:00–19:00",window_open=premium_strategy.entry_window(now),
+                lots=premium_policy["maximum_lots"],blockers=status["algo"]["blockers"],
+                everyday={"index":preferred,"target_short_premium_rupees":premium_policy["short_call_target_rupees"][preferred],
+                    "maximum_lots":premium_policy["maximum_lots"],"expiry_rule":"SKIP_ACTUAL_EXPIRY_DAY",
+                    "status":"PREMIUM_POLICY_REVIEW_ONLY","execution_enabled":False})
+            status["latest_start_request"] = self.journal.store.meta("premium-algo-start")
+            # Retire active barrier/news/swing entry proposals. Evidence collection
+            # stays independent, and historical requests/journal ownership remain.
+            return status
         if status["expiry_check"][preferred]["status"] != "NON_EXPIRY_DAY":
             status["blockers"].append(status["expiry_check"][preferred]["status"])
         if fresh:

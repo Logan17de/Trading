@@ -10,6 +10,7 @@ const percent = value => known(value) ? (value > 0 ? "+" : "") + value.toFixed(1
 let liveData = null, data = null, demo = false, selectedIndex = "NIFTY", timeZone = "Asia/Tokyo", autoRefresh = true, chartDetail = "live";
 let contracts = {buy:null, sell:null}, refreshPending = false, lastRequest = 0;
 let chartRange = 'session';
+let algoStartPending=false, algoStartResult=null;
 try {selectedIndex = localStorage.getItem("trading-index") || "NIFTY"; timeZone = localStorage.getItem("trading-timezone") || timeZone;} catch {}
 if (!["NIFTY","SENSEX","BANKNIFTY"].includes(selectedIndex)) selectedIndex = "NIFTY";
 if (!["Asia/Tokyo","Asia/Kolkata"].includes(timeZone)) timeZone = "Asia/Tokyo";
@@ -167,22 +168,30 @@ function drawOption(side, option) {
   else emptyChart($(side+"-chart"),option?.series_status==="WAITING_FOR_SESSION"?"Waiting for the market session":option?.series_status==="LOADING_OPTION_HISTORY"?"Loading 5-minute prices":option?"Option history unavailable":"Choose an option contract",option?.series_status==="WAITING_FOR_SESSION"?"Today's line appears after real session observations arrive.":option?.series_status==="LOADING_OPTION_HISTORY"?"Quotes continue updating while the line chart loads.":option?"This exact contract has no price history.":"Your selected strike and expiry will appear here.");
 }
 function renderControl() {
-  const c=data.control;
-  $("monitor-status").textContent=data.demo?"Sample preview":data.background_monitor?"Background monitor on":"Use the Options Trader app shortcut";
-  $("everyday-rule").textContent=c?.everyday?.minimum_short_call_strike?`${c.everyday.index} · sell call ≥ ${numeric.format(c.everyday.minimum_short_call_strike)}`:"NIFTY +500 · SENSEX +1,000 · from 13:15 JST";
-  $("slot-policy").textContent="1 active slot · 1 lot · higher-call hedge";
-  $("monitor-schedule").textContent="Research 12:55 / 15:00 / 17:00 · rules 13:00–18:15 JST";
-  const news=c?.news;
-  $("news-status").textContent=data.demo?"Sample news status":news?`News ${news.risk} · ${news.article_count} dated articles · ${news.feeds.map(f=>`${f.feed.includes('rbi.org')?'RBI':'ET'}: ${f.status.toLowerCase().replaceAll('_',' ')}`).join(' · ')} · ${news.fetched_at?`Fetched ${dateTime(news.fetched_at)}`:'Waiting for collection'}${news.risk!=='LOW'?' · New-position readiness blocked':''}`:"News worker not connected";
-  $("strategy-priority").textContent=`${c?.slot?.new_entry_blocked?`${c.slot.strategy} occupies the slot; new entries blocked.`:'One slot shared by all engine strategies.'} Everyday carries retain ownership. Swing 18:45 is research-only, outside the 18:15 cutoff. Manual trades stay protected.`;
+  const c=data.control, policy=c?.strategy_rules, algo=c?.algo;
+  const on=algo?.desired_enabled===true;
+  $("monitor-status").textContent=data.demo?"Sample preview":on?"On · trading blocked":"Algo Off";
+  $("engine-heading").textContent=data.runtime?.host==='ORACLE'?"Oracle engine":"Trading engine";
+  $("vm-status").textContent=data.vm?`VM: ${data.vm.status} · independent PC monitor${data.vm.alert_status?` · alert ${data.vm.alert_status}`:''}`:"";
+  $("email-status").textContent=data.daily_email?`Daily visual email · 19:30 JST · ${data.daily_email.status} · inbox ${data.daily_email.inbox_verified?'verified':'not verified'}`:"Daily visual email · 19:30 JST";
+  $("everyday-rule").textContent="NIFTY call ₹20 · SENSEX call ₹80";
+  $("slot-policy").textContent="1 algo basket · maximum 2 lots · margin required";
+  $("monitor-schedule").textContent="14:00–19:00 JST · expiry strategy at 18:00";
   const expiry=c?.expiry_check;
-  $("expiry-status").textContent=expiry?Object.entries(expiry).map(([index,e])=>`${index}: ${e.is_expiry_day===true?"expiry — skip":e.is_expiry_day===false?"non-expiry":"expiry unverified"}`).join(" · "):"Expiry dates must be confirmed from Groww";
-  $("levels").innerHTML=["NIFTY","SENSEX"].map(index=>{const level=c?.levels?.[index];return `<div class="level-item"><strong>${index}</strong><span>Support <b>${level?.support?.length?level.support.map(v=>numeric.format(v)).join(" · "):"—"}</b></span><span>Resistance <b>${level?.resistance?.length?level.resistance.map(v=>numeric.format(v)).join(" · "):"—"}</b></span><small>${level?`Updated ${escapeHTML(dateTime(level.updated_at))}${level.status==='STALE_RESEARCH'?' · stale research':''}`:"Waiting for 12:55 JST and fresh evidence"}</small></div>`;}).join("");
-  const latest=c?.requests?.find(r=>r.rule);
-  $("rule-details").hidden=!latest;$("rule-json").textContent=latest?JSON.stringify(latest.rule,null,2):"";
-  $("control-note").textContent=c?.analysis_error?"Codex research needs attention. Review the local verification status.":`Manual and unknown trades are protected. ${c?.blockers?.includes("ATM_HEDGE_PAYOFF_REVIEW_REQUIRED")?"Historical ATM policy needs payoff review. ":""}Live entry and broker SL synchronization remain blocked until the Oracle executor and stop parameters are verified.`;
-  $("analysis-status").textContent=(c?.requests?.length?c.requests.map(r=>r.status.toLowerCase()).join(" · "):"No barrier requests yet")+(c?.analysis_budget?` · Codex ${c.analysis_budget.used}/${c.analysis_budget.limit} attempts${c.analysis_budget.status==='DAILY_CAP_REACHED'?' — daily cap reached':''}`:'');
-  $("trailing-status").textContent=c?.trailing?.plans?`${c.trailing.plans} trailing SL update proposal(s) · Oracle synchronization not deployed`:"No verified engine trailing stops · manual trades protected";
+  $("expiry-status").textContent=expiry?Object.entries(expiry).map(([index,e])=>`${index}: ${e.is_expiry_day===true?"expiry — Everyday skips; Late-session eligible":e.is_expiry_day===false?"non-expiry — Everyday eligible":"expiry unverified — no entry"}`).join(" · "):"Actual expiry dates must be confirmed from Groww";
+  const news=c?.news;
+  $("news-status").textContent=news?`News evidence: ${news.risk||'UNKNOWN'} · source freshness remains visible · no news-based entry strategy`:"News evidence unavailable";
+  $("strategy-priority").textContent="NIFTY Mon/Tue/Fri; SENSEX Wed/Thu. Expiry: a matching position skips entry; otherwise replace only the algo-owned basket. Your trades are protected.";
+  $("levels").hidden=true; $("rule-details").hidden=true;
+  $("analysis-status").textContent="Short premium below ₹8: review closing the short and replacing it with the next listed premium above ₹8. Keep the bought hedge unless the basket's improvement after costs exceeds ₹100.";
+  $("trailing-status").textContent="Loss-stop limit ₹2,000 per algo basket · protection is not deployed; this is a trigger, not a guaranteed loss cap.";
+  $("control-note").textContent="By 19:00: hold when the short premium is above its entry premium − ₹5; otherwise review a return to ₹20 / ₹80. Expiry at 18:00: uptrend → put 3 strikes below ATM; downtrend → call 3 strikes above ATM. Hedges are required. Oracle execution is unfinished.";
+  $("algo-start").disabled=data.demo||algoStartPending||on;
+  $("algo-start").textContent=on?"Algo On":"Algo Start";
+  $("algo-stop").disabled=data.demo||algoStartPending||!on;
+  const last=algoStartResult||c?.latest_start_request;
+  const labels={ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED:"Oracle order executor is unfinished",REPOSITORY_PAUSED:"trading is paused",NEWS_HIGH_UNKNOWN_OR_STALE:"mandatory news evidence is unknown/high/stale",FRESH_MARKET_DATA_REQUIRED:"current data is required",OUTSIDE_1400_1900_JST:"outside 14:00–19:00 JST",OFFLINE_VIEW:"offline view",MAXIMUM_LOTS_REQUIRED:"lot cap missing",PREMIUM_POLICY_REQUIRED:"strategy settings are missing",OWNER_ALGO_OFF:"owner setting is Off",VM_UNHEALTHY_OR_STALE:"VM heartbeat/data unavailable"};
+  $("algo-start-result").textContent=algoStartPending?"Saving owner setting…":on?`On is saved until you click Algo Off. Trading blocked: ${(algo.blockers||[]).map(k=>labels[k]||k).join('; ')}.`:last?.status==='TRANSPORT_FAILED'?"Could not save the setting on Oracle. No change confirmed.":"Algo Off. Start saves your On preference across restarts; it does not bypass blocked trading readiness.";
 }
 function renderAccount() {
   const a=data.account;
@@ -214,6 +223,7 @@ function renderAccount() {
   $("pnl-caption").textContent=data.demo?"Sample results · design preview":`${pnlStatus}${firstPnl?` · Chart recorded from ${clockSeconds(firstPnl.at)}`:''}. Self includes non-journal trades; only exact journal matches count as algo. Mixed trades stay unassigned.`;
   if(a.portfolio_series?.length>=2) chart($("portfolio-chart"),a.portfolio_series,{color:"#fb861c",area:true,label:"Reviewed portfolio value"});
   else emptyChart($("portfolio-chart"),"No portfolio history yet","Your account values are never estimated from index moves.");
+  $("strategy-count").textContent=data.strategies.length;
   $("strategy-rows").innerHTML=data.strategies.map((s,i)=>`<tr><td><div class="strategy-info ${known(s.net_pnl_inr)&&s.net_pnl_inr<0?"negative":""}"><span class="strategy-number">${i+1}</span><div class="strategy-content"><div class="strategy-name">${escapeHTML(s.name)}</div><p class="strategy-description">${escapeHTML(s.description)}</p><div class="outcome-track" role="img" aria-label="${escapeHTML(s.name)}: ${s.closed_trades?`${s.non_loss_pct.toFixed(1)}% non-losing, ${s.loss_pct.toFixed(1)}% losing, ${s.closed_trades} closed trades`:"No results"}"><span class="profit-segment" style="width:${s.non_loss_pct??0}%"></span><span class="loss-segment" style="width:${s.loss_pct??0}%"></span></div><span class="outcome-caption">${s.closed_trades?`${s.non_loss_pct.toFixed(0)}% non-loss · ${s.loss_pct.toFixed(0)}% loss · ${s.closed_trades} trades`:"No results"}</span></div></div></td><td class="${known(s.return_pct)?s.return_pct<0?"negative":"positive":""}">${percent(s.return_pct)}</td><td class="${known(s.net_pnl_inr)?s.net_pnl_inr<0?"negative":"positive":""}">${signed(s.net_pnl_inr)}</td></tr>`).join("");
 }
 function render() {
@@ -258,8 +268,20 @@ function sampleData() {
   const pnl=series(0,24850,40).map((r,i)=>({...r,value:r.value-(i>2&&i<12?Math.sin((i-2)/10*Math.PI)*10000:0)}));
   pnl.at(-1).value=24850;
   const samplePnl={status:"SAMPLE",buckets:{self:{realized_inr:14272,unrealized_inr:1632,total_inr:15904,contracts:4},algo:{realized_inr:8028,unrealized_inr:918,total_inr:8946,contracts:4},unassigned:{contracts:0,total_inr:0}},series:pnl.map(r=>({at:r.at,self:r.value*.64,algo:r.value*.36,unassigned:0}))};
-  return {demo:true,broker_pnl:samplePnl,orders_status:"AVAILABLE",positions_status:"AVAILABLE",as_of:new Date(start+71*300000).toISOString(),freshness:"SAMPLE",markets,strategies:rows,account:{status:"SAMPLE",capital_inr:150000,portfolio_value_inr:218450,used_margin_inr:112000,available_margin_inr:38000,margin_utilization_pct:74.67,today_pnl_inr:24850,today_return_pct:16.57,realized_today_inr:22300,unrealized_inr:2550,trade_count_today:8,pnl_series:pnl,portfolio_series:series(190000,28450,25)}};
+  return {demo:true,broker_pnl:samplePnl,orders_status:"AVAILABLE",positions_status:"AVAILABLE",as_of:new Date(start+71*300000).toISOString(),freshness:"SAMPLE",markets,strategies:rows.filter(r=>["everyday","late_session"].includes(r.id)).map(r=>({...r,description:r.id==="everyday"?"14:00–19:00 JST · NIFTY ₹20 / SENSEX ₹80 call":"Actual expiry · 18:00 JST · 3 strike intervals from ATM"})),account:{status:"SAMPLE",capital_inr:150000,portfolio_value_inr:218450,used_margin_inr:112000,available_margin_inr:38000,margin_utilization_pct:74.67,today_pnl_inr:24850,today_return_pct:16.57,realized_today_inr:22300,unrealized_inr:2550,trade_count_today:8,pnl_series:pnl,portfolio_series:series(190000,28450,25)}};
 }
+async function setAlgo(enabled){
+  if(algoStartPending||demo) return;
+  algoStartPending=true;renderControl();
+  try {
+    const response=await fetch(enabled?'/api/algo/start':'/api/algo/stop',{method:'POST',headers:{'X-Local-Token':document.querySelector('meta[name="local-token"]').content},cache:'no-store'});
+    algoStartResult=await response.json();
+    await refresh();
+  } catch {algoStartResult={status:'TRANSPORT_FAILED',blockers:['LOCAL_ENGINE_UNAVAILABLE']};}
+  finally {algoStartPending=false;renderControl();}
+}
+$("algo-start").addEventListener("click",()=>setAlgo(true));
+$("algo-stop").addEventListener("click",()=>setAlgo(false));
 $("refresh").addEventListener("click",refresh);
 $("settings").addEventListener("click",()=>$("settings-dialog").showModal());
 $("settings-dialog").addEventListener("click",event=>{if(event.target===$("settings-dialog")) {const r=$("settings-dialog").getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) $("settings-dialog").close();}});

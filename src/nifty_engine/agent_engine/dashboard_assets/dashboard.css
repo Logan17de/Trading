@@ -36,3 +36,4 @@
 .pnl-card .monitor-caption{font-size:11px;line-height:1.6}.profit-card .big-number.negative{color:var(--red)}
 @media(max-width:1050px){.bottom-grid>.strategy-card{grid-column:1/-1}}
 @media(max-width:700px){.pnl-card .small-chart{height:230px}.pnl-bucket{min-width:125px;padding:10px}.pnl-bucket strong{font-size:18px}.pnl-bucket small{font-size:10px}}
+.algo-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.algo-actions .button{min-height:38px}

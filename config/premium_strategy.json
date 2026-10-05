@@ -1,0 +1,21 @@
+{
+  "format": "trading-premium-policy-v3",
+  "active_strategies": ["everyday", "late_session"],
+  "action_window_jst": ["14:00", "19:00"],
+  "short_call_target_rupees": {"NIFTY": 20, "SENSEX": 80},
+  "everyday_skip_actual_expiry": true,
+  "roll_below_rupees": 8,
+  "hold_entry_offset_rupees": 5,
+  "hedge_change_min_improvement_inr": 100,
+  "loss_stop_inr": 2000,
+  "maximum_lots": 2,
+  "late_session": {
+    "entry_jst": "18:00",
+    "actual_expiry_only": true,
+    "short_strike_distance": 3,
+    "strike_step_points": {"NIFTY": 50, "SENSEX": 100},
+    "hedge_required": true,
+    "occupied_policy": "SKIP_MATCHING_ELSE_REPLACE_OWNED",
+    "trend_mapping": {"UP": "PE", "DOWN": "CE", "FLAT": "NO_TRADE"}
+  }
+}

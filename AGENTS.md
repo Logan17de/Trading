@@ -1,81 +1,51 @@
 # Trading workspace
 
-- Current repository: `Logan17de/Trading`; local checkout: `D:\Money Trader\Trading`.
-- Continue new work here. Read `docs/CODEX_HEADLESS_HANDOFF.md` and the current
-  integration/strategy guides before changing the workflow.
-- Extend `src/nifty_engine/agent_engine/`. Keep it headless: structured data for
-  Codex, a visual daily email for the owner. Preserve the existing runtime.
-  The owner also authorized the local loopback-only Options Trader PC app, Desktop/
-  Start shortcuts and Windows sign-in startup. The background observer targets
-  five-second Groww reads from 12:40–19:45 JST on weekdays, independently of the
-  action window, covering normal-session observation and end-of-day preparation.
-  A visible window may request reads anytime. All charts are lines; never render
-  candles. The default index/option lines use actual journalled LTP observations
-  at reception times with a five-minute grid, updating on the five-second target
-  cycle. Show update time and point count; never manufacture movement or bridge
-  outages. Completed five-minute closes remain a selectable comparison and the
-  research input. Slow requests can extend the target cycle.
-  Draw at the panel's actual dimensions so labels and strokes stay undistorted.
-  Session/30-minute/15-minute views filter the recorded points, never synthesize them.
-  Show each buy/sell panel only for confirmed nonzero open option positions.
-  Historical fills, pending orders, closed positions and chain samples create no
-  charts. Plot the broker position average entry and matched pending SL/active OCO or GTT exits
-  target/SL, including partial coverage; unknown prices stay absent. No recorded
-  losses means 100% non-loss only when completed trades exist; absent results stay
-  unknown. Today's index-option P&L uses actual Groww realised_pnl plus signed
-  open quantity * (LTP - position average), explicitly before charges. Self means
-  non-journal trades; Algo requires exact acknowledged journal identities and
-  reconciled fills. Mixed/unverified engine symbols stay Unassigned. Incomplete,
-  stale, unsupported or overnight rows with an unverified daily basis keep the
-  total unknown. Persist real observed P&L points in SQLite; never backfill values.
-  Strategy net results and portfolio value still need the private reviewed ledger.
-- Use the local PC for read-only Groww observation and strategy research. Oracle
-  is the intended later execution host; execution remains unfinished and inactive.
-- Support/resistance research starts at 12:55 JST. Fresh barrier crossings queue
-  bounded, deduplicated structured Codex proposals. Action rules are restricted to
-  13:00 inclusive–18:15 exclusive JST; everyday entry still starts at 13:15.
-  Independent RBI/ET news collection runs every two minutes during observation;
-  missing/stale sources stay UNKNOWN. Level reassessment is 15:00 and 17:00, with
-  changed-news/crossing requests within the same eight-attempt daily cap. A weekday
-  12:55 Codex thread follow-up checks the installed workers. Slot strategy ownership
-  persists overnight; never relabel everyday orders as swing. Swing's recorded
-  18:45 entry is outside the action cutoff and remains research-only.
-  Groww clear cash and option-buy/sell money are read every 30 seconds, separately
-  from reviewed P&L/investment value. Failed/stale balances remain unknown.
-- Engine ownership needs a reserved journal reference AND the exact acknowledged
-  broker order identity. Manual/unknown and mixed/netted contracts are protected
-  persistently. Never adopt a manual trade or infer ownership from a prefix.
-- Preserve `.trader-paused`, private journals and encrypted credentials. Do not
-  place real orders, enable LIVE, change broker permissions or merge automatically.
-- Keep Oracle running continuously and preserve shared Qwen/Colab/mail/tunnels.
-  Existing Oracle paths and service identities are deployment state, not branding
-  to rename during source changes.
-- Local helpers reuse the protected sibling `.secrets/growing-trader` DPAPI vault.
-  Keep credentials, account data and Codex authentication out of Git, logs,
-  structured analysis inputs and generated reports. Private state is `.agent-state/`.
-- Use the owner's Edge session for Groww browser checks. If authentication returns
-  403, inspect `https://groww.in/trade-api/api-keys`. The owner authorizes clicking
-  Approve for the existing Codex key only when it shows Expired. Verify Approved,
-  then rerun the read-only helper. This refresh does not authorize new keys,
-  changed broker permissions, subscription purchases or orders.
-- Evaluate the owner's fixed Japan-time hypotheses with costs, fills and chronological
-  holdouts before selecting any strategy. Profit targets never increase exposure,
-  leverage or loss limits; record insufficient evidence and NO_TRADE when appropriate.
-- Latest everyday direction: at/after 13:15 JST, NIFTY +500 on Mon/Tue/Fri and
-  SENSEX +1000 on Wed/Thu; one active slot, one lot. Buy a higher-strike call with
-  the same expiry and equal quantity. Compare alternative hedges by quoted maximum
-  net expiry profit after costs within verified available margin; show loss exposure
-  and never represent that bound as expected profit. Missing inputs block ranking.
-  Skip the underlying's actual expiry day using
-  Groww expiry dates AND current contract metadata, including holiday shifts;
-  unknown/disagreeing evidence blocks entry. Weekday routing does not prove expiry.
-- The owner clarified BUY for the higher call; this supersedes the former ATM-buy
-  instruction and resolves that leg-direction conflict. Retain historical v1/v2
-  research and historical PC v1 settings for reproducibility; PC v2 is current.
-  No strategy-profit probability or executable contracts/expiry are established.
-- Trailing SL source is present but disabled and undeployed. Modify only an exact,
-  already-owned protective SL; ratchet only favorably, confirm provider readback
-  before advancing state, and reconcile timeouts before another broker write.
-  Index barriers are not option-premium SL prices. Stop/target amounts remain unset.
-- Verify meaningful changes with configuration checks, the retained tests and the
-  offline demo. Report implemented, tested, deployed and blocked work separately.
+- Work in `D:\Money Trader\Trading` / `Logan17de/Trading`. Read
+  `docs/CODEX_HEADLESS_HANDOFF.md` and `docs/PREMIUM_STRATEGY.md` first.
+- Extend the existing headless `src/nifty_engine/agent_engine/` runtime. Oracle
+  is the observer/policy/report host; the loopback PC app is viewer/controller.
+  No new GUI or execution framework. Keep shared Qwen/Colab/mail/tunnels running.
+- Active owner policy is premium v3: Everyday and Late-session only. Historical
+  offsets, barriers, swing and reversal studies remain provenance, not entries.
+  Action window 14:00 inclusive–19:00 exclusive JST; max two lots in one basket.
+  Bought equal-quantity same-expiry hedge required. Actual margin/costs required.
+  NIFTY Mon/Tue/Fri targets short CALL premium ₹20; SENSEX Wed/Thu ₹80.
+  Everyday skips actual expiry from Groww AND current master, never weekdays.
+  Actual expiry at 18:00: UP → PUT three listed strikes below ATM; DOWN → CALL
+  three above. Matching position skips entry; otherwise only owned replacement.
+  Below ₹8, propose short roll; keep hedge unless net improvement >₹100.
+  By 19:00, hold if short premium > entry minus ₹5. ₹2,000 basket stop is a
+  trigger, not a guaranteed loss cap. See the policy guide for exact semantics.
+- Only explicit owner On/Off changes durable desired intent. Preserve On through
+  restarts/windows/faults. Expose blocked readiness separately: broker executor
+  remains unfinished. Preserve `.trader-paused`. Never activate LIVE or place/
+  modify real orders during maintenance/tests. Manual/unknown/mixed trades are
+  protected; ownership needs reservation, exact broker acknowledgment and fills.
+- Five-second read-only observer targets 12:40–19:45 JST weekdays. Network delays
+  can extend cadence. All charts are actual LTP lines at reception times with
+  five-minute grids. No fabricated movement/outage bridges/candles. Option
+  panels require confirmed nonzero active positions; SL/target/entry evidence
+  must match actual broker records. Do not adopt manual positions.
+- Today's P&L is Groww realized plus signed qty × (LTP minus average), before
+  charges. Split Self / exact Algo / Unassigned. Persist actual points; stale,
+  incomplete or unverified carry-day basis stays unknown. Cash is not investment
+  value. Net strategy returns require reviewed ledger; no outcomes means unknown.
+- Independent RBI/ET evidence remains dated and truthful. Missing/stale mandatory
+  sources stay UNKNOWN. Do not relax freshness automatically. No news entries.
+- Visual daily email at 19:30 JST every calendar day, minimal words, existing
+  approved sender/recipient. Retry frozen content without changing trading state.
+  Distinguish provider acceptance, recipient-server acceptance and inbox evidence.
+- At 12:00 JST weekdays use owner's Edge to check existing Codex API key. Approve
+  only if Expired; verify Approved and retest reads. Never create/rotate keys,
+  change permissions/subscriptions or claim a scheduled heartbeat actually ran.
+- Keep Oracle continuously running. Verified private SSH and fixed Unix-socket
+  client; no public trading port. Liveness needs heartbeat advancement. PC alerts
+  require PC awake/signed in/online; no external cloud monitor is installed.
+- Protect `.agent-state`, sibling `.secrets/growing-trader` DPAPI vault, original
+  production keys/ciphertext and Codex authentication. No secrets/account IDs in
+  Git/logs/prompts/reports. Root-only observer credentials reuse existing keys for
+  isolation; never rotate broker encryption automatically or shut down Oracle.
+- SQLite backup API, restore only to new paths; root-owned immutable releases and
+  isolated resource-capped service. Preserve old deployment identities and pause.
+  No automatic merge. Run retained tests, config/JS checks and offline demo;
+  distinguish implemented/tested/deployed/blocked. Profit bounds are not forecasts.
