@@ -19,6 +19,10 @@ desktop and visual email. Historical research and evidence remain provenance.
   Ranks one/two-lot net maximum expiry payoff within supplied broker requirements.
   It explicitly reports omitted contracts and does **not** claim a globally
   optimal hedge or expected profit. A prepared comparison is never executable.
+- Protected contracts, absent master records, unavailable depth and books that
+  expire during margin calculations have distinct waiting reasons and counts.
+  No evaluated candidates means no affordability conclusion. Freshness is not
+  relaxed to obtain a comparison.
 - Late-session: actual expiry after 18:00, UP -> put three listed strikes below
   ATM; DOWN -> call three above. Trend uses three consecutive completed five-minute
   observed reception-price closes, with actual quotes in each interval's final
@@ -65,3 +69,19 @@ modify, cancel and smart-order write routes remain denied by the observer guard.
 
 Tests use synthetic values and injected simulated brokers; private account values,
 orders and calculation evidence stay in the existing private journal.
+
+## October 5 actual verification
+
+Oracle SDK1.5.0 authenticated, read actual books and successfully called the
+hypothetical paired-basket margin API at 16:59:50 JST, including charge fields.
+This diagnostic used an existing contract pair only as calculation input; it
+neither selected a strategy nor submitted an order. Live data also showed
+transient missing depth and contracts protected by manual-trade history. These
+wait states are retained. There is no verified live strategy candidate or
+persistent broker-protection session yet.
+
+The deployed preparation release is `492c7355827fac857aa14d72269c74703f22de9d`.
+259 tests passed, four platform skips; offline synthetic demo and exact-release
+Ubuntu/Windows CI passed. Pause/Off and shared services were preserved; pre/post
+journal backups passed integrity checks and the post-deployment off-host copy
+matched its hash. Real transport is still rejected by construction.

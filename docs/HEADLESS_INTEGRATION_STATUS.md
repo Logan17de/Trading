@@ -8,7 +8,7 @@ implemented; see EXECUTION_PREPARATION.md. Real trading remains disabled.
 
 | Component | Actual result |
 | --- | --- |
-| Oracle observer | `trading-observer.service` enabled/active; immutable release `b5a54faa59370771320bb822e745527fd19913ec`; existing runtime, read-only HTTP allowlist, no public port |
+| Oracle observer | `trading-observer.service` enabled/active; immutable release `492c7355827fac857aa14d72269c74703f22de9d`; existing runtime, read-only HTTP allowlist including only hypothetical margin POSTs, no public port |
 | Desktop | Installed app now reads Oracle via verified private SSH/Unix socket; background/sign-in launch reused |
 | Capital | Confirmed opening investment and zero withdrawals provisioned privately in Oracle SQLite; October 2026 is the first monthly API fee. Live starting formula and isolated November result verified; production contains October only. All four amounts visible near the top in owner Edge and visual email preview; Self/Algo P&L also visible near the top |
 | Withdrawals | Protected Record withdrawal form and fixed SSH/socket accounting command; INR paise arithmetic, dated owner records and persistent idempotent IDs. Successful records/conflicts/retries tested in isolated HTTP/SQLite fixtures; production form zero validation and keyboard dismissal verified; no test withdrawal saved to production |
@@ -17,6 +17,7 @@ implemented; see EXECUTION_PREPARATION.md. Real trading remains disabled.
 | Strategy policy | Everyday ₹20 NIFTY / ₹80 SENSEX, one basket/max two lots, 14:00–19:00 JST; expiry Late-session at 18:00, 3 strike intervals; deterministic review functions tested |
 | Actual reads | VM Groww authentication, current NIFTY/SENSEX/BANKNIFTY quotes, positions, money and expiry/master evidence passed; five-second target remains subject to read/CPU/network delays |
 | News | Retired by owner: no active news fetch worker, readiness gate or dashboard/email news wording. Historical dated evidence retained |
+| Execution preparation | Independent minute worker reads actual chain/master/books and hypothetical broker basket/hedge/exit calculations. Groww margin access verified on Oracle at 16:59:50 JST using SDK1.5.0, without order writes. Preparation distinguishes protected/missing contracts, missing books and books expiring during calculations; it does not relax freshness or claim a global maximum from its sample. No live strategy candidate/execution session has been verified |
 | Email | Visual integration preview sent at **15:08 JST** to approved existing recipient/sender; 5 actual PNG charts, balances, positions and Self/Algo P&L; Resend accepted, recipient server accepted, Gmail Inbox label and rendered body verified |
 | Daily scheduler | Observer checks every 30 seconds, starts attempts at **19:29 JST**, targeting **by 19:30** every calendar day; frozen content/retries do not change trading state; first actual scheduled EOD run remains pending |
 | Noon API job | Existing heartbeat updated to **Trading noon API and VM check**, weekdays **12:00 JST**; best-effort configured schedule, not proof of exact noon execution |
@@ -24,7 +25,8 @@ implemented; see EXECUTION_PREPARATION.md. Real trading remains disabled.
 | Alert repair | Deployment revealed repeated false alarms (24 messages in a Gmail thread) from startup/heartbeat-clock/recovery handling. VM remained online. Startup grace, response-time clock check, bounded heartbeat-only skew tolerance and persistent/debounced incidents installed; data/news freshness was not relaxed |
 | Migration/backups | SQLite integrity passed: 1,621 observations/588 P&L points, zero owned orders migrated; original journal retained. Post-migration backup + restore to new path passed; 17,428,480-byte off-host copy hash matched |
 | Isolation/shared VM | Separate service identity; root-owned source, root0600 reused credentials/mail, private state/socket; memory capped240MB/CPU35%; shared Qwen/mail/tunnels stayed active; old trader disabled/inactive; all pause markers preserved |
-| Verification | **238 tests passed, 4 POSIX skips** on Windows, config/compile/JS checks and offline demo passed; capital runtime source CI on Ubuntu3.12 and Windows3.13 passed. Capital widths 320/390/768/1440 checked; narrow live money-card clipping fixed. No broker order writes, key rotations, permission changes, merges or VM shutdown |
+| Preparation backups | Before/after SQLite integrity verified; 30,027,776-byte post-deployment off-host copy hash matched. Original journals/backups retained; production has zero owned orders and zero withdrawals |
+| Verification | **259 tests passed, 4 POSIX skips** on Windows, config/compile/JS checks and offline demo passed; exact release CI on Ubuntu3.12 and Windows3.13 passed (run37282655954). Capital widths 320/390/768/1440 checked previously; narrow live money-card clipping fixed. No broker order writes, key rotations, permission changes, merges or VM shutdown |
 
 **Not complete:** production broker executor, persistent protective stops,
 generated-child ownership, rollover/replacement/exit orchestration and actual

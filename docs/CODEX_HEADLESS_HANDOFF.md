@@ -25,6 +25,15 @@ It labels sampled scope; a prepared comparison is never an order or global optim
 PreparedOrderGateway is replay-only, persists intent before a simulated write and
 reconciles original references/fills without duplicating uncertain submissions.
 Real broker transport remains rejected; the pause and actual owner Off are retained.
+Preparation deployed October 5 at approximately 17:19 JST as immutable release
+`492c7355827fac857aa14d72269c74703f22de9d`. Groww's actual hypothetical basket-margin
+API was verified independently at 16:59:50 JST; no broker order routes were used.
+Missing/protected books and prices expiring during calculations have separate
+readiness reasons. Freshness remains strict; no live selected strategy or
+persistent protection has been verified. 259 tests passed, four platform skips;
+Ubuntu/Windows CI passed for the deployed release (run37282655954). Pre/post
+SQLite backups verified; 30,027,776-byte post-deployment off-host hash matched.
+Shared Qwen/mail/tunnels stayed active, owner Off, zero owned orders/withdrawals.
 
 ## Display/accounting
 
