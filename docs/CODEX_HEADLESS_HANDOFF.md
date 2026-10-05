@@ -34,6 +34,8 @@ and remaining capital. Fees start in October 2026, once per month at the first J
 day, catching up missed months. The small Record withdrawal form sends a dated
 owner record through protected loopback POST and fixed SSH/socket accounting
 command. Idempotent request IDs survive retries/restarts; conflicts are rejected.
+Unconfirmed browser requests persist in local owner-profile storage; original
+amount/date stay locked until acknowledgment or a definitive validation rejection.
 This does not transfer money, change broker cash, P&L, margin or trading readiness.
 Cached prior-month totals wait for Oracle's fee update; no desktop fee booking.
 Deployed and verified October 5 at 16:00 JST: observer release

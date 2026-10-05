@@ -298,12 +298,14 @@ async function setAlgo(enabled){
 }
 $("algo-start").addEventListener("click",()=>setAlgo(true));
 $("algo-stop").addEventListener("click",()=>setAlgo(false));
-function pendingWithdrawal() {try{return JSON.parse(sessionStorage.getItem(pendingWithdrawalKey));}catch{return null;}}
+function pendingWithdrawal() {try{return JSON.parse(localStorage.getItem(pendingWithdrawalKey));}catch{return null;}}
 $('record-withdrawal').addEventListener('click',()=>{
   const pending=pendingWithdrawal();
   $('withdrawal-date').max=jstDay();
   $('withdrawal-date').value=pending?.effective_date||jstDay();
   $('withdrawal-amount').value=pending?.amount_inr||'';
+  $('withdrawal-amount').readOnly=Boolean(pending);$('withdrawal-date').readOnly=Boolean(pending);
+  $('withdrawal-save').textContent=pending?'Retry record':'Save record';
   $('withdrawal-result').textContent=pending?'Retry the pending record with the same amount and date.':'';
   $('withdrawal-dialog').showModal();
   $('withdrawal-amount').focus();
@@ -314,10 +316,11 @@ $('withdrawal-form').addEventListener('submit',async event=>{
   event.preventDefault();if(withdrawalPending||demo)return;
   const amount=$('withdrawal-amount').value, day=$('withdrawal-date').value;
   const pending=pendingWithdrawal();
-  const body=pending&&pending.amount_inr===amount&&pending.effective_date===day?pending:{id:crypto.randomUUID(),amount_inr:amount,effective_date:day};
-  try {sessionStorage.setItem(pendingWithdrawalKey,JSON.stringify(body));}
+  const body=pending||{id:crypto.randomUUID(),amount_inr:amount,effective_date:day};
+  try {localStorage.setItem(pendingWithdrawalKey,JSON.stringify(body));}
   catch {$('withdrawal-result').textContent='Browser storage unavailable. Reopen the app before recording.';return;}
   withdrawalPending=true;$('withdrawal-save').disabled=true;$('withdrawal-close').disabled=true;
+  $('withdrawal-amount').readOnly=true;$('withdrawal-date').readOnly=true;
   $('withdrawal-result').textContent='Saving…';renderCapital();
   try {
     const response=await fetch('/api/capital/withdrawals',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':document.querySelector('meta[name="local-token"]').content},body:JSON.stringify(body),cache:'no-store'});
@@ -325,13 +328,17 @@ $('withdrawal-form').addEventListener('submit',async event=>{
     if(!response.ok||!['RECORDED','ALREADY_RECORDED'].includes(result.status)) {
       const messages={INVALID_AMOUNT:'Enter an INR amount with at most two decimals.',POSITIVE_AMOUNT_REQUIRED:'Enter an amount above zero.',FUTURE_WITHDRAWAL_DATE:'Choose today or an earlier JST date.',INVALID_WITHDRAWAL_DATE:'Choose a valid date.',WITHDRAWAL_ID_CONFLICT:'This record ID already has different details. Keep the pending record for review.',CAPITAL_NOT_CONFIGURED:'The capital ledger is not configured.'};
       $('withdrawal-result').textContent=messages[result.reason]||'Oracle did not confirm the record. Retry with the same amount and date.';
+      // A definitive validation rejection has no ledger effect. An uncertain
+      // connection/5xx/conflict keeps its durable ID and locked original values.
+      if(response.status===400){localStorage.removeItem(pendingWithdrawalKey);$('withdrawal-amount').readOnly=false;$('withdrawal-date').readOnly=false;}
       return;
     }
-    sessionStorage.removeItem(pendingWithdrawalKey);
+    localStorage.removeItem(pendingWithdrawalKey);
+    $('withdrawal-amount').readOnly=false;$('withdrawal-date').readOnly=false;
     $('withdrawal-result').textContent=result.status==='ALREADY_RECORDED'?'Already recorded · no duplicate':'Withdrawal recorded';
     $('withdrawal-amount').value='';await load();
   } catch {$('withdrawal-result').textContent='Connection interrupted. Retry with the same amount and date.';}
-  finally {withdrawalPending=false;$('withdrawal-save').disabled=false;$('withdrawal-close').disabled=false;renderCapital();}
+  finally {withdrawalPending=false;$('withdrawal-save').disabled=false;$('withdrawal-close').disabled=false;$('withdrawal-save').textContent=pendingWithdrawal()?'Retry record':'Save record';renderCapital();}
 });
 $("refresh").addEventListener("click",refresh);
 $("settings").addEventListener("click",()=>$("settings-dialog").showModal());
