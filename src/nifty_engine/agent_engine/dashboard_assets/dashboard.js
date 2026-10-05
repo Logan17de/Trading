@@ -7,12 +7,13 @@ const known = value => typeof value === "number" && Number.isFinite(value);
 const inr = value => known(value) ? money.format(value) : "—";
 const signed = value => known(value) ? (value > 0 ? "+" : "") + money.format(value) : "—";
 const percent = value => known(value) ? (value > 0 ? "+" : "") + value.toFixed(1) + "%" : "—";
-let liveData = null, data = null, demo = false, selectedIndex = "NIFTY", timeZone = "Asia/Tokyo", autoRefresh = true;
+let liveData = null, data = null, demo = false, selectedIndex = "NIFTY", timeZone = "Asia/Tokyo", autoRefresh = true, chartDetail = "live";
 let contracts = {buy:null, sell:null}, refreshPending = false, lastRequest = 0;
 try {selectedIndex = localStorage.getItem("trading-index") || "NIFTY"; timeZone = localStorage.getItem("trading-timezone") || timeZone;} catch {}
 if (!["NIFTY","SENSEX","BANKNIFTY"].includes(selectedIndex)) selectedIndex = "NIFTY";
 if (!["Asia/Tokyo","Asia/Kolkata"].includes(timeZone)) timeZone = "Asia/Tokyo";
 const clock = value => new Intl.DateTimeFormat("en-GB", {timeZone, hour:"2-digit", minute:"2-digit"}).format(new Date(value));
+const clockSeconds = value => new Intl.DateTimeFormat("en-GB", {timeZone, hour:"2-digit", minute:"2-digit",second:"2-digit"}).format(new Date(value));
 const dateTime = value => new Intl.DateTimeFormat("en-GB", {timeZone, day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit", second:"2-digit"}).format(new Date(value));
 function tone(element, value) {element.classList.toggle("positive", known(value) && value >= 0); element.classList.toggle("negative", known(value) && value < 0);}
 function setAmount(id, value, withSign=false) {$(id).textContent = withSign ? signed(value) : inr(value); tone($(id), withSign ? value : null);}
@@ -20,11 +21,11 @@ function emptyChart(container, title, subtitle="") {
   delete container.dataset.chartSignature;
   container.innerHTML = `<div class="empty-chart"><svg class="icon" aria-hidden="true"><use href="#icon-bars"/></svg><strong>${escapeHTML(title)}</strong><small>${escapeHTML(subtitle)}</small></div>`;
 }
-function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=false, label="Chart",levels=[]}={}) {
+function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=false, label="Chart",levels=[],fiveMinuteGrid=false,gapSeconds=Infinity}={}) {
   const rows = (points || []).filter(p => known(p.value) && Number.isFinite(Date.parse(p.at)));
   if (!rows.length || (mini && rows.length < 2)) {emptyChart(container, rows.length ? "Waiting for more observations" : "No chart data", "No prices are filled in or simulated."); return;}
   const markers=levels.filter(p=>known(p.price)&&p.price>0&&['ENTRY','SL','TARGET'].includes(p.kind));
-  const signature=JSON.stringify({rows,color,area,mini,pnl,label,markers,timeZone});
+  const signature=JSON.stringify({rows,color,area,mini,pnl,label,markers,timeZone,fiveMinuteGrid,gapSeconds});
   if(container.dataset.chartSignature===signature) return;
   container.dataset.chartSignature=signature;
   const width=640, height=mini?120:250, left=mini?1:47, right=mini?4:15, top=mini?10:14, bottom=mini?7:29;
@@ -32,35 +33,37 @@ function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=
   let low=Math.min(...domain), high=Math.max(...domain);
   if (pnl) {low=Math.min(low,0); high=Math.max(high,0);}
   let span=high-low || Math.max(Math.abs(high)*.02,1); low-=span*.09; high+=span*.09; if(!pnl) low=Math.max(0,low); span=high-low;
-  const first=Date.parse(rows[0].at), last=Date.parse(rows.at(-1).at), duration=last-first||1;
+  const first=fiveMinuteGrid?Math.floor(Date.parse(rows[0].at)/300000)*300000:Date.parse(rows[0].at), last=Date.parse(rows.at(-1).at), duration=last-first||1;
   const inset=0;
   const x=r=>rows.length===1?(width+left-right)/2:left+inset+(Date.parse(r.at)-first)/duration*(width-left-right-2*inset), y=v=>top+(high-v)/span*(height-top-bottom);
-  const path=rows.map((r,i)=>`${i?"L":"M"}${x(r).toFixed(2)},${y(r.value).toFixed(2)}`).join(" ");
+  const path=rows.map((r,i)=>`${i&&Date.parse(r.at)-Date.parse(rows[i-1].at)<=gapSeconds*1000?"L":"M"}${x(r).toFixed(2)},${y(r.value).toFixed(2)}`).join(" ");
+  const hasGaps=rows.some((r,i)=>i&&Date.parse(r.at)-Date.parse(rows[i-1].at)>gapSeconds*1000);
   const base=pnl?y(0):height-bottom, id="fill-"+container.id;
   const fill=`${path} L${x(rows.at(-1)).toFixed(2)},${base.toFixed(2)} L${x(rows[0]).toFixed(2)},${base.toFixed(2)} Z`;
   let grid="";
   if (!mini) {
     for(let i=0;i<4;i++) {
       const value=low+span*(3-i)/3, at=y(value);
-      const tick=Math.abs(value)>=1000?(value/1000).toFixed(Math.abs(value)>=10000?0:1)+"k":value.toFixed(0);
+      const tick=Math.abs(value)>=1000?(value/1000).toFixed(Math.abs(value)>=10000?0:1)+"k":value.toFixed(span<10?2:span<100?1:0);
       grid+=`<line x1="${left}" y1="${at}" x2="${width-right}" y2="${at}" stroke="#eaf0ed"/><text x="${left-9}" y="${at+4}" text-anchor="end" fill="#72849a" font-size="10">${tick}</text>`;
     }
-    for(let i=0;i<5;i++) {
-      const at=left+i/4*(width-left-right), time=clock(first+i/4*duration);
-      grid+=`<line x1="${at}" y1="${top}" x2="${at}" y2="${height-bottom}" stroke="#f0f4f1"/><text x="${at}" y="${height-8}" text-anchor="${i===0?"start":i===4?"end":"middle"}" fill="#72849a" font-size="10">${time}</text>`;
+    const tickTimes=fiveMinuteGrid?Array.from({length:Math.floor(duration/(Math.max(1,Math.ceil(duration/300000/5))*300000))+1},(_,i)=>first+i*Math.max(1,Math.ceil(duration/300000/5))*300000):Array.from({length:5},(_,i)=>first+i/4*duration);
+    for(let i=0;i<tickTimes.length;i++) {
+      const at=left+(tickTimes[i]-first)/duration*(width-left-right), time=clock(tickTimes[i]);
+      grid+=`<line x1="${at}" y1="${top}" x2="${at}" y2="${height-bottom}" stroke="#f0f4f1"/><text x="${at}" y="${height-8}" text-anchor="${i===0?"start":i===tickTimes.length-1?"end":"middle"}" fill="#72849a" font-size="10">${time}</text>`;
     }
   }
   const segments=pnl?rows.slice(1).map((r,i)=>`<path d="M${x(rows[i])},${y(rows[i].value)} L${x(r)},${y(r.value)}" fill="none" stroke="${r.value>=0?"#08b75d":"#ef4b2c"}" stroke-width="2.5"/>`).join(""):`<path d="${path}" fill="none" stroke="${color}" stroke-width="${mini?2.7:2.6}" stroke-linejoin="round" stroke-linecap="round"/>`;
   const markerColors={ENTRY:'#3974c8',SL:'#dc503f',TARGET:'#0e9c68'};
   const levelLines=markers.map(p=>`<line class="price-level" data-level-kind="${p.kind}" x1="${left}" x2="${width-right}" y1="${y(p.price)}" y2="${y(p.price)}" stroke="${markerColors[p.kind]}" stroke-width="1.5" stroke-dasharray="6 4"><title>${p.kind==='ENTRY'?'Average entry':p.kind} ${escapeHTML(inr(p.price))}</title></line>`).join('');
-  container.innerHTML=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHTML(label)} · ${rows.length} observations"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".2"/><stop offset="1" stop-color="${color}" stop-opacity=".015"/></linearGradient></defs>${grid}${area?`<path d="${fill}" fill="url(#${id})"/>`:""}${pnl?`<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#bdcec3"/>`:""}${segments}${mini?"":`<circle cx="${x(rows.at(-1))}" cy="${y(rows.at(-1).value)}" r="4.5" fill="${color}" stroke="white" stroke-width="2"/>`}</svg>`;
+  container.innerHTML=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHTML(label)} · ${rows.length} observations"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".2"/><stop offset="1" stop-color="${color}" stop-opacity=".015"/></linearGradient></defs>${grid}${area&&!hasGaps?`<path d="${fill}" fill="url(#${id})"/>`:""}${pnl?`<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#bdcec3"/>`:""}${segments}${mini?"":`<circle cx="${x(rows.at(-1))}" cy="${y(rows.at(-1).value)}" r="4.5" fill="${color}" stroke="white" stroke-width="2"/>`}</svg>`;
   container.querySelector('svg').insertAdjacentHTML('beforeend',levelLines);
   if(mini) return;
   const tooltip=document.createElement("div"); tooltip.className="chart-tooltip"; tooltip.hidden=true; container.append(tooltip);
   container.onpointermove=event=> {
     const box=container.getBoundingClientRect(), relative=(event.clientX-box.left)/box.width*width;
     const nearest=rows.reduce((best,r)=>Math.abs(x(r)-relative)<Math.abs(x(best)-relative)?r:best,rows[0]);
-    tooltip.innerHTML=`${escapeHTML(clock(nearest.at))} ${timeZone==="Asia/Tokyo"?"JST":"IST"}<b>${escapeHTML(inr(nearest.value))}</b>`;
+    tooltip.innerHTML=`${escapeHTML(fiveMinuteGrid?clockSeconds(nearest.at):clock(nearest.at))} ${timeZone==="Asia/Tokyo"?"JST":"IST"}<b>${escapeHTML(inr(nearest.value))}</b>`;
     tooltip.hidden=false; tooltip.style.left=Math.max(0,Math.min(event.clientX-box.left+12,box.width-tooltip.offsetWidth-4))+"px";
   };
   container.onpointerleave=()=>{tooltip.hidden=true;};
@@ -72,7 +75,8 @@ function renderIndices() {
   }).join("");
   for(const m of data.markets||[]) {
     const container=$("mini-"+m.index);
-    if(m.series?.length>=2) chart(container,m.series,{mini:true,area:true,color:known(m.change)&&m.change<0?"#ef4b2c":"#08b75d",label:m.index+" index"});
+    const series=chartDetail==='bars'?(m.bar_series||m.series):m.series;
+    if(series?.length>=2) chart(container,series,{mini:true,area:true,color:known(m.change)&&m.change<0?"#ef4b2c":"#08b75d",label:m.index+" index",gapSeconds:chartDetail==='live'&&m.series_source==='GROWW_OBSERVED_LTP'?20:Infinity});
     else container.innerHTML="";
   }
 }
@@ -107,14 +111,18 @@ function drawOption(side, option) {
   if(!levels.some(p=>p.kind==='ENTRY')&&option) legend.insertAdjacentHTML('afterbegin','<span>Entry price unavailable</span>');
   if(option&&option.protective_levels_status!=='AVAILABLE'&&!data.demo) legend.insertAdjacentHTML('beforeend','<span>SL/target check incomplete</span>');
   setAmount(side+"-price",option?.last_price);
-  const initial=option?.series?.[0]?.value, change=known(initial)&&known(option?.last_price)?option.last_price-initial:null;
+  const series=chartDetail==='bars'?(option?.bar_series||option?.series):option?.series;
+  const observed=chartDetail==='live'&&option?.series_source==='GROWW_OBSERVED_LTP';
+  const initial=series?.[0]?.value, change=known(initial)&&known(option?.last_price)?option.last_price-initial:null;
+  $(side+'-period').textContent=observed?'Live · 5s target · 5-min grid':'5-minute closes';
+  $(side+'-chart-updated').textContent=series?.length?`Line through ${clockSeconds(series.at(-1).at)} ${timeZone==='Asia/Tokyo'?'JST':'IST'} · ${series.length} actual points${observed?' · reception times':''}`:'Waiting for real price observations';
   $(side+"-change").textContent=known(change)?`${change>=0?"+":""}${change.toFixed(2)}${initial>0?` (${percent(change/initial*100)})`:""}`:"";
-  $(side+"-change").title="Change versus the first completed 5-minute closing price"; tone($(side+"-change"),change);
+  $(side+"-change").title=observed?"Change versus the first observed session price":"Change versus the first completed 5-minute closing price"; tone($(side+"-change"),change);
   $(side+"-book").textContent=option?`Bid ${inr(option.bid)} · Ask ${inr(option.ask)}`:"Bid — · Ask —";
   const owner=option?.ownership==="ENGINE_VERIFIED"?"Engine verified":option?.ownership==="ENGINE_PENDING_VERIFIED"?"Engine pending":"Manual / unknown · protected";
   $(side+"-expiry").textContent=option?`${owner} · Open position · ${option.expiry||"Expiry unverified"}`:"Expiry —";
-  if(option?.series?.length) chart($(side+"-chart"),option.series,{color:change<0?"#ef4b2c":side==="buy"?"#08b75d":"#fb861c",label:side+" option premium · 5-minute line · "+option.symbol,levels});
-  else emptyChart($(side+"-chart"),option?.series_status==="WAITING_FOR_SESSION"?"Waiting for the market session":option?.series_status==="LOADING_OPTION_HISTORY"?"Loading 5-minute prices":option?"Option history unavailable":"Choose an option contract",option?.series_status==="WAITING_FOR_SESSION"?"Today's line appears as five-minute prices complete.":option?.series_status==="LOADING_OPTION_HISTORY"?"Quotes continue updating while the line chart loads.":option?"This exact contract has no price history.":"Your selected strike and expiry will appear here.");
+  if(series?.length) chart($(side+"-chart"),series,{color:change<0?"#ef4b2c":side==="buy"?"#08b75d":"#fb861c",label:side+" option premium · "+(observed?'observed live line':'five-minute closes')+" · "+option.symbol,levels,fiveMinuteGrid:true,gapSeconds:observed?20:Infinity});
+  else emptyChart($(side+"-chart"),option?.series_status==="WAITING_FOR_SESSION"?"Waiting for the market session":option?.series_status==="LOADING_OPTION_HISTORY"?"Loading 5-minute prices":option?"Option history unavailable":"Choose an option contract",option?.series_status==="WAITING_FOR_SESSION"?"Today's line appears after real session observations arrive.":option?.series_status==="LOADING_OPTION_HISTORY"?"Quotes continue updating while the line chart loads.":option?"This exact contract has no price history.":"Your selected strike and expiry will appear here.");
 }
 function renderControl() {
   const c=data.control;
@@ -201,6 +209,7 @@ $("settings-dialog").addEventListener("click",event=>{if(event.target===$("setti
 $("timezone").value=timeZone;
 $("timezone").addEventListener("change",event=>{timeZone=event.target.value;try{localStorage.setItem("trading-timezone",timeZone);}catch{}render();});
 $("auto-refresh").addEventListener("change",event=>{autoRefresh=event.target.checked;if(autoRefresh) refresh();});
+$("chart-detail").addEventListener("change",event=>{chartDetail=event.target.value;render();});
 $("demo-toggle").addEventListener("change",event=>{demo=event.target.checked;contracts={buy:null,sell:null};data=demo?sampleData():liveData;render();if(!demo&&autoRefresh) refresh();});
 for(const tab of document.querySelectorAll(".tab")) tab.addEventListener("click",()=>{selectedIndex=tab.dataset.index;try{localStorage.setItem("trading-index",selectedIndex);}catch{}contracts={buy:null,sell:null};renderOptions(true);});
 for(const side of ["buy","sell"]) $(side+"-option").addEventListener("change",event=>{contracts[side]=event.target.value||null;const market=data.markets.find(m=>m.index===selectedIndex);drawOption(side,market?.options.find(o=>o.symbol===contracts[side]));});

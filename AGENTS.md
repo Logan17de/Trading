@@ -9,8 +9,12 @@
   Start shortcuts and Windows sign-in startup. The background observer targets
   five-second Groww reads from 12:40–19:45 JST on weekdays, independently of the
   action window, covering normal-session observation and end-of-day preparation.
-  A visible window may request reads anytime. All charts are lines using
-  completed five-minute prices; never render candles.
+  A visible window may request reads anytime. All charts are lines; never render
+  candles. The default index/option lines use actual journalled LTP observations
+  at reception times with a five-minute grid, updating on the five-second target
+  cycle. Show update time and point count; never manufacture movement or bridge
+  outages. Completed five-minute closes remain a selectable comparison and the
+  research input. Slow requests can extend the target cycle.
   Show each buy/sell panel only for confirmed nonzero open option positions.
   Historical fills, pending orders, closed positions and chain samples create no
   charts. Plot the broker position average entry and matched pending SL/active OCO or GTT exits

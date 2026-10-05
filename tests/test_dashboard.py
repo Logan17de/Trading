@@ -64,6 +64,24 @@ def test_money_reads_every_thirty_seconds_and_failed_reads_do_not_keep_fresh_cas
     assert 'PRIVATE' not in dumps(result)
 
 
+def test_independent_quote_position_and_order_reads_start_concurrently():
+    orders_started, positions_started = threading.Event(), threading.Event()
+    def quote(**kwargs):
+        assert orders_started.wait(1) and positions_started.wait(1)
+        return {'last_price':100}
+    def orders(**kwargs):
+        orders_started.set(); return {'order_list':[]}
+    def positions(**kwargs):
+        positions_started.set(); return {'positions':[]}
+    broker=SimpleNamespace(get_quote=quote,get_order_list=orders,get_positions_for_user=positions,
+        get_historical_candles=lambda **kwargs:{'interval_in_minutes':5,'candles':[]})
+    collector=DashboardCollector(SimpleNamespace(groww=broker,limiter=SimpleNamespace(wait=lambda:None)),
+        clock=lambda:NOW,background_history=False)
+    result=collector.sample()
+    assert all(result['probes'][i+'_quote']['ok'] for i in ('NIFTY','SENSEX','BANKNIFTY'))
+    assert result['orders_status']=='AVAILABLE' and result['positions_status']=='AVAILABLE'
+
+
 def protocol():
     from pathlib import Path
     return json.loads((Path(__file__).parents[1] / 'config/owner_strategies.json').read_text())

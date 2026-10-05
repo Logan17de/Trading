@@ -7,10 +7,40 @@ import pytest
 from nifty_engine.agent_engine.contracts import dumps
 from nifty_engine.agent_engine.dashboard import ordered_contracts, view_model
 from nifty_engine.agent_engine.pc_control import JST, PcJournal, collection_window, in_window
-from nifty_engine.agent_engine.session import SessionJournal
+from nifty_engine.agent_engine.session import ObservedLines, SessionJournal
 
 NOW=datetime(2026,10,5,13,30,tzinfo=JST)
 SYMBOL='NIFTY26O0625400CE'
+
+
+def record_prices(sessions, at, price):
+    value=raw(); value['checked_at']=(at-timedelta(seconds=1)).isoformat();value['finished_at']=at.isoformat()
+    for probe in value['probes'].values():probe['received_at']=at.isoformat()
+    option=value['ordered_options'][0];option['received_at']=at.isoformat();option['quote']['last_price']=price
+    sessions.record(value,at)
+
+
+def test_live_line_recovers_actual_intraperiod_prices_after_restart_and_deduplicates(tmp_path):
+    sessions=SessionJournal(PcJournal(tmp_path/'private.sqlite').store)
+    for n,price in enumerate([50,52,49,51]):record_prices(sessions,NOW+timedelta(seconds=n*5),price)
+    lines=ObservedLines(sessions.store)
+    result=lines.read(NOW+timedelta(seconds=15))
+    assert [r['value'] for r in result[SYMBOL]] == [50,52,49,51]
+    assert len(lines.read(NOW+timedelta(seconds=15))[SYMBOL]) == 4
+    assert ObservedLines(sessions.store).read(NOW+timedelta(seconds=15)) == result
+    assert set(result[SYMBOL][0]) == {'at','value'} and 'DO_NOT_EXPORT' not in dumps(result)
+    assert len(sessions.store.read('SELECT * FROM pc_bars')) == 1  # Research bars stay separate.
+
+
+def test_live_line_excludes_preopen_future_and_failed_quotes_and_resets_next_day(tmp_path):
+    sessions=SessionJournal(PcJournal(tmp_path/'private.sqlite').store)
+    record_prices(sessions,NOW.replace(hour=12,minute=44),40)
+    record_prices(sessions,NOW,50)
+    record_prices(sessions,NOW+timedelta(seconds=5),float('nan'))
+    record_prices(sessions,NOW+timedelta(seconds=10),70)
+    lines=ObservedLines(sessions.store)
+    assert [r['value'] for r in lines.read(NOW+timedelta(seconds=5))[SYMBOL]] == [50]
+    assert lines.read(NOW+timedelta(days=1)) == {}
 
 
 def raw():

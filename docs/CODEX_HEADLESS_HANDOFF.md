@@ -14,8 +14,11 @@ Read [current status](HEADLESS_INTEGRATION_STATUS.md),
 ## Latest owner direction
 
 - Local Options Trader PC app; Desktop/Start access and automatic Windows sign-in
-  startup. All charts are lines. Groww reads target five seconds; chart points use
-  completed five-minute prices. Buy/sell panels require confirmed nonzero open
+  startup. All charts are lines. Groww reads target five seconds; default index/
+  option lines use real journalled LTP observations at reception times with a
+  five-minute grid and update-time/point-count captions. Completed five-minute
+  closes remain selectable and are retained for research. Missing prices are not
+  fabricated; slow requests can extend the cycle. Buy/sell panels require confirmed nonzero open
   positions; pending orders, historical fills and closed positions do not qualify.
   Show broker average entry, matching pending SL and active OCO/GTT exit target/SL lines.
   Missing protection prices stay absent; a failed protection read is labelled.
@@ -44,6 +47,16 @@ Historical PC v1 retains its payoff-review blocker; historical research v1/v2 is
 unchanged. No strategy has a validated net-profit probability or executable plan.
 
 ## Implemented and verified
+
+- October 5 live-line correction is installed locally. Both active option lines
+  recovered hundreds of actual same-day points from SQLite after restart and
+  changed automatically in Edge without a manual refresh. Independent quote,
+  order, position and protection reads overlap under the existing limiter;
+  no collector cycles overlap. A dated sample measured 4.26–5.86 seconds between
+  observations and a 3.14-second final cycle. This verifies the target cadence,
+  not a strict network timing guarantee or full-session coverage. Local tests:
+  195 passed, four POSIX-only skips; configuration, JS syntax and offline demo
+  passed. Trading and manual-position protection are unchanged.
 
 - Weekday **12:55 JST** Codex thread follow-up installed as
   `trading-news-and-barrier-check`; configured ACTIVE, first scheduled run not yet
@@ -91,8 +104,10 @@ October 5 authentication initially returned HTTP 403. The existing Codex key was
 Expired in the owner's Edge session; the authorized Approve action changed it to
 Approved. A 10:45 JST read passed authentication and all 22 read-only probes.
 Current app order/position reads and exact contract metadata passed; both NIFTY
-and SENSEX expiry-day checks agree with current contract metadata. Prices are
-last-session observations before the market opens, not current executable books.
+and SENSEX expiry-day checks agree with current contract metadata. The 10:45 check
+used last-session observations before the market opened. Later live-line
+verification used current-session read-only quotes and preserved the existing
+manual positions; it does not certify executable book freshness.
 
 For a future authentication 403, inspect the same key in the owner's Edge.
 Approve is authorized only when it shows Expired; verify Approved and rerun reads.

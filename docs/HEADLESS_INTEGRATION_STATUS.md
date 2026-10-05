@@ -15,11 +15,34 @@ runbook.
 | Historical study | 17,105 one-minute candles per index; 51,315 total; 41 observed sessions per index | Index moves are not option P&L; source identity/timestamp semantics remain unverified |
 | Owner protocol | Four reproducible hypotheses plus PC v2: NIFTY +500 Mon/Tue/Fri, SENSEX +1000 Wed/Thu, higher-call hedge ranked by supplied net-profit/margin | One slot/lot; exact expiry, costs, current books and executable plan remain unverified |
 | Call-spread comparison | Higher-strike hedge, equal units, payoff/cost arithmetic, separate broker margin and optional budget ranking at fixed quantity | Owner-supplied inputs; no loss cap, quote verification, hedge selection or order submission |
-| Runtime tests | 192 passed locally, four POSIX-only skips; news freshness/assessment, strategy slot attribution and money reads added to retained Linux/Windows CI | Functional verification is not strategy validation |
+| Runtime tests | 195 passed locally, four POSIX-only skips; live-line recovery/filtering and parallel-read coordination added to the retained suite | Functional verification is not strategy validation |
 | Offline demo | Two persisted analysis jobs and HTML/text/MIME/PNG artifacts | Synthetic inputs and fake analyst; no email sent |
 | SQLite operations | Backup API and restore-to-new-path preserved state/report identity | Automated off-host backups and retention are not installed |
 
 ## October 5 active-position charts and revised rule
+
+### Live chart movement and refresh
+
+Installed locally: default index/option lines now use actual LTP observations
+from the existing SQLite journal at their reception times. They refresh with each
+five-second target read instead of waiting for the next five-minute close. The
+five-minute grid, entry/SL/target lines, point count and precise update caption
+remain visible. Five-minute closes are selectable in settings and unchanged for
+strategy research. Gaps over 20 seconds are disconnected; prices/curves are never
+invented. An actual flat price still plots flat.
+
+October 5 around 13:08–13:12 JST: Edge verified both existing manual NIFTY option
+lines recovering more than 240 recorded points after restart, then increasing
+automatically with changed SVG paths. The five-minute comparison and return to
+live mode worked; the browser reported no console errors. Independent account/
+quote/protection reads now overlap under the existing limiter. A real sample had
+4.26–5.86-second observation gaps and a 3.14-second final read cycle. Network/
+provider latency can extend five seconds; this is not a timing guarantee.
+Private screenshot/cadence evidence remains in ignored `.agent-state/`.
+
+The local suite passed 195 tests with four POSIX-only skips; configuration, JS
+syntax and the offline demo passed. No real order, protective-order change,
+trading activation or Oracle deployment occurred.
 
 ### News, scheduling, conflict policy and Groww money
 

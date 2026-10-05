@@ -188,3 +188,51 @@ class SessionJournal:
         self.store.ingest(body,now)
         self.store.set_meta("session_coverage_"+day,self.coverage(day))
         return body
+
+
+class ObservedLines:
+    """Display actual journalled LTP observations, independently of research bars.
+
+    A price is plotted at its reception time, not claimed to be an exchange tick.
+    Reload the day after restart; bounded overlapping reads catch delayed commits.
+    """
+    def __init__(self, store):
+        self.store, self.day, self.cursor, self.points = store, None, None, {}
+
+    def read(self, now):
+        day = now.astimezone(JST).date().isoformat()
+        start = datetime.combine(now.astimezone(IST).date(), time(9,15), IST).timestamp()
+        if self.day != day:
+            self.day, self.cursor, self.points = day, start, {}
+        rows = self.store.read("SELECT at,body FROM pc_observations WHERE day=? AND at>=? AND at<=? ORDER BY at LIMIT 10000",
+            (day, max(start, self.cursor-300), now.timestamp()))
+        for stored in rows:
+            try:
+                value = json.loads(stored["body"])
+                if value.get("format") != "groww-session-observation-v1":
+                    continue
+                began, finished = stamp(value["request_started_at"]), stamp(value["observed_at"])
+                records = [(index,row) for index,row in value["markets"].items()
+                    if index in INDICES and row.get("ok") is True]
+                records += [(r["symbol"],r) for r in value["options"]
+                    if isinstance(r.get("symbol"),str) and SYMBOL.fullmatch(r["symbol"])]
+                for symbol, row in records:
+                    try:
+                        at = stamp(row["received_at"])
+                        price = finite(row["quote"].get("last_price"))
+                        if price is None or price <= 0 or not began <= at <= finished <= now or at.timestamp() < start:
+                            continue
+                        points = self.points.setdefault(symbol,{})
+                        # Equal reception identity never invents a revised price.
+                        points.setdefault(at.isoformat(), {"at":at.isoformat(),"value":price})
+                    except (ValueError,TypeError,KeyError):
+                        continue
+                self.cursor = max(self.cursor,stored["at"])
+            except (ValueError,TypeError,KeyError):
+                continue
+        result = {}
+        for symbol, points in self.points.items():
+            times = sorted(at for at in points if stamp(at) <= now)[-6000:]
+            self.points[symbol] = {at:points[at] for at in times}
+            result[symbol] = [points[at] for at in times]
+        return result

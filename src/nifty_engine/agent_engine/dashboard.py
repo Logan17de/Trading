@@ -555,40 +555,45 @@ class DashboardCollector:
             raw = read("available_money",method,funds_summary) if method else None
             self.funds = dict(probes["available_money"]["value"],status="AVAILABLE",
                 received_at=probes["available_money"]["received_at"]) if raw is not None else {"status":"UNAVAILABLE"}
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            jobs = [pool.submit(index_quote,index) for index in INDICES]
-            if started.timestamp() >= self.funds_next_at:
-                jobs.append(pool.submit(money))
-            for job in jobs:
-                job.result()
-        result["funds"] = self.funds
-        orders, positions, complete, succeeded = [], [], True, 0
-        for page in range(4):
-            def order_summary(raw):
-                if not isinstance(raw.get("order_list"), list):
-                    raise ValueError("order list unavailable")
-                return {"record_count": len(raw["order_list"])}
-            raw = read("orders_page_" + str(page), self.market.groww.get_order_list, order_summary,
-                       page=page, segment="FNO")
-            if raw is None:
+        def order_pages():
+            orders, complete, succeeded = [], True, 0
+            for page in range(4):
+                def order_summary(raw):
+                    if not isinstance(raw.get("order_list"), list):
+                        raise ValueError("order list unavailable")
+                    return {"record_count": len(raw["order_list"])}
+                raw = read("orders_page_" + str(page), self.market.groww.get_order_list, order_summary,
+                           page=page, segment="FNO")
+                if raw is None:
+                    complete = False
+                    break
+                succeeded += 1
+                rows = raw["order_list"]
+                orders.extend(rows[:100])
+                complete &= len(rows) <= 100
+                # SDK 1.5.0 ignores page_size; an empty page proves pagination is complete.
+                if not rows:
+                    break
+            else:
                 complete = False
-                break
-            succeeded += 1
-            rows = raw["order_list"]
-            orders.extend(rows[:100])
-            complete &= len(rows) <= 100
-            # SDK 1.5.0 ignores page_size; an empty page proves pagination is complete.
-            if not rows:
-                break
-        else:
-            complete = False
-        orders_complete = complete
+            return orders, complete, succeeded
 
         def position_summary(raw):
             if not isinstance(raw.get("positions"), list):
                 raise ValueError("positions unavailable")
             return {"record_count": len(raw["positions"])}
-        raw = read("positions", self.market.groww.get_positions_for_user, position_summary, segment="FNO")
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            jobs = [pool.submit(index_quote,index) for index in INDICES]
+            if started.timestamp() >= self.funds_next_at:
+                jobs.append(pool.submit(money))
+            orders_job = pool.submit(order_pages)
+            positions_job = pool.submit(read,"positions",self.market.groww.get_positions_for_user,position_summary,segment="FNO")
+            for job in jobs:
+                job.result()
+            orders, complete, succeeded = orders_job.result()
+            raw = positions_job.result()
+        result["funds"] = self.funds
+        positions, orders_complete = [], complete
         if raw is None:
             complete = False
         else:
@@ -596,13 +601,10 @@ class DashboardCollector:
             positions = raw["positions"][:1000]
             complete &= len(raw["positions"]) <= 1000
         result["positions_status"] = "AVAILABLE" if raw is not None and len(raw["positions"]) <= 1000 else "UNAVAILABLE"
+        # Protection and exact-position quote reads overlap below; ownership
+        # reconciliation still uses this cycle's complete positions/order reads.
         smart = []
-        if self.smart_loader and positions:
-            try:
-                smart = self.smart_loader(positions,started)
-                probes["smart_orders"] = {"ok":True,"record_count":len(smart)}
-            except Exception as exc:
-                probes["smart_orders"] = safe_error(exc)
+        # Match existing standard SLs first; append smart levels after readback.
         ordered = ordered_contracts(orders, positions, smart)
         for option in ordered:
             option["protective_levels_status"] = "AVAILABLE" if orders_complete and probes.get("smart_orders", {}).get("ok") else "UNAVAILABLE"
@@ -662,7 +664,21 @@ class DashboardCollector:
                        exchange=option["exchange"], segment="FNO")
         unique = {option["symbol"]: option for option in ordered}
         with ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(option_quote, unique.values()))
+            jobs = [pool.submit(option_quote,option) for option in unique.values()]
+            smart_future = pool.submit(self.smart_loader,positions,started) if self.smart_loader and positions else None
+            for job in jobs:
+                job.result()
+            if smart_future:
+                try:
+                    smart = smart_future.result()
+                    probes["smart_orders"] = {"ok":True,"record_count":len(smart)}
+                except Exception as exc:
+                    probes["smart_orders"] = safe_error(exc)
+        if smart_future:
+            enriched = {(o["symbol"],o["side"]):o for o in ordered_contracts(orders,positions,smart)}
+            for option in ordered:
+                option["price_levels"] = enriched.get((option["symbol"],option["side"]),{}).get("price_levels",option["price_levels"])
+                option["protective_levels_status"] = "AVAILABLE" if orders_complete and probes["smart_orders"]["ok"] else "UNAVAILABLE"
         for option in ordered:
             option.update(self.metadata.get(option["symbol"], {}))
             option["quote"] = probes[option["symbol"] + "_quote"].get("value", {})
@@ -796,6 +812,10 @@ class DashboardState:
         self.cache, self.signature = None, None
         self.background = background and not offline
         self.monitor = PcMonitor(self.root) if background else None
+        from .session import ObservedLines, SessionJournal
+        line_store = self.monitor.journal.store if self.monitor else PcJournal(self.root/".agent-state/pc-monitor.sqlite3").store
+        SessionJournal(line_store)
+        self.observed_lines = ObservedLines(line_store)
         self.snapshot = None
         self.stop_event = threading.Event()
         self.background_thread = None
@@ -825,6 +845,22 @@ class DashboardState:
                     self.cache["account"]["status"] = "INVALID_LEDGER"
                 self.signature = signature
             result = json.loads(dumps(self.cache))
+            live_lines = self.observed_lines.read(stamp(result["as_of"])) if result["as_of"] else {}
+            for market in result["markets"]:
+                market["bar_series"] = market["series"]
+                market["series_source"] = "GROWW_HISTORICAL_5_MIN_CLOSE"
+                if len(live_lines.get(market["index"],[])) >= 2:
+                    market["series"] = live_lines[market["index"]]
+                    market["series_source"] = "GROWW_OBSERVED_LTP"
+                for option in market["options"]:
+                    option["bar_series"] = option["series"]
+                    option["series_source"] = "GROWW_HISTORICAL_5_MIN_CLOSE"
+                    if len(live_lines.get(option["symbol"],[])) >= 2:
+                        option["series"] = live_lines[option["symbol"]]
+                        option["series_source"] = "GROWW_OBSERVED_LTP"
+                        option["series_status"] = "AVAILABLE"
+                    option["series_updated_at"] = option["series"][-1]["at"] if option["series"] else None
+            result["chart_points"] = "OBSERVED_LTP_WITH_5_MIN_GRID"
             at = result["as_of"]
             age = (datetime.now(timezone.utc) - stamp(at)).total_seconds() if at else None
             result["freshness"] = "NO_DATA" if age is None else "FUTURE" if age < 0 else "RECENT" if age <= 15 else "STALE"

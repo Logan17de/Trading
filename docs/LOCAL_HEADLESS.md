@@ -120,14 +120,20 @@ HTML/CSS/JavaScript assets inside the existing engine package; no new web framew
 or trading service is installed.
 
 Quotes, the day's FNO orders and open FNO positions are read on a five-second target
-cycle. The worker authenticates once, uses four bounded quote threads and the
+cycle. The worker authenticates once, overlaps independent bounded reads and uses the
 existing shared rate limiter. Slow network/API responses or rate limits can extend
 the cycle; no overlapping polling cycles are started. Authentication failures back
 off for 60 seconds before restarting the reader. Five-minute historical reads
 run independently and refresh when a new bar can complete or an ordered contract
-appears. Only completed five-minute closing prices are plotted as **lines**. No
-candlesticks are rendered anywhere. Broker naive timestamps remain an explicit
-IST/bar-start assumption, not verified market timestamp semantics.
+appears. Default index/option **lines** plot the actual journalled LTP prices at
+their reception times, with a five-minute grid. The line updates each observation
+cycle rather than waiting for a completed bar. Its caption shows the latest point
+time and count. Gaps longer than 20 seconds are left disconnected; movement is
+never fabricated. Same-day observations are recovered after an app restart.
+Settings offers completed five-minute closes for comparison; those bars remain
+the research input. No candlesticks are rendered anywhere. Reception times are
+not exchange transaction timestamps. Broker naive historical timestamps remain
+an explicit IST/bar-start assumption, not verified market timestamp semantics.
 
 Each buy/sell chart is visible only for that side's confirmed nonzero open option
 positions. Historical fills, pending orders, closed positions and chain samples do

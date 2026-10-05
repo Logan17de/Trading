@@ -14,8 +14,10 @@ to start automatically at Windows sign-in. Routine use needs no CMD window.
 The app uses an Edge app window at [127.0.0.1:8765](http://127.0.0.1:8765/).
 Keep the PC awake and online.
 
-- Groww quotes/orders target a **five-second** cycle; all charts are **lines** with
-  completed **five-minute** prices. Slow requests can extend a cycle.
+- Groww quotes/orders target a **five-second** cycle. Default index/option **lines**
+  show actual recorded prices with a **five-minute** grid, update time and point
+  count. Five-minute closes remain selectable in settings. Slow requests can
+  extend a cycle; missing prices are not filled in.
 - Buy/sell charts appear only for nonzero open option positions; no position means
   no chart. Broker average entry, matched SL and active OCO target prices are lines.
 - Manual, unknown and mixed trades are protected. Engine ownership requires exact
