@@ -1,0 +1,15 @@
+{
+  "format": "trading-pc-app-v1",
+  "research_time_jst": "12:55",
+  "action_window_jst": ["13:00", "18:15"],
+  "one_active_slot": true,
+  "lots": 1,
+  "margin_budget_inr": null,
+  "expiry_rule": "SKIP_ACTUAL_EXPIRY_DAY",
+  "hedge_reference": "INDEX_ATM",
+  "hedge_max_strike_steps": 3,
+  "trailing_distance_rupees": null,
+  "trailing_step_rupees": null,
+  "target_premium_rupees": null,
+  "codex": null
+}

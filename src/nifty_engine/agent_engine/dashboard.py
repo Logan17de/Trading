@@ -25,6 +25,7 @@ from pathlib import Path
 from .contracts import EXCHANGES, INDICES, IST, dumps, keys, number, stamp
 from .market_check import SDK_VERSION, finite, quote_summary, read_credentials, readonly_transport, safe_error
 from .owner_study import validate_protocol
+from .pc_control import JST, PcJournal, PcMonitor, collection_window, in_window
 
 ASSETS = Path(__file__).with_name("dashboard_assets")
 STRATEGIES = (
@@ -198,10 +199,13 @@ def view_model(snapshot, protocol, account=None, *, now=None):
                 "bid": finite(q.get("bid_price")), "ask": finite(q.get("offer_price")),
                 "received_at": clean_time(item.get("received_at")),
                 "last_trade_at": clean_time(q.get("traded_at")), "series": series,
-                "series_status": "AVAILABLE" if series else "LOADING_OPTION_HISTORY" if snapshot.get("history_refreshing") is True
+                "series_status": "AVAILABLE" if series else "WAITING_FOR_SESSION" if charts.get(symbol,{}).get("status") == "WAITING_FOR_SESSION"
+                    else "LOADING_OPTION_HISTORY" if snapshot.get("history_refreshing") is True
                     and symbol not in charts else "NO_OPTION_HISTORY",
                 "book_time_verified": False, "order_status":item.get("order_status") if item.get("order_status") in ("OPEN","TRIGGER_PENDING","EXECUTED","DELIVERY_AWAITED","POSITION","PARTIAL_FILL") else "RECORDED",
-                "quantity":finite(item.get("quantity"))})
+                "quantity":finite(item.get("quantity")),
+                "ownership":item.get("ownership") if item.get("ownership") in
+                    ("ENGINE_VERIFIED","ENGINE_PENDING_VERIFIED") else "MANUAL_OR_UNKNOWN_PROTECTED"})
         markets.append({"index": index, "price": last, "change": change,
             "change_pct": change / previous * 100 if change is not None else None,
             "high": finite(ohlc.get("high")), "low": finite(ohlc.get("low")), "previous": previous,
@@ -220,7 +224,7 @@ def view_model(snapshot, protocol, account=None, *, now=None):
         "market_status": snapshot.get("status") if snapshot.get("status") in ("READ_ONLY_DATA_AVAILABLE","PARTIAL_MARKET_DATA","BLOCKED") else "UNKNOWN",
         "poll_interval_seconds":POLL_SECONDS, "candle_interval_minutes":5,
         "sequence": snapshot.get("sequence") if type(snapshot.get("sequence")) is int else None,
-        "execution_enabled": False, "order_capability": False}
+        "chart_style":"LINE", "execution_enabled": False, "order_capability": False}
 
 
 def option_identity(row):
@@ -287,7 +291,7 @@ def instrument_metadata(text, requested):
     return result
 
 
-def download_metadata(requested):
+def download_instrument_text():
     import requests
     # The SDK instrument loader writes a CSV in the working directory; avoid it.
     data, count, started = [], 0, time.monotonic()
@@ -298,10 +302,25 @@ def download_metadata(requested):
             if count > 64_000_000 or time.monotonic() - started > 15:
                 raise ValueError("bounded instrument master required")
             data.append(chunk)
-    return instrument_metadata(b"".join(data).decode("utf-8-sig"), requested)
+    return b"".join(data).decode("utf-8-sig")
 
 
-def five_minute_candles(payload, end):
+def download_metadata(requested):
+    return instrument_metadata(download_instrument_text(), requested)
+
+
+def download_calendar():
+    dates = {index:set() for index in ("NIFTY","SENSEX")}
+    for row in csv.DictReader(io.StringIO(download_instrument_text())):
+        index = row.get("underlying_symbol")
+        if index in dates and row.get("exchange") == EXCHANGES[index] and row.get("segment") == "FNO":
+            expiry = clean_date(row.get("expiry_date"))
+            if expiry and str(row.get("trading_symbol","")).endswith(("CE","PE")):
+                dates[index].add(expiry)
+    return {index:sorted(values) for index,values in dates.items()}
+
+
+def five_minute_candles(payload, end, *, lookback_days=0):
     if not isinstance(payload, dict) or payload.get("interval_in_minutes") != 5:
         raise ValueError("five-minute candles required")
     rows = payload.get("candles")
@@ -326,7 +345,7 @@ def five_minute_candles(payload, end):
         if not low <= min(opened, closed) <= max(opened, closed) <= high:
             raise ValueError("inconsistent OHLC")
         # Naive timestamps are assumed IST/bar-start, with unverified provenance.
-        if at.date() == end.date() and at + timedelta(minutes=5) <= end:
+        if end.date()-timedelta(days=lookback_days) <= at.date() <= end.date() and at + timedelta(minutes=5) <= end:
             result[at.isoformat()] = dict(at=at.isoformat(), open=opened, high=high, low=low, close=closed)
     return [result[at] for at in sorted(result)]
 
@@ -339,7 +358,8 @@ def collect_charts(market, snapshot, now, *, previous=None, refresh_all=True):
     start = f"{day} 09:15:00"
     end = min(now.astimezone(IST), datetime.combine(day, datetime.min.time(), IST) + timedelta(hours=16))
     if end.strftime("%H:%M:%S") <= "09:15:00":
-        return charts
+        return {key:{"candles":[],"status":"WAITING_FOR_SESSION"} for key in
+                list(INDICES)+[o["symbol"] for o in snapshot.get("ordered_options",[])]}
 
     def candles(key, groww_symbol, exchange, segment):
         if not refresh_all and previous.get(key, {}).get("groww_symbol") == groww_symbol:
@@ -348,11 +368,14 @@ def collect_charts(market, snapshot, now, *, previous=None, refresh_all=True):
         try:
             market.limiter.wait()
             raw = market.groww.get_historical_candles(exchange=exchange, segment=segment,
-                groww_symbol=groww_symbol, start_time=start, end_time=end.strftime("%Y-%m-%d %H:%M:%S"),
+                groww_symbol=groww_symbol, start_time=f"{day-timedelta(days=7)} 09:15:00" if segment == "CASH" else start,
+                end_time=end.strftime("%Y-%m-%d %H:%M:%S"),
                 candle_interval="5minute", timeout=5)
             charts[key] = {"candles": five_minute_candles(raw, end), "groww_symbol": groww_symbol,
                 "received_at": datetime.now(timezone.utc).isoformat(), "source": "GROWW_HISTORICAL_CANDLES",
                 "interval_minutes": 5, "timestamp_semantics_verified": False}
+            if segment == "CASH":
+                charts[key]["context_candles"] = five_minute_candles(raw,end,lookback_days=7)
         except Exception as exc:
             charts[key] = {"candles": [], "failure": safe_error(exc)}
     for index in INDICES:
@@ -368,12 +391,14 @@ def collect_charts(market, snapshot, now, *, previous=None, refresh_all=True):
 
 class DashboardCollector:
     def __init__(self, market, *, clock=lambda: datetime.now(timezone.utc), metadata_loader=download_metadata,
-                 background_history=True):
+                 background_history=True, journal=None, calendar_loader=download_calendar):
         self.market, self.clock, self.metadata_loader = market, clock, metadata_loader
         self.metadata, self.charts, self.chart_bucket, self.metadata_attempt = {}, {}, None, None
         self.sequence = 0
         self.history_pool = ThreadPoolExecutor(max_workers=1) if background_history else None
         self.history_future = None
+        self.journal, self.calendar_loader = journal, calendar_loader
+        self.expiry_evidence, self.expiry_day, self.expiry_next_at = {}, None, 0
 
     def close(self):
         if self.history_pool:
@@ -439,6 +464,43 @@ class DashboardCollector:
         complete &= len(ordered) <= 40
         ordered = ordered[:40]
         result["orders_status"] = "AVAILABLE" if complete else "INCOMPLETE" if succeeded else "UNAVAILABLE"
+        if self.journal:
+            ownership = self.journal.ownership(orders,positions,complete=complete)
+            for option in ordered:
+                option["ownership"] = ownership.get(option["symbol"],"MANUAL_OR_UNKNOWN_PROTECTED")
+            if self.expiry_day != started.astimezone(IST).date() or started.timestamp() >= self.expiry_next_at:
+                self.expiry_day = started.astimezone(IST).date()
+                self.expiry_evidence = {}
+                try:
+                    master = self.calendar_loader()
+                    for index in ("NIFTY","SENSEX"):
+                        raw = read(index+"_expiries",self.market.groww.get_expiries,
+                            lambda r:{"expiries":sorted({clean_date(d) for d in r["expiries"] if clean_date(d)})},
+                            exchange=EXCHANGES[index],underlying_symbol=index,year=started.astimezone(IST).year)
+                        today = started.astimezone(IST).date()
+                        upcoming = sorted(d for d in master[index] if d >= str(today))
+                        api_dates = sorted(d for d in raw["expiries"] if d >= str(today)) if raw else []
+                        if raw is not None and not api_dates and upcoming and upcoming[0][:4] == str(today.year+1):
+                            raw = read(index+"_next_year_expiries",self.market.groww.get_expiries,
+                                lambda r:{"expiries":sorted({clean_date(d) for d in r["expiries"] if clean_date(d)})},
+                                exchange=EXCHANGES[index],underlying_symbol=index,year=today.year+1)
+                            api_dates = sorted(d for d in raw["expiries"] if d >= str(today)) if raw else []
+                        # Feeds have different distant-contract horizons. Verify this
+                        # month and the nearest actual expiry; never certify later dates.
+                        current = sorted({d for d in upcoming if d[:7] == str(today)[:7]} | set(upcoming[:1]))
+                        api_relevant = sorted({d for d in api_dates if d[:7] == str(today)[:7]} | set(api_dates[:1]))
+                        confirmed = bool(upcoming and api_dates and current == api_relevant)
+                        self.expiry_evidence[index] = {"status":"CONFIRMED_CURRENT_MASTER" if confirmed else "UNKNOWN_BLOCKED",
+                            "expiries":current if confirmed else [], "day_jst":started.astimezone(JST).date().isoformat(),
+                            "comparison_scope":"CURRENT_MONTH_AND_NEAREST_LISTED_EXPIRY",
+                            "received_at":self.clock().isoformat()}
+                except Exception as exc:
+                    self.expiry_evidence = {}
+                    probes["expiry_calendar"] = safe_error(exc)
+                calendar_complete = all(self.expiry_evidence.get(i,{}).get("status") == "CONFIRMED_CURRENT_MASTER"
+                                        for i in ("NIFTY","SENSEX"))
+                self.expiry_next_at = started.timestamp() + (3600 if calendar_complete else 300)
+            result["expiry_evidence"] = self.expiry_evidence
         bucket = int(started.timestamp()) // 300
         missing = {o["symbol"]: o for o in ordered if o["symbol"] not in self.metadata}
         metadata_attempt = (bucket, tuple(sorted(missing)))
@@ -511,7 +573,7 @@ def polling_loop(collector, output, active, *, monotonic=time.monotonic, sleep=t
         sleep(max(0, POLL_SECONDS - (monotonic()-started)))
 
 
-def run_reader(output, *, lease_file=None):
+def run_reader(output, *, lease_file=None, root=None):
     prior = logging.root.manager.disable
     with open(os.devnull, "w") as muted, contextlib.redirect_stdout(muted), contextlib.redirect_stderr(muted):
         logging.disable(logging.CRITICAL)
@@ -527,7 +589,8 @@ def run_reader(output, *, lease_file=None):
                     token = GrowwAPI.get_access_token(api_key=credentials["api_key"], secret=credentials["api_secret"])
                 finally:
                     credentials.clear()
-                collector = DashboardCollector(GrowwMarketData(token), background_history=lease_file is not None)
+                journal = PcJournal(Path(root)/".agent-state"/"pc-monitor.sqlite3") if root else None
+                collector = DashboardCollector(GrowwMarketData(token), background_history=lease_file is not None, journal=journal)
                 del token
                 try:
                     if lease_file is None:
@@ -556,7 +619,7 @@ def capture(output):
 
 
 class DashboardState:
-    def __init__(self, root, *, offline=False):
+    def __init__(self, root, *, offline=False, background=False):
         self.root, self.offline = Path(root).resolve(), offline
         self.directory = self.root / ".agent-state" / "dashboard-captures"
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -565,8 +628,16 @@ class DashboardState:
         self.lock = threading.Lock()
         self.refreshing = False
         self.last_refresh = -1000.0
+        self.retry_after = 0.0
         self.last_error = None
         self.cache, self.signature = None, None
+        self.background = background and not offline
+        self.monitor = PcMonitor(self.root) if background else None
+        self.snapshot = None
+        self.stop_event = threading.Event()
+        self.background_thread = None
+        self.analysis_thread = None
+        self.analysis_error = None
 
     def read(self):
         files = list(self.directory.glob("market-check-*.json"))
@@ -581,6 +652,7 @@ class DashboardState:
             if self.signature != signature or self.cache is None:
                 protocol = load_json(protocol_path, 16384)
                 snapshot = load_json(latest) if latest else None
+                self.snapshot = snapshot
                 try:
                     account = load_json(account_path) if account_path.exists() else None
                     self.cache = view_model(snapshot, protocol, account)
@@ -593,7 +665,53 @@ class DashboardState:
             age = (datetime.now(timezone.utc) - stamp(at)).total_seconds() if at else None
             result["freshness"] = "NO_DATA" if age is None else "FUTURE" if age < 0 else "RECENT" if age <= 15 else "STALE"
             result.update(refreshing=self.refreshing, refresh_error=self.last_error, offline=self.offline)
+            result["background_monitor"] = self.background
+            if self.monitor:
+                result["control"] = self.monitor.tick(self.snapshot,load_json(protocol_path,16384),datetime.now(timezone.utc))
+                result["control"]["analysis_error"] = self.analysis_error
+                result["control"]["reader_active"] = self.refreshing
             return result
+
+    def start_background(self):
+        if self.background and self.background_thread is None:
+            self.background_thread = threading.Thread(target=self._monitor_loop,daemon=True)
+            self.background_thread.start()
+
+    def close(self):
+        self.stop_event.set()
+        self.lease_file.unlink(missing_ok=True)
+
+    def _monitor_loop(self):
+        runner, active_pin, failed_pin = None, None, None
+        while not self.stop_event.is_set():
+            cfg = None
+            try:
+                now = datetime.now(timezone.utc)
+                if collection_window(now):
+                    self.refresh()
+                self.read()
+                cfg = self.monitor.read_settings()["codex"]
+                if cfg != active_pin:
+                    runner, active_pin = None, cfg
+                if cfg is None or cfg != failed_pin:
+                    self.analysis_error = None
+                if cfg and cfg != failed_pin and in_window(now,research=True):
+                    if runner is None:
+                        from .runner import CodexRunner
+                        from .pc_control import ANALYSIS_PROMPT, ANALYSIS_SCHEMA
+                        runner = CodexRunner(cfg["executable"],cfg["home"],expected_version=cfg["version"],
+                            expected_sha256=cfg["sha256"],schema=ANALYSIS_SCHEMA,prompt=ANALYSIS_PROMPT)
+                        if not runner.preflight()["authenticated"]:
+                            raise ValueError("analyst authentication required")
+                        self.analysis_error = None
+                    if self.analysis_thread is None or not self.analysis_thread.is_alive():
+                        self.analysis_thread = threading.Thread(target=self.monitor.analyze_once,args=(runner,now),daemon=True)
+                        self.analysis_thread.start()
+            except Exception as exc:
+                self.analysis_error = "MONITOR_"+type(exc).__name__
+                # A malformed local file must not kill the resident monitor.
+                runner, failed_pin = None, cfg
+            self.stop_event.wait(POLL_SECONDS)
 
     def refresh(self):
         with self.lock:
@@ -602,6 +720,8 @@ class DashboardState:
             self.lease_file.touch(mode=0o600)
             if self.refreshing:
                 return "IN_PROGRESS"
+            if time.monotonic() < self.retry_after:
+                return "RETRY_BACKOFF"
             if time.monotonic() - self.last_refresh < POLL_SECONDS:
                 return "RECENT_REQUEST"
             self.refreshing, self.last_refresh, self.last_error = True, time.monotonic(), None
@@ -619,8 +739,10 @@ class DashboardState:
                 creationflags=subprocess.CREATE_NO_WINDOW)
             if run.returncode:
                 self.last_error = "BROKER_READ_FAILED"
+                self.retry_after = time.monotonic() + 60
         except Exception:
             self.last_error = "LOCAL_READER_UNAVAILABLE"
+            self.retry_after = time.monotonic() + 60
         finally:
             with self.lock:
                 self.refreshing = False
@@ -656,7 +778,8 @@ def handler(state):
                 return self.respond(403, {"status": "LOCAL_ACCESS_ONLY"})
             assets = {"/": ("index.html", "text/html; charset=utf-8"),
                 "/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
-                "/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8")}
+                "/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
+                "/app-icon.svg":("app-icon.svg","image/svg+xml")}
             if self.path in assets:
                 name, kind = assets[self.path]
                 body = (ASSETS / name).read_bytes()
@@ -690,10 +813,12 @@ def main():
     sub.add_argument("--credentials-stdin", action="store_true", required=True)
     sub.add_argument("--directory", type=Path, required=True)
     sub.add_argument("--lease-file", type=Path, required=True)
+    sub.add_argument("--root", type=Path)
     sub = subs.add_parser("serve")
     sub.add_argument("--root", type=Path, default=Path.cwd())
     sub.add_argument("--port", type=int, default=8765)
     sub.add_argument("--offline", action="store_true")
+    sub.add_argument("--background", action="store_true")
     args = parser.parse_args()
     if args.command == "capture":
         return capture(args.output)
@@ -701,17 +826,19 @@ def main():
         directory, lease = args.directory.resolve(), args.lease_file.resolve()
         if not directory.is_dir() or lease.parent != directory or not viewer_active(lease):
             raise ValueError("active local viewer lease required")
-        return run_reader(directory / f"market-check-live-{lease.stem}.json", lease_file=lease)
+        return run_reader(directory / f"market-check-live-{lease.stem}.json", lease_file=lease,root=args.root)
     if not 1024 <= args.port <= 65535:
         raise ValueError("local port outside range")
-    state = DashboardState(args.root, offline=args.offline)
+    state = DashboardState(args.root, offline=args.offline,background=args.background)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler(state))
     print(dumps({"status": "LOCAL_DASHBOARD_READY", "url": f"http://127.0.0.1:{args.port}", "order_capability": False}), flush=True)
+    state.start_background()
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         pass
     finally:
+        state.close()
         server.server_close()
     return 0
 

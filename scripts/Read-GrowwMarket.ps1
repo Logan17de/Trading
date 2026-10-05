@@ -4,16 +4,21 @@ param(
     [switch]$Dashboard,
     [switch]$Watch,
     [string]$LeaseFile,
-    [string]$Vault = (Join-Path (Split-Path $PSScriptRoot -Parent | Split-Path -Parent) '.secrets\growing-trader'),
-    [string]$OutputDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) '.agent-state\market-checks')
+    [string]$Vault,
+    [string]$OutputDirectory
 )
 $ErrorActionPreference = 'Stop'
-$taskPython = Join-Path (Split-Path $PSScriptRoot -Parent) '.venv\Scripts\python.exe'
+$taskRoot = Split-Path $PSScriptRoot -Parent
+# Windows PowerShell 5.1 can evaluate parameter defaults before PSScriptRoot exists.
+if ([string]::IsNullOrWhiteSpace($Vault)) { $Vault = Join-Path (Split-Path $taskRoot -Parent) '.secrets\growing-trader' }
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $taskRoot '.agent-state\market-checks' }
+$taskPython = Join-Path $taskRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $taskPython)) { throw 'Install the project in its local .venv first.' }
 if (-not (Test-Path -LiteralPath $OutputDirectory)) {
     New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
 }
-Add-Type -AssemblyName System.Security.Cryptography.ProtectedData
+try { Add-Type -AssemblyName System.Security.Cryptography.ProtectedData }
+catch { Add-Type -AssemblyName System.Security } # Windows PowerShell 5.1
 $taskKeyBytes = $null
 $taskSecretBytes = $null
 $taskPayload = $null
@@ -31,7 +36,7 @@ try {
     $taskName = 'market-check-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmss') + '-' + [Guid]::NewGuid().ToString('N') + '.json'
     $taskOutput = Join-Path $OutputDirectory $taskName
     if ($Dashboard -and $Watch) {
-        $taskPayload | & $taskPython -I -m nifty_engine.agent_engine.dashboard watch --credentials-stdin --directory $OutputDirectory --lease-file $LeaseFile
+        $taskPayload | & $taskPython -I -m nifty_engine.agent_engine.dashboard watch --credentials-stdin --directory $OutputDirectory --lease-file $LeaseFile --root $taskRoot
     } elseif ($Dashboard) {
         $taskPayload | & $taskPython -I -m nifty_engine.agent_engine.dashboard capture --credentials-stdin --output $taskOutput
     } else {

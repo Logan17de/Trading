@@ -3,12 +3,14 @@ from pathlib import Path
 import json
 from nifty_engine.agent_engine.__main__ import load_config
 from nifty_engine.agent_engine.owner_study import validate_protocol
+from nifty_engine.agent_engine.pc_control import settings as pc_settings
 
 if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1]
     settings = load_config(root / "config/agent_engine.example.json")
     assert settings["enabled"] is False and settings["send_email"] is False
     validate_protocol(json.loads((root / "config/owner_strategies.json").read_text(encoding="utf-8")))
+    pc_settings(json.loads((root / "config/pc_app.example.json").read_text(encoding="utf-8")))
     ticket = json.loads((root / "config/manual_ticket.example.json").read_text(encoding="utf-8"))
     assert ticket["quantity"] == 0 and ticket["limit_price"] == "0"
     print("Disabled headless configuration and fixed owner protocol validated.")

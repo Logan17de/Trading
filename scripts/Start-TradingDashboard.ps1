@@ -3,6 +3,8 @@
 param(
     [ValidateRange(1024,65535)][int]$Port = 8765,
     [switch]$Offline,
+    [switch]$Background,
+    [switch]$App,
     [switch]$Stop,
     [switch]$NoBrowser
 )
@@ -34,9 +36,18 @@ try {
 if ($taskAlreadyRunning -and [bool]$taskCheck.offline -ne [bool]$Offline) {
     throw 'Dashboard is running in a different viewing mode. Stop it with -Stop, then restart.'
 }
+if ($taskAlreadyRunning -and $Background -and -not $taskCheck.background_monitor) {
+    & $PSCommandPath -Port $Port -Stop
+    $taskAlreadyRunning = $false
+    for ($taskAttempt = 0; $taskAttempt -lt 20; $taskAttempt++) {
+        try { $null = Invoke-RestMethod -Uri ($taskUrl + '/api/dashboard') -TimeoutSec 1 } catch { break }
+        Start-Sleep -Milliseconds 100
+    }
+}
 if (-not $taskAlreadyRunning) {
     $taskArguments = @('-I','-m','nifty_engine.agent_engine.dashboard','serve','--port',"$Port",'--root',('"' + $taskRoot + '"'))
     if ($Offline) { $taskArguments += '--offline' }
+    if ($Background) { $taskArguments += '--background' }
     $taskProcess = Start-Process -FilePath $taskPython -ArgumentList $taskArguments -WorkingDirectory $taskRoot `
         -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $taskState "dashboard-$Port.stdout.log") `
         -RedirectStandardError (Join-Path $taskState "dashboard-$Port.stderr.log")
@@ -49,8 +60,19 @@ if (-not $taskAlreadyRunning) {
         } catch { }
         Start-Sleep -Milliseconds 250
     }
-    if (-not $taskReady) { throw 'Local dashboard did not become ready.' }
+    if (-not $taskReady) {
+        # Do not leave a failed, unrecorded server holding the local port.
+        $taskStarted = Get-CimInstance Win32_Process -Filter "ProcessId=$($taskProcess.Id) OR ParentProcessId=$($taskProcess.Id)"
+        foreach ($taskCandidate in $taskStarted) {
+            if ($taskCandidate.CommandLine -match 'nifty_engine\.agent_engine\.dashboard.*serve' -and
+                $taskCandidate.CommandLine.Contains($taskRoot)) { Stop-Process -Id $taskCandidate.ProcessId -ErrorAction SilentlyContinue }
+        }
+        throw 'Local dashboard did not become ready.'
+    }
     $taskProcess.Id | Set-Content -LiteralPath (Join-Path $taskState "dashboard-$Port.pid")
 }
-if (-not $NoBrowser) { Start-Process -FilePath 'msedge.exe' -ArgumentList $taskUrl }
+if (-not $NoBrowser) {
+    if ($App) { Start-Process -FilePath 'msedge.exe' -ArgumentList ('--app=' + $taskUrl) }
+    else { Start-Process -FilePath 'msedge.exe' -ArgumentList $taskUrl }
+}
 Write-Output "Options Trader: $taskUrl (read-only local view)"

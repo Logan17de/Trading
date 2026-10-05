@@ -1,7 +1,8 @@
 # Current integration status
 
-Reviewed 2026-10-01. Cleanup/test evidence and the latest broker renewal/read check
-are from October 1; CLI and email evidence is from September 30 unless noted otherwise.
+Reviewed 2026-10-05. The PC app and current Codex checks are from October 5.
+Broker success and earlier viewer evidence below are from October 1; the email
+and Oracle CLI evidence is from September 30 unless noted otherwise.
 This is the current status record for the local research workflow, not an activation
 runbook.
 
@@ -9,14 +10,86 @@ runbook.
 
 | Capability | Verified result | Limit |
 |---|---|---|
-| Local Groww REST reader | October 1 at 16:22 JST: authentication plus 22 profile, index, expiry, chain and sampled-call probes passed across NIFTY, BANKNIFTY and SENSEX | Read-only; successful retrieval does not establish executable freshness |
-| Local Options Trader viewer | Real index/order/position reads, exact option metadata and five-minute history passed October 1; five-second quote cycle with independent history reads | Loopback-only manual viewer; account P&L and strategy attribution require the reviewed private ledger |
+| Local Groww REST reader | October 5 at 10:45 JST: authentication and all 22 read-only probes passed after reapproving the existing expired key in Edge | Pre-market last-session observations; API success does not prove executable book freshness |
+| Options Trader PC app | Desktop/Start shortcuts and sign-in startup installed; real quote/order/position and metadata reads; both actual-expiry checks agree | Awake, signed-in PC required; actual reboot and a full unattended market session not tested |
 | Historical study | 17,105 one-minute candles per index; 51,315 total; 41 observed sessions per index | Index moves are not option P&L; source identity/timestamp semantics remain unverified |
-| Owner protocol | Four fixed hypotheses; everyday weekday routing, spot offsets and index-direction holding review; 70/30 chronological partition | No strategy selected; margin budget/expiry choice unset; profit probability unknown |
+| Owner protocol | Four reproducible hypotheses plus current one-slot/one-lot ATM-buy overlay and actual-expiry skip | ATM long/higher short conflicts with earlier flat/down-hold direction; selected expiry and payoff review remain |
 | Call-spread comparison | Higher-strike hedge, equal units, payoff/cost arithmetic, separate broker margin and optional budget ranking at fixed quantity | Owner-supplied inputs; no loss cap, quote verification, hedge selection or order submission |
-| Runtime tests | 109 passed locally with the dashboard, four POSIX-only skips; Linux/Windows headless CI configured | Functional verification is not strategy validation |
+| Runtime tests | 151 passed locally, four POSIX-only skips; PC monitoring, ownership, expiry and trailing tests added to retained Linux/Windows CI | Functional verification is not strategy validation |
 | Offline demo | Two persisted analysis jobs and HTML/text/MIME/PNG artifacts | Synthetic inputs and fake analyst; no email sent |
 | SQLite operations | Backup API and restore-to-new-path preserved state/report identity | Automated off-host backups and retention are not installed |
+
+## October 5 PC app integration
+
+**Installed locally:** Desktop and Start `Options Trader.lnk`, plus a hidden
+`Options Trader Monitor.lnk` in the current user's Windows Startup folder. Both
+interactive app launch and the background-only startup entry point passed. The
+server reports `background_monitor=true`, `chart_style=LINE` and
+`execution_enabled=false`. A real logout/reboot was not performed.
+The startup entry point and a real read-only dashboard capture also passed using
+Windows PowerShell 5.1, the shell used by the installed sign-in shortcut.
+
+**Implemented:** independent collection from 12:50–18:15 JST on weekdays;
+support/resistance research from 12:55; fresh barrier crossings queue deduplicated
+structured Codex requests. Rules cannot extend outside 13:00–18:15 JST, and the
+everyday reference retains its 13:15 start. Requests expire after five minutes,
+with eight daily analysis attempts. Windows CLI/hash pin changes fail preflight.
+Broker credentials and IDs never enter the analyst context. Invalid/stale data and
+invalid rule identities/levels/parameters are rejected.
+
+Manual/unknown and mixed contracts are protected persistently. Exact private
+intent/reference and acknowledged broker ID plus quantity reconciliation establish
+engine ownership. There is no manual-adoption control. Pending acknowledgements
+are not fills. One engine slot is enforced in the journal; no real entry executor
+is installed. Actual expiry checks compare Groww expiry dates and the current
+instrument master. The exact comparison covers the current month and nearest
+listed expiry; differing distant-contract horizons cannot certify later dates.
+Unknown/disagreeing evidence blocks entries. Holiday-shifted dates and year rollover
+are tested. October 5 real-data revalidation agrees for both NIFTY and SENSEX.
+
+The trailing planner and `OracleTrailingUpdater` are **source-only, disabled and
+undeployed**. Fake-broker tests verify exact owned protective SL identity,
+favorable tick-aligned ratchets, manual/stale/partial/time/pause rejection,
+readback before confirmed-state advancement, and no resubmission after a timeout.
+Provider acceptance does not mean a fill or verified modification. No actual SL
+was placed or modified. Initial protective-order placement, Oracle transport and
+service integration, approved stop/target values and payoff review remain.
+
+**Current Codex:** actual Windows `codex-cli 0.160.0`, supported existing ChatGPT
+authentication, pinned executable SHA-256 and a non-interactive schema-validated
+WAIT run passed with zero tool events. The data-only worker uses the existing
+CodexRunner and a private auth-only home. Windows OS privilege isolation remains
+unverified; this is not a claim of a separate secured service account.
+
+**Browser QA:** owner's Edge app window, all charts rendered as lines, zero chart
+candlestick rectangles, actual unavailable/no-order panel gating, protected option
+labels in sample preview, settings, keyboard focus and IST/JST switching. Layouts
+have no document overflow at 320/390/768/1440 CSS pixels. Chart time-zone changes
+do not change the Japan-time strategy schedule. Sample results remain labelled
+and client-only. Temporary viewport overrides were reset.
+
+**Local gates:** 151 tests passed with four POSIX-only skips. Configuration, Python
+compilation, seven PowerShell helper syntax checks, JavaScript syntax and
+`git diff --check` passed. The offline demo completed two persisted analysis jobs
+and generated HTML/text/MIME/PNG report artifacts using synthetic data without
+sending email. Current Codex schema verification completed in 7.509 seconds.
+Private evidence and screenshots are ignored under `.agent-state/`.
+
+**Current Groww readback:** October 5 authentication initially returned HTTP 403.
+The existing Codex key showed Expired in the owner's Edge; the authorized approval
+changed it to Approved, “Resets 6 AM tomorrow.” Authentication and all 22 probes
+then passed from 10:45:08–10:45:37 JST. The app subsequently passed quote/order/
+position reads and exact contract metadata; current-month/nearest-expiry agreement
+was confirmed for both indices. Existing positions remain manual/unknown protected.
+No key was replaced or permission changed. Pre-market option books were absent
+and last trades were from October 1; these are not fresh executable quotes.
+Current-day lines wait for completed session prices. Authentication failures back
+off 60 seconds; failed reads never invent positions or results.
+
+**Not deployed/activated:** Oracle entry execution, initial protective orders,
+recurring visual mail, accounting reconciliation and independent outage monitoring.
+`.trader-paused`, credentials, broker permissions and shared Oracle/Qwen/Colab/mail
+services are preserved. No key rotation, real order, LIVE activation or merge.
 
 ## Current repository
 
@@ -61,7 +134,7 @@ approval screenshot. This daily approval is an operator action through the owner
 Edge session; no recurring browser task has been installed. The displayed reset
 time's timezone is not established by the page.
 
-## Local dashboard verification
+## October 1 local dashboard verification
 
 The owner-authorized local viewer extends the existing engine with static assets
 and a loopback HTTP server. It is running manually on the PC at
@@ -93,8 +166,8 @@ single-side filtering are covered by unit tests. The real owner-opened dashboard
 works in Edge. Private screenshots/cadence evidence are ignored by Git.
 
 See [local dashboard setup and ledger format](LOCAL_HEADLESS.md#local-options-dashboard).
-Unattended collection, account reconciliation, strategy attribution, scheduled
-visual mail and Oracle execution remain unfinished/inactive. The engine pause,
+The October 5 PC observer adds unattended local collection. Account reconciliation,
+strategy attribution, scheduled visual mail and Oracle execution remain unfinished/inactive. The engine pause,
 broker permissions, credentials and shared VM lifecycle are unchanged.
 
 ## September 30 recording
@@ -117,7 +190,7 @@ Private directory: `.agent-state/recordings/20260930-cas/`.
 The private evidence record is `.agent-state/owner-strategy-evidence.json`.
 No raw account data or credentials belong in this document.
 
-## Strategy evidence
+## Historical strategy evidence, through October 1
 
 The requested historical period was 2026-08-03 through 2026-09-29. The SENSEX expiry
 screen has eight complete windows: five development and three holdout. It found
@@ -153,7 +226,7 @@ two persisted jobs and generated visual artifacts without sending email.
 Private evidence is `.agent-state/everyday-strategy-evidence-20261001.json` and
 `.agent-state/nse-lot-metadata-20261001.json`. This source update is not deployed to Oracle.
 
-## Codex verification
+## September 30 Codex verification
 
 | Host | Observed CLI | Authentication and structured result |
 |---|---|---|

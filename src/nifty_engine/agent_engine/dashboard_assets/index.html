@@ -6,7 +6,7 @@
   <meta name="local-token" content="__LOCAL_TOKEN__">
   <meta name="color-scheme" content="light">
   <title>Options Trader · Local dashboard</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='19' width='6' height='10' rx='2' fill='%23fb772b'/%3E%3Crect x='13' y='11' width='6' height='18' rx='2' fill='%2309b965'/%3E%3Crect x='23' y='3' width='6' height='26' rx='2' fill='%23078946'/%3E%3C/svg%3E">
+  <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/dashboard.css">
   <script src="/dashboard.js" defer></script>
 </head>
@@ -31,6 +31,16 @@
       <article class="card summary-card invested-card"><div class="summary-icon orange"><svg><use href="#icon-coins"/></svg></div><div class="summary-main"><h2>Invested</h2><strong id="capital" class="big-number">—</strong><p class="summary-caption">Reviewed capital · INR</p></div><dl class="summary-details"><div><dt>Used margin</dt><dd id="used-margin">—</dd></div><div><dt>Available</dt><dd id="available-margin">—</dd></div><div class="margin-row"><dt>Margin utilisation</dt><dd><span class="meter"><span id="margin-meter"></span></span><span id="margin-percent">—</span></dd></div></dl></article>
     </section>
     <section id="indices" class="index-grid" aria-label="Market indices"></section>
+    <section class="card monitor-card" aria-label="PC engine and strategy rules">
+      <div class="section-heading"><h2>PC engine</h2><span id="monitor-status" class="status-pill">Starting</span></div>
+      <div class="monitor-facts"><div><small>Everyday rule</small><strong id="everyday-rule">From 13:15 JST</strong></div><div><small>Position policy</small><strong id="slot-policy">1 active slot · 1 lot</strong></div><div><small>Japan schedule</small><strong id="monitor-schedule">12:55 research · 13:00–18:15 rules</strong></div></div>
+      <p id="expiry-status" class="monitor-caption">Checking actual expiry dates</p>
+      <div id="levels" class="levels"></div>
+      <p id="analysis-status" class="monitor-caption">No barrier requests yet</p>
+      <p id="trailing-status" class="monitor-caption">No verified engine trailing stops</p>
+      <p id="control-note" class="control-note">Manual trades are protected.</p>
+      <details id="rule-details" hidden><summary>Latest structured rule proposal</summary><pre id="rule-json"></pre></details>
+    </section>
     <p id="orders-empty" class="orders-empty" role="status">Checking your option orders…</p>
     <div id="chart-toolbar" class="chart-toolbar" hidden><div><h2>Option charts</h2><span class="toolbar-note">View your buy and sell legs</span></div><div class="index-tabs" role="group" aria-label="Option chart index"><button type="button" class="tab active" data-index="NIFTY" aria-pressed="true">NIFTY</button><button type="button" class="tab" data-index="SENSEX" aria-pressed="false">SENSEX</button><button type="button" class="tab" data-index="BANKNIFTY" aria-pressed="false">BANK NIFTY</button></div></div>
     <section id="option-grid" class="option-grid" hidden aria-label="Selected option premium charts">
@@ -44,7 +54,7 @@
     </section>
     <footer><span>Indian markets <b>·</b> Local options dashboard</span><span id="footer-source">Read-only observation</span><span>Plan your trade. Trade your plan.</span></footer>
   </main>
-  <dialog id="settings-dialog" aria-labelledby="settings-title"><form method="dialog"><div class="dialog-heading"><h2 id="settings-title">Dashboard settings</h2><button class="icon-button" aria-label="Close settings" value="close">×</button></div><label class="setting"><span><strong>Auto-refresh quotes</strong><small>Read Groww every 5 seconds while this page is visible. Charts use 5-minute candles.</small></span><input id="auto-refresh" type="checkbox" checked></label><label class="setting"><span><strong>Preview with sample data</strong><small>Try the layout and charts with clearly labelled examples.</small></span><input id="demo-toggle" type="checkbox"></label><label class="setting"><span><strong>Chart time zone</strong><small>Strategy schedules always stay in Japan time.</small></span><select id="timezone"><option value="Asia/Tokyo">Japan · JST</option><option value="Asia/Kolkata">India · IST</option></select></label><div class="settings-note"><strong>Your strategy bars</strong><p>Green is the share of closed trades with net P&amp;L ≥ 0; red is the share with net P&amp;L &lt; 0. No recorded losses gives a 100% green bar. No completed trades gives “No results”. The separate P&amp;L percentage is net profit divided by reviewed strategy capital.</p></div><button class="button primary" value="done">Done</button></form></dialog>
+  <dialog id="settings-dialog" aria-labelledby="settings-title"><form method="dialog"><div class="dialog-heading"><h2 id="settings-title">Dashboard settings</h2><button class="icon-button" aria-label="Close settings" value="close">×</button></div><label class="setting"><span><strong>Auto-refresh view</strong><small>Refresh this view every 5 seconds. The background monitor continues during its Japan-time window. All charts are lines using 5-minute prices.</small></span><input id="auto-refresh" type="checkbox" checked></label><label class="setting"><span><strong>Preview with sample data</strong><small>Try the layout and charts with clearly labelled examples.</small></span><input id="demo-toggle" type="checkbox"></label><label class="setting"><span><strong>Chart time zone</strong><small>Strategy schedules always stay in Japan time.</small></span><select id="timezone"><option value="Asia/Tokyo">Japan · JST</option><option value="Asia/Kolkata">India · IST</option></select></label><div class="settings-note"><strong>Your strategy bars</strong><p>Green is the share of closed trades with net P&amp;L ≥ 0; red is the share with net P&amp;L &lt; 0. No recorded losses gives a 100% green bar. No completed trades gives “No results”. The separate P&amp;L percentage is net profit divided by reviewed strategy capital.</p></div><button class="button primary" value="done">Done</button></form></dialog>
   <noscript><p class="notice">Enable JavaScript to view local market data. Trading remains paused.</p></noscript>
 </body>
 </html>

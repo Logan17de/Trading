@@ -1,12 +1,46 @@
 # Owner strategies: local observation and evidence
 
-Reviewed 2026-10-01. Use local market observation and research, with Oracle intended
+Reviewed 2026-10-05. Use local market observation and research, with Oracle intended
 as the later execution location. Evaluate the strategies before use. These commands
 have no order-submission capability. Oracle stays running continuously and the
 trading pause remains in force. See [current integration status](HEADLESS_INTEGRATION_STATUS.md)
 for deployment, completed checks and remaining work.
 
-## Recorded rules
+## Latest PC rule, October 5
+
+The owner's latest clarification overrides the earlier everyday hedge study:
+**one active slot, one lot, buy a same-expiry call near the index ATM, up to three
+listed strikes away**. No budget-based hedge ranking is required for this revised
+rule. The short still starts at/after 13:15 JST: NIFTY spot +400 on Mon/Tue/Fri;
+SENSEX spot +800 on Wed/Thu. A listed call strike must be at/above the offset.
+
+**Skip actual underlying expiry day**, including a date shifted by a holiday.
+The PC collector cross-checks Groww's expiry API against current listed contract
+metadata; missing/disagreeing evidence blocks entry. Codex receives that
+deterministic result and cannot invent an expiry date. The weekday preference is
+index routing, not an expiry calendar. A specific trading expiry is still unselected.
+[Groww expiry API](https://groww.in/trade-api/docs/python-sdk/backtesting)
+
+An ATM long call below the short call normally creates a **bull call debit spread**.
+Its payoff benefits from a rise, conflicting with the previously recorded rule
+that flat/down favors holding and up is adverse. The app records this conflict as
+`ATM_HEDGE_PAYOFF_REVIEW_REQUIRED`; it does not silently change either instruction
+or activate entries. This is a payoff inference from the specified legs, not a
+claim about future market direction.
+[OIC bull call spread](https://www.optionseducation.org/strategies/all-strategies/bull-call-spread-debit-call-spread)
+
+Background support/resistance research begins at 12:55 JST. Barrier proposals are
+valid only from 13:00 inclusive to 18:15 exclusive. This new action cutoff does not
+activate the separate later-session/expiry hypotheses outside it. Stops use option
+premium/tick rules, not index-barrier values. Trailing distance, step and target
+are unset, and Oracle entry/protective-order execution is undeployed. Manual trades
+are persistently protected. No net-profit probability has been validated.
+
+`config/pc_app.example.json` records the current PC overlay. The version 1/2
+`owner_strategies.json`, offline references and higher-call hedge comparisons below
+are retained for historical reproducibility; they do not choose the new ATM hedge.
+
+## Recorded research rules, through October 1
 
 There are four strategy hypotheses. All owner times use Japan time, which is
 3 hours 30 minutes ahead of India.
@@ -233,18 +267,20 @@ limit is applied; neither a ranking nor a review output becomes an order.
 
 ## Current architecture
 
-Local Groww reader → private history/snapshots → deterministic research → owner
-review. The existing Codex analysis boundary is available, but the recorder needs a
-reviewed adapter before continuous analysis can consume its diagnostic JSON.
+Local Groww reader → private history/snapshots → deterministic evidence → isolated
+Codex proposals → owner review. PC collection and research run independently of
+the app window. The older recorder still needs a reviewed publisher before its
+diagnostic JSON becomes a validated accounting/report snapshot.
 This path needs no paper service. Unrelated trading/PAPER libraries were removed;
 existing journals and private data are preserved.
 Oracle hosts shared services; the latest local research code is not deployed there.
-Continuous collection, scheduled headless mail and real Oracle execution remain
-unfinished and inactive. No new GUI or broker-permission change is introduced.
+The local PC observer is installed; scheduled visual mail and real Oracle execution
+remain unfinished and inactive. The owner-authorized local app reuses the existing
+loopback viewer. No broker-permission change is introduced.
 
 ## Verification
 
-After adding the everyday strategy, **92 tests passed**, with four POSIX-only skips
+After adding the October 1 everyday strategy, **92 tests passed**, with four POSIX-only skips
 locally. Configuration, Python compilation, PowerShell syntax and the offline demo
 passed. Headless CI runs on Linux and Windows. Tests cover weekday routing, the
 13:15 JST boundary, exact listed-strike rounding, index-direction holding review,

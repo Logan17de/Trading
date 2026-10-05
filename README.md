@@ -1,92 +1,66 @@
 # Trading
 
-Local Groww market observation, a read-only dashboard and research of the owner's hedged-call
-strategies. Oracle remains the intended execution host and stays running continuously
-for shared services. Real Oracle execution is unfinished and inactive.
+**Options Trader** is the owner's local PC app for Groww observations and strategy
+research. It extends the existing Python engine. Oracle remains the intended
+execution host; live execution is unfinished and inactive.
 
-## What this repository contains
+Current repository: [`Logan17de/Trading`](https://github.com/Logan17de/Trading).
+Local checkout: `D:\Money Trader\Trading`.
 
-This is the current working repository: [`Logan17de/Trading`](https://github.com/Logan17de/Trading).
-The local checkout is `D:\Money Trader\Trading`. It builds on the essential source
-import from the cleaned engine, with `AGENTS.md` for future work.
+## Open the PC app
+
+Open **Options Trader** from Desktop or Start. Its background monitor is registered
+to start automatically at Windows sign-in. Routine use needs no CMD window.
+The app uses an Edge app window at [127.0.0.1:8765](http://127.0.0.1:8765/).
+Keep the PC awake and online.
+
+- Groww quotes/orders target a **five-second** cycle; all charts are **lines** with
+  completed **five-minute** prices. Slow requests can extend a cycle.
+- Buy/sell charts appear only for actual matching orders or open positions.
+- Manual, unknown and mixed trades are protected. Engine ownership requires exact
+  private journal and broker-identity matches.
+- P&L and strategy outcomes need the reviewed private accounting ledger. Completed
+  trades without losses show 100% green; no completed trades shows “No results”.
+- Background collection starts at 12:50 JST, support/resistance research at 12:55.
+  Structured barrier proposals are restricted to 13:00–18:15 JST.
+
+See [app setup and operations](docs/LOCAL_HEADLESS.md#local-options-dashboard).
+For another installation, run `scripts/Install-TradingApp.ps1` after local setup.
+
+## Latest everyday rule
+
+From 13:15 JST: NIFTY spot +400 on Mon/Tue/Fri; SENSEX spot +800 on Wed/Thu.
+One active slot, one lot; buy a same-expiry call near index ATM, up to three listed
+strikes away. Skip actual expiry day using Groww expiry dates and current contract
+metadata, including holiday shifts. Unknown evidence blocks entry.
+
+The ATM buy changes the earlier call-credit study's payoff. The app exposes that
+conflict and prepares reviews. Automatic entry and broker SL updates are inactive.
+Trailing-stop source has fake-broker verification; Oracle transport, initial
+protective-order placement, reviewed stop/target parameters and activation remain.
+See [strategy details](docs/OWNER_STRATEGY_RESEARCH.md).
+
+## What is retained
 
 | Path | Purpose |
 |---|---|
-| `src/nifty_engine/agent_engine/` | Local dashboard, market reader, recorder, owner study, spread review, SQLite triggers, isolated Codex, visual email, news and backups |
-| `src/nifty_engine/brokers/` | Existing read-only Groww adapter and shared rate limiter |
-| `config/` | Disabled headless settings, fixed owner hypotheses and manual-ticket example |
-| `scripts/` | Local PowerShell commands, holdings helper, config check and diagnostic mail support |
-| `deploy/` | Two inactive scheduler/worker templates and minimal dependency locks |
-| `docs/` | Five current setup, engine, strategy, handoff and status guides |
-| `tests/` | Tests for the retained headless workflow and boundaries |
-| `.github/workflows/ci.yml` | Python verification on Linux and Windows; no deployment or power action |
-| `AGENTS.md` | Repository identity, operating constraints and continuation instructions |
+| `src/nifty_engine/agent_engine/` | PC app, read-only collector, journal, owner research, isolated Codex, trailing adapter, visual email, news and backups |
+| `src/nifty_engine/brokers/` | Existing Groww market adapter and shared rate limiter |
+| `config/` | Latest PC policy, reproducible research protocols and disabled headless settings |
+| `scripts/` | App installation/startup, local read/research helpers and verification |
+| `deploy/` | Inactive Oracle scheduler/worker templates and dependency locks |
+| `docs/` | Current setup, engine, strategy, handoff and evidence |
+| `tests/` | Retained runtime and integration-boundary tests |
+| `.github/workflows/ci.yml` | Linux/Windows verification; no deployment or VM power action |
 
-The initial `main` commit imports the verified headless workflow with fresh history.
-Earlier development and deployment history remains in the previous repository.
-
-## Strategies
-
-Four hypotheses are recorded: everyday, late-session premium decay, swing and
-expiry reversal. The everyday rule starts at 13:15 JST: NIFTY spot +400 on
-Monday/Tuesday/Friday; SENSEX spot +800 on Wednesday/Thursday; buy a higher call
-with matching expiry and quantity. Hold while the index is flat/down versus entry;
-an upward move produces an exit review. There is no added maximum-loss cap.
-
-The engine can review this rule offline and compare supplied hedges within a
-margin budget at fixed quantity. Margin budget and expiry choice remain unset.
-Continuous monitoring and real execution are unfinished; option-profit probability
-is unknown. See [the strategy guide](docs/OWNER_STRATEGY_RESEARCH.md).
-
-## Use locally
-
-Follow [local setup](docs/LOCAL_HEADLESS.md), then from the repository in PowerShell:
-
-```powershell
-.\scripts\Read-GrowwMarket.ps1
-.\scripts\Start-TradingDashboard.ps1
-.\scripts\Research-GrowwStrategies.ps1 -Index SENSEX -Start 2026-08-03 -End 2026-09-29
-```
-
-The dashboard opens in Edge at [127.0.0.1:8765](http://127.0.0.1:8765/).
-Groww quotes and orders refresh on a **5-second cycle**, with **5-minute option
-candles**. Buy/sell charts appear only for matching actual orders or open positions.
-Slow requests or rate limits can extend a cycle; historical chart reads run
-independently. P&L and margin stay unknown until a private reviewed ledger is
-connected. Strategy bars show non-loss/loss shares of completed trades; no losses
-gives 100% green, while no completed trades gives “No results”. See
-[the dashboard guide](docs/LOCAL_HEADLESS.md#local-options-dashboard).
-
-See [owner strategies](docs/OWNER_STRATEGY_RESEARCH.md) for Japan-time windows,
-bounded recording and offline hedge comparison. Your strategy rules remain fixed;
-no strategy, size or real order is automatically selected.
-
-## Current evidence
-
-Local access was reverified on October 1 at 16:22 JST for NIFTY, BANKNIFTY and SENSEX:
-authentication and all 22 read-only probes passed. The earlier HTTP 403 was resolved
-by approving the expired existing Codex key in the owner's Edge session. Groww
-shows that approval resets at 6 AM tomorrow; no new credential was generated.
-The study has 51,315 index candles
-across 41 observed sessions per index. The September 30 recording has 29 snapshots
-from 18:40–19:08 JST, with one partial snapshot. No strategy has a validated net
-option-profit probability.
-
-With the local dashboard, **109 tests passed locally with four POSIX-only skips**. Configuration,
-package installation, dependency checks and the offline demo passed. The retained CI
-runs on Linux/Python 3.12 and Windows/Python 3.13.
-
-Codex receives structured data and the owner-facing report is a visual email. Actual
-Codex CLI checks and one diagnostic inbox delivery passed; continuous collection,
-scheduled analysis/mail and deployment remain unfinished. See
-[current status](docs/HEADLESS_INTEGRATION_STATUS.md).
+Read [current status](docs/HEADLESS_INTEGRATION_STATUS.md) for dated test, broker,
+Codex and mail evidence, and [the handoff](docs/CODEX_HEADLESS_HANDOFF.md) before
+continuing development. Four strategy hypotheses are recorded; none has a validated
+net option-profit probability.
 
 ## Operating rules
 
-Keep `.trader-paused`, protected credentials and existing journals intact. Preserve
-shared Oracle/Colab/Qwen/mail services. No real orders have been placed by this
-integration; do not enable LIVE, change broker permissions or merge automatically.
-Profit targets never raise position size, loss limits, leverage or allowed risk.
-
-Start with [the handoff](docs/CODEX_HEADLESS_HANDOFF.md) and
-[engine guide](docs/HEADLESS_CODEX_ENGINE.md).
+Preserve `.trader-paused`, the protected credential vault and journals. Keep Oracle
+and its shared Colab/Qwen/mail/tunnel services running. No broker permissions, LIVE
+activation, real orders or automatic merges are introduced by this integration.
+Profit targets never increase exposure or force a trade.

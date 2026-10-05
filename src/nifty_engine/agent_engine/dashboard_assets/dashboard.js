@@ -20,19 +20,18 @@ function emptyChart(container, title, subtitle="") {
   delete container.dataset.chartSignature;
   container.innerHTML = `<div class="empty-chart"><svg class="icon" aria-hidden="true"><use href="#icon-bars"/></svg><strong>${escapeHTML(title)}</strong><small>${escapeHTML(subtitle)}</small></div>`;
 }
-function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=false, candles=false, label="Chart"}={}) {
+function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=false, label="Chart"}={}) {
   const rows = (points || []).filter(p => known(p.value) && Number.isFinite(Date.parse(p.at)));
-  if (rows.length < (candles?1:2)) {emptyChart(container, rows.length ? "Waiting for more observations" : "No chart data", "No prices are filled in or simulated."); return;}
-  const signature=JSON.stringify({rows,color,area,mini,pnl,candles,label,timeZone});
+  if (rows.length < 2) {emptyChart(container, rows.length ? "Waiting for more observations" : "No chart data", "No prices are filled in or simulated."); return;}
+  const signature=JSON.stringify({rows,color,area,mini,pnl,label,timeZone});
   if(container.dataset.chartSignature===signature) return;
   container.dataset.chartSignature=signature;
   const width=640, height=mini?120:250, left=mini?1:47, right=mini?4:15, top=mini?10:14, bottom=mini?7:29;
   let low=Math.min(...rows.map(r=>r.value)), high=Math.max(...rows.map(r=>r.value));
-  if(candles) {low=Math.min(low,...rows.map(r=>known(r.low)?r.low:r.value)); high=Math.max(high,...rows.map(r=>known(r.high)?r.high:r.value));}
   if (pnl) {low=Math.min(low,0); high=Math.max(high,0);}
-  let span=high-low || Math.max(Math.abs(high)*.02,1); low-=span*.09; high+=span*.09; if(candles) low=Math.max(0,low); span=high-low;
+  let span=high-low || Math.max(Math.abs(high)*.02,1); low-=span*.09; high+=span*.09; if(!pnl) low=Math.max(0,low); span=high-low;
   const first=Date.parse(rows[0].at), last=Date.parse(rows.at(-1).at), duration=last-first||1;
-  const inset=candles?Math.min(8,(width-left-right)/rows.length/2):0;
+  const inset=0;
   const x=r=>rows.length===1?(width+left-right)/2:left+inset+(Date.parse(r.at)-first)/duration*(width-left-right-2*inset), y=v=>top+(high-v)/span*(height-top-bottom);
   const path=rows.map((r,i)=>`${i?"L":"M"}${x(r).toFixed(2)},${y(r.value).toFixed(2)}`).join(" ");
   const base=pnl?y(0):height-bottom, id="fill-"+container.id;
@@ -49,15 +48,14 @@ function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=
       grid+=`<line x1="${at}" y1="${top}" x2="${at}" y2="${height-bottom}" stroke="#f0f4f1"/><text x="${at}" y="${height-8}" text-anchor="${i===0?"start":i===4?"end":"middle"}" fill="#72849a" font-size="10">${time}</text>`;
     }
   }
-  const candleWidth=Math.max(2,Math.min(9,(width-left-right)/rows.length*.55));
-  const segments=candles?rows.map(r=>{const opened=known(r.open)?r.open:r.value, high=known(r.high)?r.high:r.value, low=known(r.low)?r.low:r.value, c=r.value>=opened?"#08b75d":"#ef4b2c";return `<line x1="${x(r)}" y1="${y(high)}" x2="${x(r)}" y2="${y(low)}" stroke="${c}"/><rect x="${x(r)-candleWidth/2}" y="${Math.min(y(opened),y(r.value))}" width="${candleWidth}" height="${Math.max(1,Math.abs(y(opened)-y(r.value)))}" fill="${c}"/>`;}).join(""):pnl?rows.slice(1).map((r,i)=>`<path d="M${x(rows[i])},${y(rows[i].value)} L${x(r)},${y(r.value)}" fill="none" stroke="${r.value>=0?"#08b75d":"#ef4b2c"}" stroke-width="2.5"/>`).join(""):`<path d="${path}" fill="none" stroke="${color}" stroke-width="${mini?2.7:2.6}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const segments=pnl?rows.slice(1).map((r,i)=>`<path d="M${x(rows[i])},${y(rows[i].value)} L${x(r)},${y(r.value)}" fill="none" stroke="${r.value>=0?"#08b75d":"#ef4b2c"}" stroke-width="2.5"/>`).join(""):`<path d="${path}" fill="none" stroke="${color}" stroke-width="${mini?2.7:2.6}" stroke-linejoin="round" stroke-linecap="round"/>`;
   container.innerHTML=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHTML(label)} · ${rows.length} observations"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".2"/><stop offset="1" stop-color="${color}" stop-opacity=".015"/></linearGradient></defs>${grid}${area?`<path d="${fill}" fill="url(#${id})"/>`:""}${pnl?`<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#bdcec3"/>`:""}${segments}${mini?"":`<circle cx="${x(rows.at(-1))}" cy="${y(rows.at(-1).value)}" r="4.5" fill="${color}" stroke="white" stroke-width="2"/>`}</svg>`;
   if(mini) return;
   const tooltip=document.createElement("div"); tooltip.className="chart-tooltip"; tooltip.hidden=true; container.append(tooltip);
   container.onpointermove=event=> {
     const box=container.getBoundingClientRect(), relative=(event.clientX-box.left)/box.width*width;
     const nearest=rows.reduce((best,r)=>Math.abs(x(r)-relative)<Math.abs(x(best)-relative)?r:best,rows[0]);
-    tooltip.innerHTML=`${escapeHTML(clock(nearest.at))} ${timeZone==="Asia/Tokyo"?"JST":"IST"}<b>${escapeHTML(inr(nearest.value))}</b>${candles?`O ${inr(nearest.open)} · H ${inr(nearest.high)}<br>L ${inr(nearest.low)} · C ${inr(nearest.value)}`:""}`;
+    tooltip.innerHTML=`${escapeHTML(clock(nearest.at))} ${timeZone==="Asia/Tokyo"?"JST":"IST"}<b>${escapeHTML(inr(nearest.value))}</b>`;
     tooltip.hidden=false; tooltip.style.left=Math.max(0,Math.min(event.clientX-box.left+12,box.width-tooltip.offsetWidth-4))+"px";
   };
   container.onpointerleave=()=>{tooltip.hidden=true;};
@@ -98,11 +96,27 @@ function drawOption(side, option) {
   setAmount(side+"-price",option?.last_price);
   const initial=option?.series?.[0]?.value, change=known(initial)&&known(option?.last_price)?option.last_price-initial:null;
   $(side+"-change").textContent=known(change)?`${change>=0?"+":""}${change.toFixed(2)}${initial>0?` (${percent(change/initial*100)})`:""}`:"";
-  $(side+"-change").title="Change versus the first completed 5-minute candle close"; tone($(side+"-change"),change);
+  $(side+"-change").title="Change versus the first completed 5-minute closing price"; tone($(side+"-change"),change);
   $(side+"-book").textContent=option?`Bid ${inr(option.bid)} · Ask ${inr(option.ask)}`:"Bid — · Ask —";
-  $(side+"-expiry").textContent=option?`${option.order_status==="POSITION"?"Open position":option.order_status==="OPEN"||option.order_status==="TRIGGER_PENDING"?"Pending order":option.order_status==="PARTIAL_FILL"?"Partial fill":"Executed order"} · ${option.expiry||"Expiry unverified"}`:"Expiry —";
-  if(option?.series?.length) chart($(side+"-chart"),option.series,{candles:true,color:change<0?"#ef4b2c":side==="buy"?"#08b75d":"#fb861c",label:side+" option premium · 5-minute candles · "+option.symbol});
-  else emptyChart($(side+"-chart"),option?.series_status==="LOADING_OPTION_HISTORY"?"Loading 5-minute candles":option?"Option history unavailable":"Choose an option contract",option?.series_status==="LOADING_OPTION_HISTORY"?"Current quotes continue updating while this contract’s history loads.":option?"This exact contract has no candle series. Index prices are not used here.":"Your selected strike and expiry will appear here.");
+  const owner=option?.ownership==="ENGINE_VERIFIED"?"Engine verified":option?.ownership==="ENGINE_PENDING_VERIFIED"?"Engine pending":"Manual / unknown · protected";
+  $(side+"-expiry").textContent=option?`${owner} · ${option.order_status==="POSITION"?"Open position":option.order_status==="OPEN"||option.order_status==="TRIGGER_PENDING"?"Pending order":option.order_status==="PARTIAL_FILL"?"Partial fill":"Executed order"} · ${option.expiry||"Expiry unverified"}`:"Expiry —";
+  if(option?.series?.length) chart($(side+"-chart"),option.series,{color:change<0?"#ef4b2c":side==="buy"?"#08b75d":"#fb861c",label:side+" option premium · 5-minute line · "+option.symbol});
+  else emptyChart($(side+"-chart"),option?.series_status==="WAITING_FOR_SESSION"?"Waiting for the market session":option?.series_status==="LOADING_OPTION_HISTORY"?"Loading 5-minute prices":option?"Option history unavailable":"Choose an option contract",option?.series_status==="WAITING_FOR_SESSION"?"Today's line appears as five-minute prices complete.":option?.series_status==="LOADING_OPTION_HISTORY"?"Quotes continue updating while the line chart loads.":option?"This exact contract has no price history.":"Your selected strike and expiry will appear here.");
+}
+function renderControl() {
+  const c=data.control;
+  $("monitor-status").textContent=data.demo?"Sample preview":data.background_monitor?"Background monitor on":"Use the Options Trader app shortcut";
+  $("everyday-rule").textContent=c?.everyday?.minimum_short_call_strike?`${c.everyday.index} · sell call ≥ ${numeric.format(c.everyday.minimum_short_call_strike)}`:"NIFTY +400 · SENSEX +800 · from 13:15 JST";
+  $("slot-policy").textContent="1 active slot · 1 lot · ATM call buy";
+  $("monitor-schedule").textContent="Research 12:55 · rules 13:00–18:15 JST";
+  const expiry=c?.expiry_check;
+  $("expiry-status").textContent=expiry?Object.entries(expiry).map(([index,e])=>`${index}: ${e.is_expiry_day===true?"expiry — skip":e.is_expiry_day===false?"non-expiry":"expiry unverified"}`).join(" · "):"Expiry dates must be confirmed from Groww";
+  $("levels").innerHTML=["NIFTY","SENSEX"].map(index=>{const level=c?.levels?.[index];return `<div class="level-item"><strong>${index}</strong><span>Support <b>${level?.support?.length?level.support.map(v=>numeric.format(v)).join(" · "):"—"}</b></span><span>Resistance <b>${level?.resistance?.length?level.resistance.map(v=>numeric.format(v)).join(" · "):"—"}</b></span><small>${level?`Updated ${escapeHTML(dateTime(level.updated_at))}`:"Waiting for 12:55 JST and fresh evidence"}</small></div>`;}).join("");
+  const latest=c?.requests?.find(r=>r.rule);
+  $("rule-details").hidden=!latest;$("rule-json").textContent=latest?JSON.stringify(latest.rule,null,2):"";
+  $("control-note").textContent=c?.analysis_error?"Codex research needs attention. Review the local verification status.":"Manual and unknown trades are protected. ATM-buy / higher-call-sell payoff needs review. Live entry and broker SL synchronization remain blocked until the Oracle executor and stop parameters are verified.";
+  $("analysis-status").textContent=c?.requests?.length?c.requests.map(r=>r.status.toLowerCase()).join(" · "):"No barrier requests yet";
+  $("trailing-status").textContent=c?.trailing?.plans?`${c.trailing.plans} trailing SL update proposal(s) · Oracle synchronization not deployed`:"No verified engine trailing stops · manual trades protected";
 }
 function renderAccount() {
   const a=data.account;
@@ -121,7 +135,7 @@ function renderAccount() {
 }
 function render() {
   if(!data) return;
-  renderIndices(); renderOptions(); renderAccount();
+  renderIndices(); renderOptions(); renderAccount(); renderControl();
   const recent=data.freshness==="RECENT";
   $("data-status").textContent=data.demo?"Sample data":data.freshness==="NO_DATA"?"No market data":recent?"Latest snapshot":"Saved snapshot";
   $("data-status").className="status-pill"+(data.demo?" demo":!recent?" stale":"");
@@ -140,7 +154,7 @@ async function load() {
     const value=await response.json(), changed=!liveData||JSON.stringify(value)!==JSON.stringify(liveData);
     liveData=value;
     if(!demo&&changed) {data=liveData;render();}
-  } catch {$("notice").hidden=false;$("notice").textContent="The local dashboard is unavailable. Start the dashboard command and try again.";$("data-status").textContent="Disconnected";}
+  } catch {$("notice").hidden=false;$("notice").textContent="The local engine is unavailable. Reopen Options Trader from Desktop or Start.";$("data-status").textContent="Disconnected";}
 }
 async function refresh() {
   if(refreshPending||demo||liveData?.offline) return;

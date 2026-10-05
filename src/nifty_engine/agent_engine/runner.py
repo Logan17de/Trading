@@ -87,12 +87,14 @@ def session_auth_home(auth_home, root):
 
 class CodexRunner:
     def __init__(self, executable: str, home: str, *, timeout=120, model=None,
-                 expected_version=None, expected_sha256=None):
+                 expected_version=None, expected_sha256=None, schema=None, prompt=None):
         self.executable = str(Path(executable).resolve())
         self.home = Path(home).resolve()
         self.timeout, self.model = timeout, model
         self.expected_version, self.expected_sha256 = expected_version, expected_sha256
         self.last_run = None
+        self.schema = DECISION_SCHEMA if schema is None else schema
+        self.prompt = PROMPT if prompt is None else prompt
         if not Path(self.executable).is_file() or not self.home.is_dir():
             raise ValueError("dedicated Codex executable and auth home are required")
         # Reject inherited skills, prompts and MCP configuration, rather than trusting
@@ -137,7 +139,7 @@ class CodexRunner:
         with tempfile.TemporaryDirectory(prefix="growing-trader-analyst-") as directory, session_auth_home(self.home, directory) as session_home:
             root = Path(directory)
             schema, output = root / "schema.json", root / "decision.json"
-            schema.write_text(dumps(DECISION_SCHEMA))
+            schema.write_text(dumps(self.schema))
             argv = [self.executable, "exec", "--skip-git-repo-check", "--ephemeral",
                     "--ignore-user-config", "--ignore-rules", "--json",
                     "--sandbox", "read-only", "--output-schema", str(schema),
@@ -146,7 +148,7 @@ class CodexRunner:
                 argv += ["--model", self.model]
             argv += ["-"]
             env = analyst_environment(session_home, root)
-            prompt = (PROMPT + "\n" + dumps(payload)).encode()
+            prompt = (self.prompt + "\n" + dumps(payload)).encode()
             stdin = root / "input.txt"
             stdin.write_bytes(prompt)
             events = root / "events.jsonl"

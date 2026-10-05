@@ -1,6 +1,6 @@
 # Local headless workflow
 
-Reviewed 2026-10-01. Use the existing engine from the local PC to read, record and
+Reviewed 2026-10-05. Use the existing engine from the local PC to read, record and
 research NIFTY, BANKNIFTY and SENSEX. These commands do not require Oracle, SSH,
 Supabase or a production encryption-key migration. Oracle remains running for shared
 services and the intended later execution integration.
@@ -92,20 +92,29 @@ quote checks remain owner review items; separate tickets do not prove both legs 
 
 ## Local options dashboard
 
-Start the local viewer in the owner's Edge:
+Open **Options Trader** from Desktop or Start. The installed background monitor
+starts at Windows sign-in; opening the shortcut displays its Edge app window.
+No command window is needed for daily use. Startup registration and the same
+startup entry point were verified; an actual logout/reboot was not performed.
+Windows PowerShell 5.1 startup and DPAPI-backed read-only capture were verified too.
+
+For another Windows installation, after setting up the local environment:
 
 ```powershell
-.\scripts\Start-TradingDashboard.ps1
+.\scripts\Install-TradingApp.ps1
+.\scripts\Start-TradingApp.ps1
 ```
 
 It reuses [http://127.0.0.1:8765/](http://127.0.0.1:8765/) and binds only to loopback.
-`-NoBrowser` starts without opening a tab. To stop the recorded viewer process:
+`Start-TradingApp.ps1 -BackgroundOnly` starts the monitor without opening a window.
+The underlying `Start-TradingDashboard.ps1` remains a maintenance helper.
+To stop the recorded app server and let its collector lease expire:
 
 ```powershell
 .\scripts\Start-TradingDashboard.ps1 -Stop
 ```
 
-`-Offline` displays saved observations without broker requests. Stop the existing
+`Start-TradingDashboard.ps1 -Offline` displays saved observations without broker requests. Stop the existing
 viewer before changing its mode. This viewer uses Python's HTTP server and local
 HTML/CSS/JavaScript assets inside the existing engine package; no new web framework
 or trading service is installed.
@@ -113,9 +122,11 @@ or trading service is installed.
 Quotes, the day's FNO orders and open FNO positions are read on a five-second target
 cycle. The worker authenticates once, uses four bounded quote threads and the
 existing shared rate limiter. Slow network/API responses or rate limits can extend
-the cycle; no overlapping polling cycles are started. Five-minute historical reads
+the cycle; no overlapping polling cycles are started. Authentication failures back
+off for 60 seconds before restarting the reader. Five-minute historical reads
 run independently and refresh when a new bar can complete or an ordered contract
-appears. Only completed bars are plotted. Broker naive timestamps remain an explicit
+appears. Only completed five-minute closing prices are plotted as **lines**. No
+candlesticks are rendered anywhere. Broker naive timestamps remain an explicit
 IST/bar-start assumption, not verified market timestamp semantics.
 
 Each buy/sell chart is visible only for that side's actual option orders or open
@@ -128,9 +139,12 @@ history stays empty. A failed order read is shown as unavailable rather than zer
 orders. Reads are bounded to four order pages, 1,000 position rows and 40 option
 side/contract records; truncation is reported as incomplete.
 
-Auto-refresh is enabled by default while the page is visible. Closing/hiding it,
-turning off auto-refresh or using sample preview stops lease renewals. The collector
-exits after the 20-second lease expires and any current bounded read finishes.
+The PC app renews the collector lease independently of the page from **12:50–18:15
+JST on weekdays**. Closing the app window leaves this monitor running. Outside
+that window, visible auto-refresh can request reads anytime; hiding the page,
+turning off view refresh or using sample preview stops those page renewals. When
+neither source renews the lease, the collector exits after 20 seconds and any
+current bounded read finishes. The PC must remain awake, signed in and online.
 Each viewer process has its own lease/snapshot file, avoiding overlapping output
 after a server restart. A worker has an eight-hour upper bound. It replaces one
 private snapshot per worker instead of writing a new file every five seconds.
@@ -141,6 +155,55 @@ the DPAPI reader subprocess, never browser assets/API responses. Loopback/Host/
 Origin checks, a per-process refresh token, no-store headers and explicit asset
 routes prevent arbitrary file serving and cross-site refresh requests. All broker
 order writes remain blocked. `.trader-paused` and Oracle services are unchanged.
+
+### Strategy monitor and ownership
+
+The monitor reuses the existing SQLite Store in private
+`.agent-state/pc-monitor.sqlite3`. It reserves an engine intent before any future
+submission and records the acknowledged broker identity as a hash. Ownership
+requires the exact reference, ID, contract, side, quantity and filled-quantity
+agreement. A reference prefix proves nothing. Unmatched/manual activity, including
+a manual round trip in the same contract or unexplained net quantity, protects
+that contract persistently. Incomplete reads block modifications. There is no
+UI action to adopt a manual trade. The current collector submits no orders.
+
+The latest settings are [`config/pc_app.example.json`](../config/pc_app.example.json);
+machine-specific pins and approved parameters live in ignored
+`.agent-state/pc-app.json`. No broker credentials belong in this JSON. Current
+private settings pin the verified Codex executable/hash and reuse an auth-only
+home. Collection warms at 12:50 JST; support/resistance research starts at 12:55
+using completed five-minute index history. Daily jobs and fresh barrier crossings
+are persisted and deduplicated, with a five-minute request lifetime and a daily
+eight-attempt bound. Independent analysis does not suspend quote monitoring.
+
+Codex receives structured market evidence without broker IDs or credentials. Its
+strict output echoes request/snapshot identities, chooses evidence-backed levels,
+and can propose a rule only within **13:00 inclusive–18:15 exclusive JST**. Missing
+stop/target amounts remain null. Invalid, stale or out-of-window results are
+rejected. The app displays the resulting levels, request state and latest rule.
+Rules remain proposals; no PC-to-Oracle execution transport is installed.
+
+The everyday reference keeps the 13:15 boundary, fixed index offsets, one active
+slot and one lot. The new ATM buy is recorded explicitly. The underlying's actual
+expiry dates must agree between Groww's expiry API and current instrument master
+for the current month and nearest listed expiry;
+unknown evidence blocks entry. Dates refresh hourly when confirmed and retry after
+five minutes when unavailable. Weekday preference never determines expiry.
+
+`oracle_trailing.py` is disabled, undeployed source for modifying an **already-owned
+protective SL**. It uses exact broker identity, fresh complete ownership evidence,
+the repository pause and Japan window gates. Option-premium stops ratchet favorably
+in valid tick increments; they never loosen. Provider acceptance is followed by
+order-detail readback before confirmed stop state advances. A timeout or mismatch
+requires reconciliation, not another write. Tests use a fake broker. Initial SL
+placement, selected expiry, exact order sequencing, Oracle transport/service
+integration and reviewed stop/target values remain incomplete. Groww documents
+GTT/OCO orders; no native trailing field was verified.
+[Groww smart-order documentation](https://groww.in/trade-api/docs/python-sdk/smart-orders)
+
+To remove only this app's shortcuts and sign-in registration, use
+`Install-TradingApp.ps1 -Remove`; journals and the vault are preserved. This does
+not stop an already-running monitor. Use the maintenance stop command first.
 
 ### Reviewed account results
 
@@ -180,7 +243,7 @@ Automatic broker-account P&L reconciliation and strategy attribution are unfinis
 Preserve the owner's white/mint Options Trader reference: navy Segoe UI headings,
 green gains, orange portfolio accents, soft card borders, 19px corners, three
 index cards, two conditional option panels and bottom performance cards. Assets
-and SVG candle charts are local; no external fonts or chart library are loaded.
+and SVG line charts are local; no external fonts or chart library are loaded.
 At narrower widths, the grid reflows to stacked cards. Motion is limited to a
 request spinner, disabled by reduced-motion preference.
 
@@ -191,14 +254,21 @@ Tests cover no-order gating, side/status filtering, private-field exclusion,
 five-minute completion, quote/history independence, lease expiry, local HTTP
 boundaries and observed strategy outcomes. Private browser QA evidence and
 screenshots stay under `.agent-state/`; see current status for verified viewports.
+October 5 Edge QA verifies all-line rendering, sample labels, actual no-order
+gating, ownership labels, settings/focus/time-zone switching and no document
+overflow at 320/390/768/1440 CSS pixels. Sample results never enter the live API
+or journal. October 5 reapproval of the existing expired key resolved HTTP 403.
+Authentication and all 22 probes passed at 10:45 JST; app order/position/metadata
+reads and both expiry-day checks passed. Last-session prices and absent pre-market
+books remain distinct from executable freshness. Current-day lines wait for
+session prices.
 
 ## Verification and remaining work
 
 Local read-only access was reverified for all three indices on October 1 at
 16:22 JST: authentication and all 22 probes passed after the existing expired
 Codex key was approved in the owner's Edge session.
-The current runtime/dashboard suite passed 109 tests with four POSIX-only skips, and the
-offline demo passed in the new checkout.
+See current status for the latest test count and offline-demo verification.
 Headless CI runs on Linux and Windows. `nifty-engine` now invokes the headless CLI.
 
 For a future authentication 403, inspect
@@ -209,7 +279,9 @@ the page does not establish its timezone. Reapproval does not require replacemen
 credential files or expanded broker permissions. No automated browser renewal
 task is installed.
 
-Unattended collection, validated engine-snapshot publication, Windows isolation and
-local scheduled visual mail remain unfinished. Existing headless settings stay
+The local observer now has sign-in startup and background collection. Validated
+report-snapshot publication, Windows privilege isolation and scheduled visual mail
+remain unfinished. Existing headless settings stay
 `enabled=false` and `send_email=false`. Oracle order execution is not implemented or
-activated by these commands. See [current status](HEADLESS_INTEGRATION_STATUS.md).
+activated by these commands; the disabled trailing adapter is source only.
+See [current status](HEADLESS_INTEGRATION_STATUS.md).
