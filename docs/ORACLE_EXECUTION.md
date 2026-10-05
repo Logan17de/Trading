@@ -34,6 +34,11 @@ public port or GUI was created. No real order was placed during implementation.
   Late-session replacement closes only the owned basket first. Exact matching
   positions skip; manual/unknown/mixed contracts are never adopted or managed.
 - Original operation references and monotonic fills reconcile uncertain writes.
+  The actual sampled manual-order detail route returned GA004; the adapter can
+  fall back to a fully paginated order list with an exact unique broker ID/reference
+  and all immutable fields. Incomplete/ambiguous lists remain blocked. Day-scoped
+  missing history preserves a previously verified terminal fill, while each
+  management action still requires fresh complete exclusive net positions.
   A cancellation acknowledgment is not terminal; triggered GTT children are
   reconciled before another BUY. A process lock prevents a second runtime stealing
   the socket/state. Collector ownership reads and writes are serialized; historical

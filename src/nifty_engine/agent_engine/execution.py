@@ -275,10 +275,12 @@ class PreparedOrderGateway:
         if not record or record["status"] == "ABORTED_BEFORE_WRITE":
             return {"status":"NO_BROKER_SUBMISSION", "broker_writes":False}
         ref = record["reference"]
+        retrieved = False
         try:
             response = self.broker.get_order_status_by_reference(segment="FNO", order_reference_id=ref, timeout=5)
             broker_id = response["groww_order_id"]
             row = self.broker.get_order_detail(segment="FNO", groww_order_id=broker_id, timeout=5)
+            retrieved = True
             order = record["order"]
             if (row.get("order_reference_id") != ref or row.get("groww_order_id") != broker_id
                     or row.get("segment") != "FNO" or row.get("validity") != "DAY"
@@ -303,11 +305,23 @@ class PreparedOrderGateway:
             record.update(status="FULLY_FILLED" if filled == order["quantity"] and status in TERMINAL else
                           "TERMINAL_PARTIAL" if filled and status in TERMINAL else
                           "TERMINAL_EMPTY" if status in TERMINAL else "PARTIAL" if filled else "PENDING",
-                          broker_id=broker_id, filled_quantity=filled, average_fill_price=average, broker_status=status)
+                          broker_id=broker_id, filled_quantity=filled, average_fill_price=average, broker_status=status,
+                          checked_at=self.clock().isoformat())
             self.journal.store.set_meta(operation_key, record)
             return {"status":record["status"], "reference":ref, "filled_quantity":filled,
                     "average_fill_price":average, "broker_writes":False}
         except Exception:
+            # Groww's order list is day-scoped. A previously verified terminal
+            # order cannot accept new fills or be modified after that day. Keep
+            # its exact historical fill proof; current exclusive net positions
+            # are verified independently before every management action.
+            try:
+                if (not retrieved and record.get('status') in ('FULLY_FILLED','TERMINAL_PARTIAL','TERMINAL_EMPTY')
+                        and record.get('broker_status') in TERMINAL and record.get('broker_id')
+                        and stamp(record['checked_at']).astimezone(policy.JST).date()<self.clock().astimezone(policy.JST).date()):
+                    return {"status":record['status'],"reference":ref,"filled_quantity":record.get('filled_quantity',0),
+                            "average_fill_price":record.get('average_fill_price'),"broker_writes":False,"historical_terminal_proof":True}
+            except (KeyError,ValueError,TypeError): pass
             # Missing status or a changed contract does not mean the order failed.
             return {"status":"RECONCILIATION_REQUIRED", "reference":ref, "broker_writes":False}
 

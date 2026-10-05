@@ -45,10 +45,28 @@ class GrowwOrderTransport:
                            self.market.groww.cancel_order, args)
 
     def get_order_status_by_reference(self, **args):
-        return self._read(self.market.groww.get_order_status_by_reference, args)
+        try: return self._read(self.market.groww.get_order_status_by_reference, args)
+        except Exception: return self._listed_order('order_reference_id',args['order_reference_id'])
 
     def get_order_detail(self, **args):
-        return self._read(self.market.groww.get_order_detail, args)
+        try: return self._read(self.market.groww.get_order_detail, args)
+        except Exception: return self._listed_order('groww_order_id',args['groww_order_id'])
+
+    def _listed_order(self, field, identifier):
+        # Actual manual-order detail reads returned GA004 while the documented
+        # complete order list worked. Use the full list's exact original ID/ref,
+        # never a prefix/contract/net quantity. The gateway still validates every
+        # immutable order field, fill quantity and actual average price.
+        matches=[]
+        for page in range(4):
+            body=self._read(self.market.groww.get_order_list,dict(segment='FNO',page=page,timeout=5))
+            rows=body.get('order_list')
+            if not isinstance(rows,list) or len(rows)>100: raise ValueError('COMPLETE_ORDER_READBACK_REQUIRED')
+            matches.extend(r for r in rows if r.get(field)==identifier and r.get('segment')=='FNO')
+            if not rows: break
+        else: raise ValueError('COMPLETE_ORDER_READBACK_REQUIRED')
+        if len(matches)!=1: raise ValueError('EXACT_UNIQUE_ORDER_READBACK_REQUIRED')
+        return matches[0]
 
     def create_smart_order(self, **args):
         body = {k:v for k,v in args.items() if k != 'timeout' and v is not None}

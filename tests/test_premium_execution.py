@@ -366,3 +366,27 @@ def test_pinned_sdk_actual_json_matches_scoped_transport_without_any_network(tmp
                 trigger_direction='UP',order=smart['order'],timeout=5)
             transport.cancel_smart_order(smart_order_id='gtt_fake',smart_order_type='GTT',segment='FNO',timeout=5)
         assert [r[0].upper() for r in calls]==['POST','POST','PUT','POST']
+
+
+def test_detail_route_rejection_uses_complete_list_exact_id_and_reference(tmp_path):
+    s=Session(tmp_path);s.monitoring();row=next(iter(s.broker.orders.values()))
+    class Reads:
+        def get_order_detail(self,**args):raise RuntimeError('synthetic GA004')
+        def get_order_status_by_reference(self,**args):raise RuntimeError('synthetic GA004')
+        def get_order_list(self,**args):return {'order_list':[row] if args['page']==0 else []}
+    sdk=Reads();market=SimpleNamespace(groww=sdk,limiter=SimpleNamespace(wait=lambda:None))
+    transport=GrowwOrderTransport(market,s.gate)
+    assert transport.get_order_detail(segment='FNO',groww_order_id=row['groww_order_id'],timeout=5)==row
+    assert transport.get_order_status_by_reference(segment='FNO',order_reference_id=row['order_reference_id'],timeout=5)==row
+    with pytest.raises(ValueError):transport.get_order_detail(segment='FNO',groww_order_id='other',timeout=5)
+    sdk.get_order_list=lambda **args:{'order_list':[row]}
+    with pytest.raises(ValueError):transport.get_order_detail(segment='FNO',groww_order_id=row['groww_order_id'],timeout=5)
+
+
+def test_previous_day_terminal_fill_proof_survives_day_scoped_missing_history(tmp_path):
+    s=Session(tmp_path);s.monitoring();key=s.executor._state()['operations']['entry-hedge']
+    s.now+=timedelta(days=1)
+    s.broker.get_order_status_by_reference=lambda **args:(_ for _ in ()).throw(KeyError('no historical order'))
+    result=s.gateway.reconcile(key)
+    assert result['historical_terminal_proof'] and result['filled_quantity']==65
+    assert sum(k=='ORDER' for k,_ in s.broker.writes)==2
