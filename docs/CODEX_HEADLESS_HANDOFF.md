@@ -4,6 +4,35 @@ October 5, 2026 · `Logan17de/Trading` · `main` · `D:\Money Trader\Trading`.
 Read AGENTS.md, PREMIUM_STRATEGY.md and HEADLESS_INTEGRATION_STATUS.md.
 The active owner policy is premium v3; historical v1/v2 studies are provenance.
 
+## October 5 controller rollout · 18:35 JST
+
+Oracle now runs immutable source `1ad924810b8531346a20c4b2297c03e5408ca983`.
+The existing runtime contains the durable entry/GTT/trailing/roll/exit/expiry
+controller; no new framework/service/public port. 283 local tests passed, four
+POSIX skips; exact-release Linux/Windows CI passed (run37290829567). Offline demo,
+config, compile and JavaScript checks passed. Existing DPAPI and Oracle keys were
+reused without rotation. Pre/post SQLite backups verified; the 35,397,632-byte
+post-update off-host hash matched. Only trading-observer was restarted; shared
+Qwen/mail/tunnels remained active. Private desktop transport/assets were refreshed.
+
+Actual SDK1.5.0 authentication and authenticated smart-order reads passed at
+18:15 JST. A sampled manual detail GET returned GA004; the complete order-list
+fallback verified an exact ID and actual field types at 18:39 JST. Current quotes,
+positions, orders, money and private execution evidence are available. Heartbeat
+advancement and capital summary survived rollout. Zero owned orders; owner Off,
+paper environment, pause intact, no activation proof and no real order writes.
+
+The dashboard API reports code installed, Idle and explicit activation blockers.
+The automated owner Edge preview was blocked by ERR_BLOCKED_BY_CLIENT; current
+visual confirmation was requested from the owner. Do not claim this latest view
+was visually verified. Earlier capital/email visual evidence remains historical.
+Daily mail remains scheduled for 19:30; today's first scheduled run is still
+pending at this check. Provider acceptance/inbox evidence are separate.
+
+Controlled real broker/GTT/generated-child verification and owner activation
+remain pending. Read ORACLE_EXECUTION.md before considering activation. The
+button saves intent; it cannot bypass pause, mode or exact release/policy proofs.
+
 ## Architecture
 
 Oracle hosts the existing five-second read-only Groww collector, SQLite journal,

@@ -4,18 +4,18 @@ This section is current; older entries below are dated verification history.
 Premium policy v3 supersedes offset/barrier/swing/reversal entries.
 The owner's October 5 follow-up retired active news collection and news gates.
 Read-only preparation and the durable Oracle entry/protection/trailing/roll/exit
-controller are implemented; see ORACLE_EXECUTION.md. Preparation's older deployed
-release is listed below until the new paused rollout is recorded. Real broker
+controller are deployed paused; see ORACLE_EXECUTION.md. Real broker
 acceptance, GTT/child linkage and owner activation remain pending.
 
 | Component | Actual result |
 | --- | --- |
-| Oracle observer | `trading-observer.service` enabled/active; immutable release `492c7355827fac857aa14d72269c74703f22de9d`; existing runtime, read-only HTTP allowlist including only hypothetical margin POSTs, no public port |
+| Oracle runtime | `trading-observer.service` active; immutable release `1ad924810b8531346a20c4b2297c03e5408ca983` deployed 18:35 JST. Existing observer/controller/report host, no public port. HTTP writes require an exact one-request capability plus activation/pause/intent/freshness gates; all are currently disabled |
 | Desktop | Installed app now reads Oracle via verified private SSH/Unix socket; background/sign-in launch reused |
 | Capital | Confirmed opening investment and zero withdrawals provisioned privately in Oracle SQLite; October 2026 is the first monthly API fee. Live starting formula and isolated November result verified; production contains October only. All four amounts visible near the top in owner Edge and visual email preview; Self/Algo P&L also visible near the top |
 | Withdrawals | Protected Record withdrawal form and fixed SSH/socket accounting command; INR paise arithmetic, dated owner records and persistent idempotent IDs. Successful records/conflicts/retries tested in isolated HTTP/SQLite fixtures; production form zero validation and keyboard dismissal verified; no test withdrawal saved to production |
 | Capital backups | Before/after SQLite integrity verified; post-update 23,015,424-byte off-host copy hash matched. Original journals and backups retained |
 | Owner control | On/Off intent persists in Oracle journal until explicit change; isolated VM restart test passed; production intent remains Off |
+| Execution controller | Durable hedge-first entry, partial-fill recovery, GTT/child reconciliation, trail tightening, short-first exits/rolls, hedge improvement and expiry replacement implemented/replay tested. Actual SDK1.5.0 smart methods and authenticated reads verified; complete order-list fallback verified after manual detail route GA004. Provider writes and real generated-child linkage remain unverified; no protection armed |
 | Strategy policy | Everyday ₹20 NIFTY / ₹80 SENSEX, one basket/max two lots, 14:00–19:00 JST; expiry Late-session at 18:00, 3 strike intervals; deterministic review functions tested |
 | Actual reads | VM Groww authentication, current NIFTY/SENSEX/BANKNIFTY quotes, positions, money and expiry/master evidence passed; five-second target remains subject to read/CPU/network delays |
 | News | Retired by owner: no active news fetch worker, readiness gate or dashboard/email news wording. Historical dated evidence retained |
@@ -28,7 +28,8 @@ acceptance, GTT/child linkage and owner activation remain pending.
 | Migration/backups | SQLite integrity passed: 1,621 observations/588 P&L points, zero owned orders migrated; original journal retained. Post-migration backup + restore to new path passed; 17,428,480-byte off-host copy hash matched |
 | Isolation/shared VM | Separate service identity; root-owned source, root0600 reused credentials/mail, private state/socket; memory capped240MB/CPU35%; shared Qwen/mail/tunnels stayed active; old trader disabled/inactive; all pause markers preserved |
 | Preparation backups | Before/after SQLite integrity verified; 30,027,776-byte post-deployment off-host copy hash matched. Original journals/backups retained; production has zero owned orders and zero withdrawals |
-| Verification | **259 tests passed, 4 POSIX skips** on Windows, config/compile/JS checks and offline demo passed; exact release CI on Ubuntu3.12 and Windows3.13 passed (run37282655954). Capital widths 320/390/768/1440 checked previously; narrow live money-card clipping fixed. No broker order writes, key rotations, permission changes, merges or VM shutdown |
+| Controller backups | Pre/post SQLite integrity verified; 35,397,632-byte post-update off-host hash matched. Journals/capital preserved; zero owned orders; pause/paper/Off retained; shared services stayed active |
+| Verification | **283 tests passed, 4 POSIX skips** on Windows, config/compile/JS checks and offline demo passed; exact runtime release CI on Ubuntu3.12 and Windows3.13 passed (run37290829567). Current dashboard API verified installed/Idle/blocked and healthy advancing heartbeat; owner Edge automated preview blocked by client, current visible confirmation pending. No broker order writes, key rotations, permission changes, merges or VM shutdown |
 
 **Not complete:** controlled real broker acceptance, persistent protection and
 generated-child linkage verification, owner activation and actual execution
