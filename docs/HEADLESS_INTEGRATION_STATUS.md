@@ -23,6 +23,23 @@ runbook.
 
 ### Live chart movement and refresh
 
+The later October 5 readability update replaces stretched fixed-size SVGs with
+geometry matching each panel's CSS dimensions. Price strokes stay at 1.8px,
+axis text remains readable, and single-position panels gain height. Entry/SL/
+target lines have explicit tags; the last plotted price has a badge and hover
+crosshair. Session/30-minute/15-minute controls filter actual recorded points.
+Missing-read gaps remain disconnected and are shaded rather than filled in.
+These are local asset changes; no runtime framework or collector was replaced.
+
+Edge verified an actual single-position panel and its disappearance when Groww
+reported no positions. Labelled sample preview verified both panels and all six
+entry/SL/target lines, 30-minute/15-minute filtering, keyboard activation and
+settled SVG dimensions at 320/390/768/1440px with no page overflow. The app was
+restored to actual Groww data with the normal viewport. Local retained tests,
+configuration, JS syntax and offline demo passed. Private screenshots/QA evidence
+remain ignored under `.agent-state/`. Trading stays paused and manual trades
+remain protected.
+
 Installed locally: default index/option lines now use actual LTP observations
 from the existing SQLite journal at their reception times. They refresh with each
 five-second target read instead of waiting for the next five-minute close. The

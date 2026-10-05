@@ -48,6 +48,16 @@ unchanged. No strategy has a validated net-profit probability or executable plan
 
 ## Implemented and verified
 
+- October 5 chart readability update reuses the existing local assets: responsive
+  SVG geometry, a fixed thin price stroke, readable axes, labelled entry/SL/target
+  lines, latest plotted-price badge, hover crosshair and Session/30-minute/15-minute
+  controls. Missing-read gaps remain disconnected and are shaded. Actual single-
+  position rendering and disappearance after Groww reported no positions passed.
+  Labelled sample preview verified both panels, all six protection/entry lines,
+  keyboard range selection and settled geometry at 320/390/768/1440px without
+  page overflow. Preview and viewport overrides were cleared afterward. Local
+  tests, configuration, JS syntax and offline demo passed; no broker writes.
+
 - October 5 live-line correction is installed locally. Both active option lines
   recovered hundreds of actual same-day points from SQLite after restart and
   changed automatically in Edge without a manual refresh. Independent quote,

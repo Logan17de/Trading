@@ -9,6 +9,7 @@ const signed = value => known(value) ? (value > 0 ? "+" : "") + money.format(val
 const percent = value => known(value) ? (value > 0 ? "+" : "") + value.toFixed(1) + "%" : "—";
 let liveData = null, data = null, demo = false, selectedIndex = "NIFTY", timeZone = "Asia/Tokyo", autoRefresh = true, chartDetail = "live";
 let contracts = {buy:null, sell:null}, refreshPending = false, lastRequest = 0;
+let chartRange = 'session';
 try {selectedIndex = localStorage.getItem("trading-index") || "NIFTY"; timeZone = localStorage.getItem("trading-timezone") || timeZone;} catch {}
 if (!["NIFTY","SENSEX","BANKNIFTY"].includes(selectedIndex)) selectedIndex = "NIFTY";
 if (!["Asia/Tokyo","Asia/Kolkata"].includes(timeZone)) timeZone = "Asia/Tokyo";
@@ -25,15 +26,18 @@ function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=
   const rows = (points || []).filter(p => known(p.value) && Number.isFinite(Date.parse(p.at)));
   if (!rows.length || (mini && rows.length < 2)) {emptyChart(container, rows.length ? "Waiting for more observations" : "No chart data", "No prices are filled in or simulated."); return;}
   const markers=levels.filter(p=>known(p.price)&&p.price>0&&['ENTRY','SL','TARGET'].includes(p.kind));
-  const signature=JSON.stringify({rows,color,area,mini,pnl,label,markers,timeZone,fiveMinuteGrid,gapSeconds});
+  // Match the drawing to CSS pixels so a single wide panel cannot stretch type/strokes.
+  const width=Math.max(160,Math.round(container.clientWidth)||640), height=Math.max(60,Math.round(container.clientHeight)||(mini?68:280));
+  const premium=container.classList.contains('option-chart');
+  const signature=JSON.stringify({rows,color,area,mini,pnl,label,markers,timeZone,fiveMinuteGrid,gapSeconds,width,height});
   if(container.dataset.chartSignature===signature) return;
   container.dataset.chartSignature=signature;
-  const width=640, height=mini?120:250, left=mini?1:47, right=mini?4:15, top=mini?10:14, bottom=mini?7:29;
+  const left=mini?2:48, right=mini?3:premium?76:14, top=mini?5:28, bottom=mini?5:32;
   const domain=[...rows.map(r=>r.value),...markers.map(p=>p.price)];
   let low=Math.min(...domain), high=Math.max(...domain);
   if (pnl) {low=Math.min(low,0); high=Math.max(high,0);}
   let span=high-low || Math.max(Math.abs(high)*.02,1); low-=span*.09; high+=span*.09; if(!pnl) low=Math.max(0,low); span=high-low;
-  const first=fiveMinuteGrid?Math.floor(Date.parse(rows[0].at)/300000)*300000:Date.parse(rows[0].at), last=Date.parse(rows.at(-1).at), duration=last-first||1;
+  const first=Date.parse(rows[0].at), last=Date.parse(rows.at(-1).at), duration=last-first||1;
   const inset=0;
   const x=r=>rows.length===1?(width+left-right)/2:left+inset+(Date.parse(r.at)-first)/duration*(width-left-right-2*inset), y=v=>top+(high-v)/span*(height-top-bottom);
   const path=rows.map((r,i)=>`${i&&Date.parse(r.at)-Date.parse(rows[i-1].at)<=gapSeconds*1000?"L":"M"}${x(r).toFixed(2)},${y(r.value).toFixed(2)}`).join(" ");
@@ -42,31 +46,50 @@ function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=
   const fill=`${path} L${x(rows.at(-1)).toFixed(2)},${base.toFixed(2)} L${x(rows[0]).toFixed(2)},${base.toFixed(2)} Z`;
   let grid="";
   if (!mini) {
-    for(let i=0;i<4;i++) {
-      const value=low+span*(3-i)/3, at=y(value);
-      const tick=Math.abs(value)>=1000?(value/1000).toFixed(Math.abs(value)>=10000?0:1)+"k":value.toFixed(span<10?2:span<100?1:0);
-      grid+=`<line x1="${left}" y1="${at}" x2="${width-right}" y2="${at}" stroke="#eaf0ed"/><text x="${left-9}" y="${at+4}" text-anchor="end" fill="#72849a" font-size="10">${tick}</text>`;
+    const rawStep=span/4, scale=10**Math.floor(Math.log10(rawStep));
+    const step=[1,2,2.5,5,10].find(n=>n*scale>=rawStep)*scale;
+    for(let value=Math.ceil(low/step)*step;value<=high;value+=step) {
+      const at=y(value), tick=Math.abs(value)>=1000?(value/1000).toFixed(Math.abs(value)>=10000?0:1)+"k":value.toFixed(step<1?2:step<10?1:0);
+      grid+=`<line x1="${left}" y1="${at}" x2="${width-right}" y2="${at}" stroke="#e8eeeb" vector-effect="non-scaling-stroke"/><text x="${left-10}" y="${at+4}" text-anchor="end" fill="#526980" font-size="12">${tick}</text>`;
     }
-    const tickTimes=fiveMinuteGrid?Array.from({length:Math.floor(duration/(Math.max(1,Math.ceil(duration/300000/5))*300000))+1},(_,i)=>first+i*Math.max(1,Math.ceil(duration/300000/5))*300000):Array.from({length:5},(_,i)=>first+i/4*duration);
+    const tickCount=Math.max(2,Math.floor((width-left-right)/100));
+    const minimumMinutes=duration/60000/tickCount;
+    const tickStep=([5,10,15,30,60,120,180,240,360,720].find(n=>n>=minimumMinutes)||1440)*60000;
+    const alignedStart=Math.ceil(first/tickStep)*tickStep;
+    const tickTimes=fiveMinuteGrid?Array.from({length:Math.max(0,Math.floor((last-alignedStart)/tickStep)+1)},(_,i)=>alignedStart+i*tickStep):Array.from({length:Math.min(5,tickCount+1)},(_,i)=>first+i/Math.min(4,tickCount)*duration);
+    const minimumTickGap=80/(width-left-right)*duration;
+    if(fiveMinuteGrid&&(!tickTimes.length||tickTimes[0]-first>minimumTickGap)) tickTimes.unshift(first);
+    if(fiveMinuteGrid&&last-tickTimes.at(-1)>minimumTickGap) tickTimes.push(last);
     for(let i=0;i<tickTimes.length;i++) {
-      const at=left+(tickTimes[i]-first)/duration*(width-left-right), time=clock(tickTimes[i]);
-      grid+=`<line x1="${at}" y1="${top}" x2="${at}" y2="${height-bottom}" stroke="#f0f4f1"/><text x="${at}" y="${height-8}" text-anchor="${i===0?"start":i===tickTimes.length-1?"end":"middle"}" fill="#72849a" font-size="10">${time}</text>`;
+      const at=left+(tickTimes[i]-first)/duration*(width-left-right), time=duration<300000?clockSeconds(tickTimes[i]):clock(tickTimes[i]);
+      grid+=`<line x1="${at}" y1="${top}" x2="${at}" y2="${height-bottom}" stroke="#f0f4f1" vector-effect="non-scaling-stroke"/><text x="${at}" y="${height-9}" text-anchor="${i===0?"start":i===tickTimes.length-1?"end":"middle"}" fill="#526980" font-size="12">${time}</text>`;
     }
+    if(premium) grid+=`<text x="${left}" y="13" fill="#526980" font-size="11">Premium ₹</text>`;
   }
-  const segments=pnl?rows.slice(1).map((r,i)=>`<path d="M${x(rows[i])},${y(rows[i].value)} L${x(r)},${y(r.value)}" fill="none" stroke="${r.value>=0?"#08b75d":"#ef4b2c"}" stroke-width="2.5"/>`).join(""):`<path d="${path}" fill="none" stroke="${color}" stroke-width="${mini?2.7:2.6}" stroke-linejoin="round" stroke-linecap="round"/>`;
-  const markerColors={ENTRY:'#3974c8',SL:'#dc503f',TARGET:'#0e9c68'};
-  const levelLines=markers.map(p=>`<line class="price-level" data-level-kind="${p.kind}" x1="${left}" x2="${width-right}" y1="${y(p.price)}" y2="${y(p.price)}" stroke="${markerColors[p.kind]}" stroke-width="1.5" stroke-dasharray="6 4"><title>${p.kind==='ENTRY'?'Average entry':p.kind} ${escapeHTML(inr(p.price))}</title></line>`).join('');
-  container.innerHTML=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHTML(label)} · ${rows.length} observations"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".2"/><stop offset="1" stop-color="${color}" stop-opacity=".015"/></linearGradient></defs>${grid}${area&&!hasGaps?`<path d="${fill}" fill="url(#${id})"/>`:""}${pnl?`<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#bdcec3"/>`:""}${segments}${mini?"":`<circle cx="${x(rows.at(-1))}" cy="${y(rows.at(-1).value)}" r="4.5" fill="${color}" stroke="white" stroke-width="2"/>`}</svg>`;
-  container.querySelector('svg').insertAdjacentHTML('beforeend',levelLines);
+  const segments=pnl?rows.slice(1).map((r,i)=>`<path d="M${x(rows[i])},${y(rows[i].value)} L${x(r)},${y(r.value)}" fill="none" stroke="${r.value>=0?"#08b75d":"#ef4b2c"}" stroke-width="2" vector-effect="non-scaling-stroke"/>`).join(""):`<path class="price-path" d="${path}" fill="none" stroke="${color}" stroke-width="${mini?1.6:1.8}" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const markerColors={ENTRY:'#34649a',SL:'#bf3e2f',TARGET:'#087f3f'};
+  let previousLabel=-Infinity;
+  const levelLines=[...markers].sort((a,b)=>b.price-a.price).map(p=>{
+    const labelY=Math.min(height-bottom-10,Math.max(top+10,y(p.price)-12,previousLabel+22)); previousLabel=labelY;
+    const text=(p.kind==='ENTRY'?'Entry':p.kind)+' '+inr(p.price), tagWidth=text.length*6.6+16;
+    return `<line class="price-level" data-level-kind="${p.kind}" x1="${left}" x2="${width-right}" y1="${y(p.price)}" y2="${y(p.price)}" stroke="${markerColors[p.kind]}" stroke-width="1" stroke-dasharray="5 5" vector-effect="non-scaling-stroke"><title>${p.kind==='ENTRY'?'Average entry':p.kind} ${escapeHTML(inr(p.price))}</title></line>${premium?`<g class="level-tag"><rect x="${left+8}" y="${labelY-14}" width="${tagWidth}" height="20" rx="4" fill="#fff" stroke="#e4eae7"/><text x="${left+16}" y="${labelY}" fill="${markerColors[p.kind]}" font-size="11" font-weight="600">${escapeHTML(text)}</text></g>`:''}`;
+  }).join('');
+  const gaps=premium?rows.slice(1).map((r,i)=>Date.parse(r.at)-Date.parse(rows[i].at)>gapSeconds*1000?`<g class="data-gap"><title>No observations ${clockSeconds(rows[i].at)}–${clockSeconds(r.at)}</title><rect x="${x(rows[i])}" y="${top}" width="${x(r)-x(rows[i])}" height="${height-top-bottom}" fill="#f1f4f3"/>${x(r)-x(rows[i])>65?`<text x="${(x(r)+x(rows[i]))/2}" y="${height-bottom-10}" text-anchor="middle" fill="#526980" font-size="11">No data</text>`:''}</g>`:'').join(''):'';
+  const lastRow=rows.at(-1), lastY=y(lastRow.value);
+  const lastLabel=premium?`<line x1="${left}" x2="${width-right}" y1="${lastY}" y2="${lastY}" stroke="${color}" stroke-opacity=".35" stroke-dasharray="2 5" vector-effect="non-scaling-stroke"/><rect x="${width-right+8}" y="${lastY-11}" width="64" height="22" rx="4" fill="#172d48"/><text x="${width-right+40}" y="${lastY+4}" text-anchor="middle" fill="white" font-size="12" font-weight="600">${lastRow.value.toFixed(2)}</text>`:'';
+  container.innerHTML=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeHTML(label)} · ${rows.length} observations"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".12"/><stop offset="1" stop-color="${color}" stop-opacity=".015"/></linearGradient></defs>${gaps}${grid}${area&&!hasGaps?`<path d="${fill}" fill="url(#${id})"/>`:""}${pnl?`<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#bdcec3"/>`:""}${levelLines}${lastLabel}${segments}${mini?"":`<circle cx="${x(lastRow)}" cy="${lastY}" r="3" fill="${color}" stroke="white" stroke-width="1.5"/>`}<g class="chart-crosshair" visibility="hidden"><line y1="${top}" y2="${height-bottom}" stroke="#789082" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"/><circle r="4" fill="white" stroke="${color}" stroke-width="1.5"/></g></svg>`;
   if(mini) return;
   const tooltip=document.createElement("div"); tooltip.className="chart-tooltip"; tooltip.hidden=true; container.append(tooltip);
   container.onpointermove=event=> {
     const box=container.getBoundingClientRect(), relative=(event.clientX-box.left)/box.width*width;
     const nearest=rows.reduce((best,r)=>Math.abs(x(r)-relative)<Math.abs(x(best)-relative)?r:best,rows[0]);
+    const crosshair=container.querySelector('.chart-crosshair'); crosshair.setAttribute('visibility','visible');
+    const vertical=crosshair.querySelector('line'); vertical.setAttribute('x1',x(nearest));vertical.setAttribute('x2',x(nearest));
+    const dot=crosshair.querySelector('circle');dot.setAttribute('cx',x(nearest));dot.setAttribute('cy',y(nearest.value));
     tooltip.innerHTML=`${escapeHTML(fiveMinuteGrid?clockSeconds(nearest.at):clock(nearest.at))} ${timeZone==="Asia/Tokyo"?"JST":"IST"}<b>${escapeHTML(inr(nearest.value))}</b>`;
     tooltip.hidden=false; tooltip.style.left=Math.max(0,Math.min(event.clientX-box.left+12,box.width-tooltip.offsetWidth-4))+"px";
   };
-  container.onpointerleave=()=>{tooltip.hidden=true;};
+  container.onpointerleave=()=>{tooltip.hidden=true;container.querySelector('.chart-crosshair')?.setAttribute('visibility','hidden');};
 }
 function renderIndices() {
   $("indices").innerHTML=[...(data.markets||[])].sort((a,b)=>["NIFTY","SENSEX","BANKNIFTY"].indexOf(a.index)-["NIFTY","SENSEX","BANKNIFTY"].indexOf(b.index)).map(m=> {
@@ -107,15 +130,24 @@ function drawOption(side, option) {
   if(!legend) {legend=document.createElement('div');legend.id=side+'-levels';legend.className='level-legend';$(side+'-chart').before(legend);}
   if(!option) {legend.innerHTML='';$(side+'-chart').innerHTML='';delete $(side+'-chart').dataset.chartSignature;return;}
   const levels=option?.price_levels||[];
+  let tools=$(side+'-chart-tools');
+  if(!tools) {
+    tools=document.createElement('div');tools.id=side+'-chart-tools';tools.className='option-chart-tools';legend.before(tools);
+    tools.innerHTML=`<span>Price history</span><div class="chart-range" role="group" aria-label="${side} chart time range">${[['session','Session'],['30','30 min'],['15','15 min']].map(([value,text])=>`<button type="button" data-range="${value}">${text}</button>`).join('')}</div>`;
+    tools.addEventListener('click',event=>{const button=event.target.closest('button[data-range]');if(button){chartRange=button.dataset.range;renderOptions();}});
+  }
+  for(const button of tools.querySelectorAll('button')) button.setAttribute('aria-pressed',String(button.dataset.range===chartRange));
   legend.innerHTML=levels.map(p=>`<span class="level-${p.kind.toLowerCase()}">${p.kind==='ENTRY'?(side==='buy'?'Bought avg':'Sold avg'):p.kind} <b>${escapeHTML(inr(p.price))}</b>${p.kind!=='ENTRY'&&known(p.quantity)&&p.quantity<option.quantity?` <small>(${p.quantity}/${option.quantity} units)</small>`:''}</span>`).join('');
   if(!levels.some(p=>p.kind==='ENTRY')&&option) legend.insertAdjacentHTML('afterbegin','<span>Entry price unavailable</span>');
   if(option&&option.protective_levels_status!=='AVAILABLE'&&!data.demo) legend.insertAdjacentHTML('beforeend','<span>SL/target check incomplete</span>');
   setAmount(side+"-price",option?.last_price);
-  const series=chartDetail==='bars'?(option?.bar_series||option?.series):option?.series;
+  const allSeries=chartDetail==='bars'?(option?.bar_series||option?.series):option?.series;
+  const cutoff=chartRange==='session'?0:Date.parse(allSeries?.at(-1)?.at)-Number(chartRange)*60000;
+  const series=allSeries?.filter(p=>Date.parse(p.at)>=cutoff);
   const observed=chartDetail==='live'&&option?.series_source==='GROWW_OBSERVED_LTP';
-  const initial=series?.[0]?.value, change=known(initial)&&known(option?.last_price)?option.last_price-initial:null;
+  const initial=allSeries?.[0]?.value, change=known(initial)&&known(option?.last_price)?option.last_price-initial:null;
   $(side+'-period').textContent=observed?'Live · 5s target · 5-min grid':'5-minute closes';
-  $(side+'-chart-updated').textContent=series?.length?`Line through ${clockSeconds(series.at(-1).at)} ${timeZone==='Asia/Tokyo'?'JST':'IST'} · ${series.length} actual points${observed?' · reception times':''}`:'Waiting for real price observations';
+  $(side+'-chart-updated').textContent=series?.length?`Line through ${clockSeconds(series.at(-1).at)} ${timeZone==='Asia/Tokyo'?'JST':'IST'} · ${series.length} ${data.demo?'sample':'actual'} points${observed?' · reception times':''}`:'Waiting for real price observations';
   $(side+"-change").textContent=known(change)?`${change>=0?"+":""}${change.toFixed(2)}${initial>0?` (${percent(change/initial*100)})`:""}`:"";
   $(side+"-change").title=observed?"Change versus the first observed session price":"Change versus the first completed 5-minute closing price"; tone($(side+"-change"),change);
   $(side+"-book").textContent=option?`Bid ${inr(option.bid)} · Ask ${inr(option.ask)}`:"Bid — · Ask —";
@@ -210,6 +242,9 @@ $("timezone").value=timeZone;
 $("timezone").addEventListener("change",event=>{timeZone=event.target.value;try{localStorage.setItem("trading-timezone",timeZone);}catch{}render();});
 $("auto-refresh").addEventListener("change",event=>{autoRefresh=event.target.checked;if(autoRefresh) refresh();});
 $("chart-detail").addEventListener("change",event=>{chartDetail=event.target.value;render();});
+let resizeFrame;
+const chartResize=new ResizeObserver(()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{if(data) render();});});
+for(const id of ['buy-chart','sell-chart','pnl-chart','portfolio-chart']) if($(id)) chartResize.observe($(id));
 $("demo-toggle").addEventListener("change",event=>{demo=event.target.checked;contracts={buy:null,sell:null};data=demo?sampleData():liveData;render();if(!demo&&autoRefresh) refresh();});
 for(const tab of document.querySelectorAll(".tab")) tab.addEventListener("click",()=>{selectedIndex=tab.dataset.index;try{localStorage.setItem("trading-index",selectedIndex);}catch{}contracts={buy:null,sell:null};renderOptions(true);});
 for(const side of ["buy","sell"]) $(side+"-option").addEventListener("change",event=>{contracts[side]=event.target.value||null;const market=data.markets.find(m=>m.index===selectedIndex);drawOption(side,market?.options.find(o=>o.symbol===contracts[side]));});

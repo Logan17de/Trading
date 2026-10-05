@@ -15,6 +15,8 @@
   cycle. Show update time and point count; never manufacture movement or bridge
   outages. Completed five-minute closes remain a selectable comparison and the
   research input. Slow requests can extend the target cycle.
+  Draw at the panel's actual dimensions so labels and strokes stay undistorted.
+  Session/30-minute/15-minute views filter the recorded points, never synthesize them.
   Show each buy/sell panel only for confirmed nonzero open option positions.
   Historical fills, pending orders, closed positions and chain samples create no
   charts. Plot the broker position average entry and matched pending SL/active OCO or GTT exits
