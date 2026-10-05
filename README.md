@@ -1,8 +1,9 @@
 # Trading
 
-**Options Trader** is the owner's local PC app for Groww observations and strategy
-research. It extends the existing Python engine. Oracle remains the intended
-execution host; live execution is unfinished and inactive.
+**Options Trader** is the owner's local PC viewer/controller for the existing
+Python engine on Oracle. Oracle runs Groww observation, premium-policy review,
+read-only basket preparation, private accounting and visual daily reporting.
+Live broker execution is unfinished and inactive.
 
 Current repository: [`Logan17de/Trading`](https://github.com/Logan17de/Trading).
 Local checkout: `D:\Money Trader\Trading`.
@@ -12,7 +13,8 @@ Local checkout: `D:\Money Trader\Trading`.
 Open **Options Trader** from Desktop or Start. Its background monitor is registered
 to start automatically at Windows sign-in. Routine use needs no CMD window.
 The app uses an Edge app window at [127.0.0.1:8765](http://127.0.0.1:8765/).
-Keep the PC awake and online.
+Viewing/control and the independent PC-based VM alerts require the PC awake and
+online. Oracle collection and scheduled reporting run independently.
 
 - Groww quotes/orders target a **five-second** cycle. Default index/option **lines**
   show actual recorded prices with a **five-minute** grid, update time and point
@@ -22,46 +24,61 @@ Keep the PC awake and online.
   no chart. Broker average entry, matched SL and active OCO target prices are lines.
 - Manual, unknown and mixed trades are protected. Engine ownership requires exact
   private journal and broker-identity matches.
-- P&L and strategy outcomes need the reviewed private accounting ledger. Completed
-  trades without losses show 100% green; no completed trades shows “No results”.
-- Background observation runs 12:40–19:45 JST; support/resistance research starts at 12:55.
-  Structured barrier proposals are restricted to 13:00–18:15 JST.
+- Today's gross P&L comes from Groww and actual quotes, split Self / Algo /
+  Unassigned before charges. Net strategy results need the reviewed private
+  ledger. Completed trades without losses show 100% green; no results stays unknown.
+- Capital separately shows owner-recorded investment minus withdrawals minus
+  monthly API fees. Recording a withdrawal is bookkeeping, not a money transfer.
+- Oracle observation targets 12:40–19:45 JST weekdays. The visual daily email
+  targets 19:30 JST every calendar day; configured timing and inbox delivery are
+  reported separately.
 
 See [app setup and operations](docs/LOCAL_HEADLESS.md#local-options-dashboard).
 For another installation, run `scripts/Install-TradingApp.ps1` after local setup.
 
-## Latest everyday rule
+## Current premium rules
 
-From 13:15 JST: NIFTY spot +500 on Mon/Tue/Fri; SENSEX spot +1000 on Wed/Thu.
-One active slot, one lot; buy a higher call with the same expiry and quantity.
-Compare higher-call hedges by quoted maximum profit after costs within available
-margin, with loss exposure shown. Missing inputs block recommendation.
-Skip actual expiry day using Groww expiry dates and current contract
-metadata, including holiday shifts. Unknown evidence blocks entry.
+Everyday and Late-session are the only active review policies. The action window
+is 14:00 inclusive–19:00 exclusive JST. One algo basket may contain up to two lots,
+within actual available broker margin, with an equal-quantity same-expiry bought hedge.
 
-The confirmed higher-call buy supersedes the earlier ATM instruction. Historical
-studies/settings remain reproducible. Automatic entry and broker SL updates are inactive.
-Trailing-stop source has fake-broker verification; Oracle transport, initial
-protective-order placement, reviewed stop/target parameters and activation remain.
-See [strategy details](docs/OWNER_STRATEGY_RESEARCH.md).
+- Everyday: NIFTY Mon/Tue/Fri short CALL near ₹20; SENSEX Wed/Thu near ₹80.
+  Skip actual expiry proved by Groww and the current master, including holiday shifts.
+- Below ₹8, review closing the old short before replacing it with the next listed
+  short above ₹8. Keep the hedge unless improvement after incremental costs exceeds ₹100.
+- By 19:00, hold when short premium is above its entry minus ₹5; otherwise queue
+  a return to the index's target premium for the next allowed window.
+- Late-session: actual expiry after 18:00, UP → PUT three listed strikes below
+  ATM; DOWN → CALL three above; flat/unknown → no entry. Matching positions skip;
+  replacement requires verified algo exits and flat confirmation. Manual trades stay protected.
+- ₹2,000 basket-loss stop has priority over rolls. Broker protection is not
+  deployed; this trigger is not a guaranteed maximum loss.
+
+Owner On/Off persists until explicitly changed. The button cannot bypass the
+unfinished executor or pause. Actual read-only preparation labels its sampled
+scope; replay recovery tests do not prove persistent broker protection.
+News workers, news entry gates and news dashboard/email wording are retired.
+Historical offset, barrier, swing and news research remain provenance.
+Read [the exact premium policy](docs/PREMIUM_STRATEGY.md) and
+[execution preparation and remaining work](docs/EXECUTION_PREPARATION.md).
 
 ## What is retained
 
 | Path | Purpose |
 |---|---|
-| `src/nifty_engine/agent_engine/` | PC app, read-only collector, journal, owner research, isolated Codex, trailing adapter, visual email, news and backups |
+| `src/nifty_engine/agent_engine/` | Existing Oracle observer/policy/preparation, private journal, desktop viewer, visual email, replay execution guards and retained research |
 | `src/nifty_engine/brokers/` | Existing Groww market adapter and shared rate limiter |
 | `config/` | Latest PC policy, reproducible research protocols and disabled headless settings |
 | `scripts/` | App installation/startup, local read/research helpers and verification |
-| `deploy/` | Inactive Oracle scheduler/worker templates and dependency locks |
+| `deploy/` | Oracle observer isolation, historical scheduler/worker templates and dependency locks |
 | `docs/` | Current setup, engine, strategy, handoff and evidence |
 | `tests/` | Retained runtime and integration-boundary tests |
 | `.github/workflows/ci.yml` | Linux/Windows verification; no deployment or VM power action |
 
 Read [current status](docs/HEADLESS_INTEGRATION_STATUS.md) for dated test, broker,
 Codex and mail evidence, and [the handoff](docs/CODEX_HEADLESS_HANDOFF.md) before
-continuing development. Four strategy hypotheses are recorded; none has a validated
-net option-profit probability.
+continuing development. Historical research does not activate entries. Neither
+active rule has a validated net option-profit probability.
 
 ## Operating rules
 
