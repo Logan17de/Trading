@@ -7,7 +7,7 @@
   "roll_below_rupees": 8,
   "hold_entry_offset_rupees": 5,
   "hedge_change_min_improvement_inr": 100,
-  "loss_stop_inr": 2000,
+  "loss_stop_inr": 1000,
   "maximum_lots": 2,
   "late_session": {
     "entry_jst": "18:00",

@@ -114,8 +114,8 @@ def test_news_retired_for_premium_policy_not_faked_low(tmp_path, monkeypatch):
 
 def test_stop_uses_both_actual_fills_costs_quantity_and_tick():
     stop = protective_stop(20, 5, 65, 100, 0.05)
-    assert stop['trigger_price'] == 44.2
-    assert stop['price'] == 44.25 and not stop['loss_cap_guaranteed']
+    assert stop['trigger_price'] == 28.8
+    assert stop['price'] == 28.85 and not stop['loss_cap_guaranteed']
     assert stop['carry_protection_required']
     with pytest.raises(ValueError):
         protective_stop(20, 25, 130, 1900, 0.05)

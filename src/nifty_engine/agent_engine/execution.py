@@ -158,7 +158,7 @@ def rank_baskets(cfg, chain, margins, funds, expiry_evidence, now, *, strategy="
                 ranking_scope="SUPPLIED_VERIFIED_CANDIDATES", all_candidates_ranked=result["unranked"] == 0)
 
 
-def protective_stop(short_fill, hedge_fill, quantity, costs, tick, loss_limit=2000):
+def protective_stop(short_fill, hedge_fill, quantity, costs, tick, loss_limit=1000):
     """Conservative short premium trigger if the bought hedge falls to zero.
 
     The live basket monitor must also track both legs. Trigger/limit prices cannot

@@ -28,7 +28,7 @@ def observation(snapshot):
     return value
 
 
-def trailing_stop(short_fill, hedge_fill, quantity, costs, tick, best_pnl, limit=2000):
+def trailing_stop(short_fill, hedge_fill, quantity, costs, tick, best_pnl, limit=1000):
     """Tighten against recorded net basket high water, conservative hedge zero."""
     initial=protective_stop(short_fill,hedge_fill,quantity,costs,tick,limit)
     step=Decimal(str(tick))
@@ -38,7 +38,7 @@ def trailing_stop(short_fill, hedge_fill, quantity, costs, tick, best_pnl, limit
     return dict(initial,trigger_price=float(trigger),price=float(trigger+step))
 
 
-def cash_stop(cash,quantity,costs,tick,best_pnl,limit=2000):
+def cash_stop(cash,quantity,costs,tick,best_pnl,limit=1000):
     """Use all reconciled basket cash, including prior rolls and surplus hedges."""
     step=Decimal(str(tick))
     trigger=(Decimal(str(cash))+Decimal(str(limit))-Decimal(str(max(0,best_pnl)))-Decimal(str(costs)))/quantity
@@ -323,7 +323,7 @@ class PremiumExecutor:
             return self._status('SHORT_'+result['status'])
         if phase=='PROTECTION':
             if not s.get('protection_key'):
-                stop=cash_stop(self._cash(s),s['short_quantity'],s['costs'],short['tick_size'],s['best_pnl'])
+                stop=cash_stop(self._cash(s),s['short_quantity'],s['costs'],short['tick_size'],s['best_pnl'],self.cfg['loss_stop_inr'])
                 if stop['trigger_price']<=self._book(short,obs,'BUY',s['short_quantity'])['ask']:
                     s.update(phase='EXIT_SHORT',exit_reason='INSUFFICIENT_STOP_ROOM');self._save(s)
                     return self._status('EXIT_INSUFFICIENT_STOP_ROOM')
@@ -411,7 +411,7 @@ class PremiumExecutor:
             s.update(phase='EXIT_SHORT',exit_reason='BASKET_STOP_OR_TRAIL');self._save(s)
             return self._status('BASKET_STOP_EXIT_QUEUED')
         # Persistent protection is tightened first, never loosened on drawdown.
-        stop=cash_stop(self._cash(s),qty,s['costs'],short['tick_size'],s['best_pnl'])
+        stop=cash_stop(self._cash(s),qty,s['costs'],short['tick_size'],s['best_pnl'],self.cfg['loss_stop_inr'])
         if stop['trigger_price']<=sb['ask']:
             s.update(phase='EXIT_SHORT',exit_reason='CONSERVATIVE_TRAIL_REACHED');self._save(s)
             return self._status('CONSERVATIVE_TRAIL_EXIT_QUEUED')

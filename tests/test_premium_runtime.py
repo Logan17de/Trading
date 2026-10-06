@@ -37,7 +37,7 @@ def test_premium_thresholds_hold_stop_and_hedge_costs():
     assert p.everyday_review(POLICY,position,NOW)['action']=='REVIEW_ROLL_SHORT'
     position['short_premium']=7.99
     assert p.everyday_review(POLICY,position,NOW)['keep_hedge'] is True
-    position['net_pnl_inr']=-2000
+    position['net_pnl_inr']=-1000
     assert p.everyday_review(POLICY,position,NOW)['reason']=='BASKET_LOSS_STOP'
     position['ownership']='MANUAL_OR_UNKNOWN_PROTECTED'
     assert p.everyday_review(POLICY,position,NOW)['action']=='WAIT'
@@ -51,11 +51,19 @@ def test_carried_position_review_precedes_entry_window():
                   short_entry=20,short_premium=8,net_pnl_inr=100)
     assert not p.entry_window(at)
     assert p.everyday_review(POLICY,position,at)['action']=='REVIEW_ROLL_SHORT'
-    position['net_pnl_inr']=-2000
+    position['net_pnl_inr']=-1000
     assert p.everyday_review(POLICY,position,at)['reason']=='BASKET_LOSS_STOP'
     position['received_at']=(at-timedelta(seconds=16)).isoformat()
     assert p.everyday_review(POLICY,position,at)['action']=='WAIT'
     assert not p.position_review_window(at.replace(hour=19))
+
+
+def test_one_thousand_stop_boundary_does_not_close_early():
+    position=dict(ownership='ENGINE_VERIFIED',received_at=NOW.isoformat(),
+                  short_entry=20,short_premium=20,net_pnl_inr=-999)
+    assert p.everyday_review(POLICY,position,NOW)['action']=='HOLD'
+    position['net_pnl_inr']=-1000
+    assert p.everyday_review(POLICY,position,NOW)['action']=='REVIEW_OWNED_EXIT'
 
 def test_calendar_window_and_expiry_three_intervals():
     assert p.entry_window(NOW.replace(hour=14,minute=0))

@@ -14,7 +14,7 @@
   Actual expiry at 18:00: UP → PUT three listed strikes below ATM; DOWN → CALL
   three above. Matching position skips entry; otherwise only owned replacement.
   Below ₹8, propose short roll; keep hedge unless net improvement >₹100.
-  By 19:00, hold if short premium > entry minus ₹5. ₹2,000 basket stop is a
+  By 19:00, hold if short premium > entry minus ₹5. ₹1,000 basket stop is a
   trigger, not a guaranteed loss cap. See the policy guide for exact semantics.
 - Only explicit owner On/Off changes durable desired intent. Preserve On through
   restarts/windows/faults. Expose blocked readiness separately: broker executor

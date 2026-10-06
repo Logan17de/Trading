@@ -213,7 +213,7 @@ def test_trail_tightens_broker_stop_once_and_never_claims_guaranteed_cap(tmp_pat
     for _ in range(3):s.tick()
     assert sum(k=='MODIFY' for k,_ in s.broker.writes)==count
     assert not s.executor.public(s.observation())['loss_cap_guaranteed']
-    assert cash_stop(975,65,100,.05,500)['trigger_price']==36.5
+    assert cash_stop(975,65,100,.05,500)['trigger_price']==21.15
 
 
 def test_modify_timeout_retains_unknown_without_repeated_put_or_roll(tmp_path):

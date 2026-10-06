@@ -22,7 +22,7 @@ def validate(value):
             or value["everyday_skip_actual_expiry"] is not True):
         raise ValueError("fixed owner premium policy required")
     for field,expected in (("roll_below_rupees",8),("hold_entry_offset_rupees",5),
-                           ("hedge_change_min_improvement_inr",100),("loss_stop_inr",2000)):
+                           ("hedge_change_min_improvement_inr",100),("loss_stop_inr",1000)):
         if number(value[field]) != expected:
             raise ValueError("owner premium/stop thresholds required")
     lots = value["maximum_lots"]
