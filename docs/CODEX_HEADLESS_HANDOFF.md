@@ -4,6 +4,20 @@ October 5, 2026 · `Logan17de/Trading` · `main` · `D:\Money Trader\Trading`.
 Read AGENTS.md, PREMIUM_STRATEGY.md and HEADLESS_INTEGRATION_STATUS.md.
 The active owner policy is premium v3; historical v1/v2 studies are provenance.
 
+## October 6 stop threshold clarification
+
+Owner reduced basket loss trigger and trailing distance to ₹1,000. Policy,
+validation, stop calculations, dashboard label and current guide now agree;
+historical ₹2,000 rollout records below describe the former policy. New source
+is `565a137307b7b516e3b165e32baefbdce5038ae2`. There is still no expiry timed
+exit or fixed take-profit: 19:00 is an entry cutoff, not a liquidation rule.
+Expiry accounting needs actual broker-flat/order-terminal/protection evidence,
+not an invented settlement fill. Maintenance preserves paper, Off and pause.
+58 relevant tests, JavaScript/config checks and offline demo passed. Pre/post
+SQLite integrity-checked backups were taken. Observer and PC viewer now use the
+new immutable release; shared services stayed active. Real-money writes remain
+disabled. Remote policy verified ₹1,000; fresh owner Edge visual check pending.
+
 ## October 6 carried-position review update
 
 Deployed source `fc0e4f09e543a1c64769cfaddc5458e4d8cfc8ed` adds a read-only
