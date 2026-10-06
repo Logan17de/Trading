@@ -29,7 +29,7 @@ def test_persistent_on_survives_restart_cutoff_and_failed_readiness(tmp_path):
     assert not p.intent(PcJournal(tmp_path/'j.sqlite3').store)['enabled']
 
 def test_premium_thresholds_hold_stop_and_hedge_costs():
-    position=dict(ownership='ENGINE_VERIFIED',received_at=NOW.isoformat(),short_entry=20,short_premium=15.01)
+    position=dict(index='NIFTY',ownership='ENGINE_VERIFIED',received_at=NOW.isoformat(),short_entry=20,short_premium=15.01)
     assert p.everyday_review(POLICY,position,NOW,end_of_day=True)['action']=='HOLD'
     position['short_premium']=15
     assert p.everyday_review(POLICY,position,NOW,end_of_day=True)['reason']=='END_OF_DAY_PREMIUM_LOW'
@@ -47,7 +47,7 @@ def test_premium_thresholds_hold_stop_and_hedge_costs():
 
 def test_carried_position_review_precedes_entry_window():
     at=NOW.replace(hour=12,minute=45)
-    position=dict(ownership='ENGINE_VERIFIED',received_at=at.isoformat(),
+    position=dict(index='NIFTY',ownership='ENGINE_VERIFIED',received_at=at.isoformat(),
                   short_entry=20,short_premium=8,net_pnl_inr=100)
     assert not p.entry_window(at)
     assert p.everyday_review(POLICY,position,at)['action']=='REVIEW_ROLL_SHORT'
@@ -59,11 +59,28 @@ def test_carried_position_review_precedes_entry_window():
 
 
 def test_one_thousand_stop_boundary_does_not_close_early():
-    position=dict(ownership='ENGINE_VERIFIED',received_at=NOW.isoformat(),
+    position=dict(index='NIFTY',ownership='ENGINE_VERIFIED',received_at=NOW.isoformat(),
                   short_entry=20,short_premium=20,net_pnl_inr=-999)
     assert p.everyday_review(POLICY,position,NOW)['action']=='HOLD'
     position['net_pnl_inr']=-1000
     assert p.everyday_review(POLICY,position,NOW)['action']=='REVIEW_OWNED_EXIT'
+
+
+@pytest.mark.parametrize('index,target,threshold',[('NIFTY',20,8),('SENSEX',80,32)])
+def test_rollover_uses_sixty_percent_reduction_for_actual_index(index,target,threshold):
+    assert p.rollover_threshold(POLICY,index)==threshold
+    position=dict(index=index,ownership='ENGINE_VERIFIED',received_at=NOW.isoformat(),
+                  short_entry=target,short_premium=threshold+.01,net_pnl_inr=100)
+    assert p.everyday_review(POLICY,position,NOW)['action']=='HOLD'
+    position['short_premium']=threshold
+    result=p.everyday_review(POLICY,position,NOW)
+    assert result['action']=='REVIEW_ROLL_SHORT' and result['rollover_threshold_rupees']==threshold
+    position['short_premium']=threshold-.01
+    assert p.everyday_review(POLICY,position,NOW)['action']=='REVIEW_ROLL_SHORT'
+    position['net_pnl_inr']=-1000
+    assert p.everyday_review(POLICY,position,NOW)['action']=='REVIEW_OWNED_EXIT'
+    position['index']='UNKNOWN'
+    assert p.everyday_review(POLICY,position,NOW)['action']=='WAIT'
 
 
 @pytest.mark.parametrize('index,target,premium',[('NIFTY','SENSEX',80),('SENSEX','NIFTY',20)])

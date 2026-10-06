@@ -14,14 +14,14 @@ from .pc_control import JST, SYMBOL
 
 def validate(value):
     keys(value,{"format","active_strategies","action_window_jst","short_call_target_rupees",
-        "everyday_skip_actual_expiry","roll_below_rupees","hold_entry_offset_rupees",
+        "everyday_skip_actual_expiry","roll_reduction_pct","hold_entry_offset_rupees",
         "hedge_change_min_improvement_inr","loss_stop_inr","maximum_lots","late_session"})
     if (value["format"] != "trading-premium-policy-v3" or value["active_strategies"] != ["everyday","late_session"]
             or value["action_window_jst"] != ["14:00","19:00"]
             or value["short_call_target_rupees"] != {"NIFTY":20,"SENSEX":80}
             or value["everyday_skip_actual_expiry"] is not True):
         raise ValueError("fixed owner premium policy required")
-    for field,expected in (("roll_below_rupees",8),("hold_entry_offset_rupees",5),
+    for field,expected in (("roll_reduction_pct",60),("hold_entry_offset_rupees",5),
                            ("hedge_change_min_improvement_inr",100),("loss_stop_inr",1000)):
         if number(value[field]) != expected:
             raise ValueError("owner premium/stop thresholds required")
@@ -63,6 +63,11 @@ def position_review_window(now):
     return local.weekday()<5 and time(12,45)<=local.time()<time(19)
 
 
+def rollover_threshold(cfg,index):
+    """60% reduction from the configured index target, not a shared rupee amount."""
+    return round(cfg['short_call_target_rupees'][index]*(100-cfg['roll_reduction_pct'])/100,2)
+
+
 def set_intent(store, enabled, now):
     """Durable owner preference. Only explicit On/Off requests change it."""
     if type(enabled) is not bool:
@@ -92,6 +97,8 @@ def readiness(policy, now, *, paused=True, offline=False, fresh=False, news_risk
         "execution_enabled":False,"broker_writes":False,
         "blockers":blockers,"index":preferred_index(now),"window_open":entry_window(now),
         "policy_version":policy["format"],"maximum_lots":policy["maximum_lots"],
+        "roll_reduction_pct":policy['roll_reduction_pct'],
+        "rollover_threshold_rupees":{index:rollover_threshold(policy,index) for index in ('NIFTY','SENSEX')},
         "stop_loss_inr":policy["loss_stop_inr"],"stop_status":"BROKER_PROTECTION_NOT_VERIFIED_TRIGGER_NOT_GUARANTEED_LOSS_CAP",
         "news_required":False}
 
@@ -104,14 +111,16 @@ def everyday_review(policy, position, now, *, end_of_day=False):
     try:
         if not 0 <= (now-stamp(position["received_at"])).total_seconds() <= 15:return result
         entry, premium = number(position["short_entry"]), number(position["short_premium"])
+        threshold=rollover_threshold(policy,position['index'])
         if entry<=0 or premium<0:return result
         pnl = number(position["net_pnl_inr"]) if position.get("net_pnl_inr") is not None else None
     except (ValueError,TypeError,KeyError):return result
     if pnl is not None and pnl <= -policy["loss_stop_inr"]:
         return dict(result,action="REVIEW_OWNED_EXIT",reason="BASKET_LOSS_STOP",exit_sequence="CLOSE_SHORT_THEN_HEDGE")
-    if premium <= policy["roll_below_rupees"]:
+    if premium <= threshold:
         return dict(result,action="REVIEW_ROLL_SHORT" if position_review_window(now) else "QUEUE_NEXT_WINDOW_ROLL",
-            reason="SHORT_AT_OR_BELOW_8",target="NEXT_LISTED_SHORT_WITH_PREMIUM_ABOVE_8",keep_hedge=True,
+            reason="SHORT_AT_OR_BELOW_REDUCTION_THRESHOLD",target="NEXT_LISTED_SHORT_WITH_PREMIUM_ABOVE_THRESHOLD",keep_hedge=True,
+            rollover_threshold_rupees=threshold,roll_reduction_pct=policy['roll_reduction_pct'],
             hedge_change_min_improvement_inr=policy["hedge_change_min_improvement_inr"],
             exit_sequence="CONFIRM_OLD_SHORT_CLOSED_BEFORE_NEW_SHORT")
     if end_of_day:

@@ -4,7 +4,7 @@
   "action_window_jst": ["14:00", "19:00"],
   "short_call_target_rupees": {"NIFTY": 20, "SENSEX": 80},
   "everyday_skip_actual_expiry": true,
-  "roll_below_rupees": 8,
+  "roll_reduction_pct": 60,
   "hold_entry_offset_rupees": 5,
   "hedge_change_min_improvement_inr": 100,
   "loss_stop_inr": 1000,

@@ -4,6 +4,18 @@ October 5, 2026 · `Logan17de/Trading` · `main` · `D:\Money Trader\Trading`.
 Read AGENTS.md, PREMIUM_STRATEGY.md and HEADLESS_INTEGRATION_STATUS.md.
 The active owner policy is premium v3; historical v1/v2 studies are provenance.
 
+## October 6 percentage rollover clarification
+
+Owner clarified rollover as a 60% reduction from the configured index premium
+target: NIFTY ₹20 → ₹8; SENSEX ₹80 → ₹32. At or below the threshold, propose
+closing the original short then the next listed short with executable premium
+above that index threshold. The formula uses the index target, not the actual
+fill or the current weekday's preferred index. Shared hardcoded ₹8 selectors
+were removed from policy review, preparation, controller and dashboard wording.
+Config uses `roll_reduction_pct: 60`; dashboard readiness exposes both derived
+thresholds. Stop/trail remains ₹1,000, hedge improvement strictly >₹100, one
+basket/two-lot cap and manual protection unchanged. Real writes remain paused.
+
 ## October 6 expiry handoff proposal
 
 Owner requested expiry-basket close at 19:00 then switching indexes. The public

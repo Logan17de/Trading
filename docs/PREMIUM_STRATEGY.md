@@ -12,7 +12,7 @@ Late-session only.
 | Size | One owned basket, maximum two lots; actual margin determines affordability |
 | Hedge | Buy equal quantity/same expiry; rank quoted maximum net expiry profit after costs within actual margin |
 | Everyday expiry | Skip actual date from Groww AND current master, including holiday shifts |
-| Short rollover | Strictly below ₹8: close old short first, then next listed short above ₹8 |
+| Short rollover | 60% reduction from target: NIFTY ≤₹8 / SENSEX ≤₹32; close old short first, then next listed short above the index threshold |
 | Hedge rollover | Keep unless whole-basket improvement after incremental costs is strictly >₹100 |
 | By 19:00 | Hold if current short premium > entry minus ₹5; otherwise review return to ₹20/₹80 |
 | Stop | ₹1,000 basket-loss exit trigger; close short before hedge; not a guaranteed loss cap |
@@ -39,7 +39,7 @@ invent an expiry settlement fill or settlement P&L. Live execution is paused.
 
 October 6 clarification: fresh, exactly owned existing Everyday baskets receive
 read-only reviews from market open (12:45 JST), independently of the 14:00
-fresh-entry start. Premium at or below ₹8 produces a rollover review; basket
+fresh-entry start. Premium at or below 40% of its index target (NIFTY ₹8 / SENSEX ₹32) produces a rollover review; basket
 loss at ₹1,000 or the recorded trailing threshold produces an exit review first.
 The dashboard exposes these reviews even while owner intent is Off or the
 trading pause is present. Stale, incomplete and manual/mixed positions remain

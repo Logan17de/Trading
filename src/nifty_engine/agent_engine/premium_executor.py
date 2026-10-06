@@ -95,7 +95,7 @@ class PremiumExecutor:
                     contract=c['hedge'] if symbol==c['hedge']['symbol'] else s['roll_candidate']['hedge']
                     liquidation+=self._book(contract,obs,'SELL',q)['bid']*q
             pnl=self._cash(s)+liquidation-s['costs']
-            position=dict(ownership='ENGINE_VERIFIED',received_at=obs['received_at'],
+            position=dict(index=c['index'],ownership='ENGINE_VERIFIED',received_at=obs['received_at'],
                 short_entry=s['short_fill'],short_premium=sb['ask'],net_pnl_inr=pnl)
             review=policy.everyday_review(self.cfg,position,self.clock())
             if pnl<=max(-self.cfg['loss_stop_inr'],s.get('best_pnl',0)-self.cfg['loss_stop_inr']):
@@ -435,13 +435,13 @@ class PremiumExecutor:
             s['eod_checked_day']=day
             if sb['ask']<=s['short_fill']-5: s['queued_roll']='INDEX_TARGET'
             self._save(s)
-        roll=(sb['ask']<8 or s.get('queued_roll')) and s['strategy']=='EVERYDAY'
+        roll=(sb['ask']<=policy.rollover_threshold(self.cfg,c['index']) or s.get('queued_roll')) and s['strategy']=='EVERYDAY'
         if roll and policy.entry_window(now):
             if prepared.get('status')!='PREPARED_ROLL' or not selected:
                 return self._status('ROLL_WAIT_FOR_CURRENT_MARGIN_BOOKS')
             self._verify_candidate(selected,obs)
             if selected['short']['symbol']==short['symbol']: return self._status('NEXT_DISTINCT_SHORT_REQUIRED')
-            s.update(phase='ROLL_CLOSE_SHORT',roll_candidate=copy.deepcopy(selected),roll_reason='INDEX_TARGET' if s.get('queued_roll') else 'BELOW_8')
+            s.update(phase='ROLL_CLOSE_SHORT',roll_candidate=copy.deepcopy(selected),roll_reason='INDEX_TARGET' if s.get('queued_roll') else 'PREMIUM_REDUCTION')
             self._save(s); return self._status('OWNED_SHORT_ROLL_QUEUED')
         return self._status('MONITORING_OWNED_BASKET',protection='VERIFIED_ACTIVE')
 

@@ -95,7 +95,7 @@ class GrowwPreparation:
             short_symbol = executor['candidate']['short']['symbol']
             option = next((r for r in snapshot.get('ordered_options', []) if r['symbol']==short_symbol), {})
             premium = (option.get('quote') or {}).get('offer_price')
-            roll = not late_day and bool(executor.get('queued_roll') or (premium is not None and premium < cfg['roll_below_rupees']))
+            roll = not late_day and bool(executor.get('queued_roll') or (premium is not None and premium <= p.rollover_threshold(cfg,executor['candidate']['index'])))
         index = executor['candidate']['index'] if (forced or roll) else p.preferred_index(now)
         day = now.astimezone(JST).date().isoformat()
         evidence = snapshot.get('expiry_evidence', {}).get(index, {})
@@ -143,11 +143,11 @@ class GrowwPreparation:
         elif roll and not executor.get('queued_roll'):
             previous = executor['candidate']['short']
             # Use actual listed symbols/LTP only to select the bounded quote
-            # sample; executable bid above eight is checked again below.
+            # sample; executable bid above the index threshold is checked below.
             eligible = [r for r in samples if r[1]<previous['strike'] and
                         next((number(sides[kind]['ltp']) for strike,sides in chain['strikes'].items()
-                              if float(strike)==r[1] and kind in sides),0)>8]
-            if not eligible: return dict(result, reason='NEXT_LISTED_SHORT_ABOVE_8_REQUIRED')
+                              if float(strike)==r[1] and kind in sides),0)>p.rollover_threshold(cfg,index)]
+            if not eligible: return dict(result, reason='NEXT_LISTED_SHORT_ABOVE_THRESHOLD_REQUIRED')
             short_sample = max(eligible,key=lambda r:r[1])
         else:
             short_sample = samples[0]
@@ -272,7 +272,7 @@ class GrowwPreparation:
                     if improvement<=100: continue
                 credit=short['bid']-hedge['ask']; width=abs(short['strike']-hedge['strike'])
                 if not 0<credit<width: continue
-                if roll and not executor.get('queued_roll') and short['bid']<=8: continue
+                if roll and not executor.get('queued_roll') and short['bid']<=p.rollover_threshold(cfg,index): continue
                 candidates.append(dict(key=k,index=index,expiry=expiry,strategy=executor['strategy'],short=short,hedge=hedge,
                     quantity=qty,lots=lots,product='NRML',net_max_expiry_profit_inr=credit*qty-m['round_trip_charges_inr'],
                     basket_requirement_inr=m['basket_requirement_inr'],round_trip_charges_inr=m['round_trip_charges_inr'],

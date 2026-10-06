@@ -186,7 +186,7 @@ function renderControl() {
   $("preparation-status").textContent=prep?`Preparation: ${bookLabels[prep.reason]||prepLabels[prep.reason]||prep.status}${prep.at?' · '+dateTime(prep.at):''} · read-only comparison`:"";
   $("strategy-priority").textContent="NIFTY Mon/Tue/Fri; SENSEX Wed/Thu. Expiry: a matching position skips entry; otherwise replace only the algo-owned basket. Your trades are protected.";
   $("levels").hidden=true; $("rule-details").hidden=true;
-  $("analysis-status").textContent="Short premium below ₹8: review closing the short and replacing it with the next listed premium above ₹8. Keep the bought hedge unless the basket's improvement after costs exceeds ₹100.";
+  $("analysis-status").textContent="60% premium reduction: NIFTY ≤ ₹8 / SENSEX ≤ ₹32. Review replacing the short with the next listed premium above its threshold. Keep the hedge unless net improvement exceeds ₹100.";
   $("trailing-status").textContent=`Loss-stop trigger ₹1,000 per algo basket · ${data.execution_controller?.protection==='VERIFIED_ACTIVE'?'broker GTT verified':'broker protection not armed'} · fills and maximum loss are not guaranteed.`;
   $("control-note").textContent="By 19:00: hold when the short premium is above its entry premium − ₹5; otherwise queue a return to ₹20 / ₹80. Expiry at 18:00: uptrend → put 3 strikes below ATM; downtrend → call 3 strikes above ATM. Hedges are required. Broker activation and verification are shown above.";
   $("algo-start").disabled=data.demo||algoStartPending||on;
@@ -198,7 +198,7 @@ function renderControl() {
   const execution=data.execution_controller;
   $("execution-status").textContent=execution?.code_implemented?`Oracle executor installed · ${String(execution.phase||'IDLE').replaceAll('_',' ').toLowerCase()} · ${execution.provider_execution_verified?'broker validation recorded':'live broker validation pending'}`:'';
   const review=execution?.position_review;
-  if(review?.action==='REVIEW_ROLL_SHORT')$("execution-status").textContent+=' · Existing spread: review short rollover (premium ≤ ₹8)';
+  if(review?.action==='REVIEW_ROLL_SHORT')$("execution-status").textContent+=` · Existing spread: review short rollover (premium ≤ ${inr(review.rollover_threshold_rupees)})`;
   if(review?.action==='REVIEW_OWNED_EXIT'&&review?.reason!=='EXPIRY_1900_HANDOFF')$("execution-status").textContent+=' · Existing spread: review exit (basket stop/trail)';
   if(review?.reason==='EXPIRY_1900_HANDOFF')$("execution-status").textContent+=` · 19:00 expiry close review → ${review.successor.index} entry review after flat/session checks`;
 }

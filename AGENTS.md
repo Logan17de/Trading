@@ -16,7 +16,8 @@
   At 19:00 on actual expiry, propose closing the owned expiry basket then review
   the other index (NIFTY expiry → SENSEX ₹80; SENSEX expiry → NIFTY ₹20). Confirm
   flat/session/expiry/margin before a successor; live entry gates stay unchanged.
-  Below ₹8, propose short roll; keep hedge unless net improvement >₹100.
+  At 60% reduction (NIFTY ≤₹8 / SENSEX ≤₹32), propose short roll; keep hedge
+  unless net improvement >₹100.
   By 19:00, hold if short premium > entry minus ₹5. ₹1,000 basket stop is a
   trigger, not a guaranteed loss cap. See the policy guide for exact semantics.
 - Only explicit owner On/Off changes durable desired intent. Preserve On through
