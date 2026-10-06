@@ -48,7 +48,7 @@ def allowed_request(method, url, *, history=False, dashboard=False, calculations
         return False
     if calculations and method.upper() == "POST" and parsed.path == "/v1/margins/detail/orders" and not parsed.query:
         return True  # Broker's hypothetical basket calculation, not order submission.
-    if feed and method.upper()=='POST' and parsed.path=='/v1/api/apex/v1/socket/token/create/' and not parsed.query:
+    if feed and method.upper()=='POST' and parsed.path in ('/v1/api/apex/v1/socket/token/create/','/v1/api/apex/v1/socket/token/create') and not parsed.query:
         return True  # Ephemeral market-feed authentication only, never an order.
     read_paths = {"/v1/live-data/quote", "/v1/live-data/ltp", "/v1/historical/expiries", "/v1/user/detail"}
     if history:

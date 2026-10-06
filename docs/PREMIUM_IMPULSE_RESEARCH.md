@@ -202,6 +202,10 @@ Example **synthetic fixture**, not live evidence or a probability estimate:
 index/depth callbacks, not a guaranteed tick cadence or populated Greeks/IV/OI.
 SDK 1.5.0 fields are retained when actually supplied; missing/default zeros stay
 null. Depth is aggregate quote demand/supply, not authenticated trader identity.
+October 6 socket-auth preflight observed a 307 from the SDK trailing-slash route
+to its exact relative path without the slash, no query/fragment. The adapter
+requests that proven same-origin canonical route directly. Authentication
+redirect following remains disabled; no other host/path or order route is allowed.
 No aggressive-volume/CVD/institution identification is inferred. Full-session
 extrema are unknown when collection did not cover the session. The older score's
 historical volume baseline may use minute volumes; **research movement uses raw

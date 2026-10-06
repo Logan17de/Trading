@@ -188,10 +188,13 @@ class StreamingImpulse:
         members=universe(text,snapshot,self.clock())
         registry={}
         for symbol,r in members.items():registry.setdefault((r['exchange'],r['segment'],str(r['exchange_token'])),[]).append(symbol)
+        # October 6 provider 307 points from the SDK's trailing slash to this
+        # exact same-origin path. Request it directly; never follow auth redirects.
+        market.groww._GROWW_GENERATE_SOCKET_TOKEN_URL='https://api.groww.in/v1/api/apex/v1/socket/token/create'
         self._private_credentials();feed=GrowwFeed(market.groww)
         with self.lock:
             self.generation+=1;self.registry=registry;self.detector=ImpulseDetector(members,clock=self.clock);self.feed=feed
-            self.research.configure(members)
+            self.research.configure(members,replace=True)
         spots=[];prices=[];depth=[]
         for key,symbols in registry.items():
             r=members[symbols[0]];subscription=dict(exchange=key[0],segment=key[1],exchange_token=key[2])

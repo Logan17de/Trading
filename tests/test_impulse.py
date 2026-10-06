@@ -98,6 +98,8 @@ def test_baseline_requires_distinct_prior_days_and_actual_volume():
 def test_feed_auth_allowlist_never_grants_order_or_query_or_other_host():
     url='https://api.groww.in/v1/api/apex/v1/socket/token/create/'
     assert not allowed_request('POST',url)
+    assert allowed_request('POST',url.rstrip('/'),feed=True)
+    assert not allowed_request('POST',url.rstrip('/')+'?redirect=1',feed=True)
     assert allowed_request('POST',url,feed=True)
     for candidate in (url+'?secret=x',url.replace('api.groww.in','evil.example'),'https://api.groww.in/v1/order/create'):
         assert not allowed_request('POST',candidate,feed=True)

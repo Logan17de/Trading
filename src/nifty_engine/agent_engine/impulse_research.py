@@ -115,8 +115,9 @@ class PremiumImpulseMonitor:
     modify_order = submit_order
     cancel_order = submit_order
 
-    def configure(self, members):
+    def configure(self, members, *, replace=False):
         with self.lock:
+            if replace:self.members={}
             self.members.update(copy.deepcopy(members))
 
     def reset(self, reason='RECONNECT'):
@@ -226,7 +227,8 @@ class PremiumImpulseMonitor:
     def _begin(self, symbol, at, contracts):
         member=self.members[symbol];index=member['index'];expiry,atm,locked=contracts
         start=self._sample(symbol,at-5);row=self._sample(symbol,at)
-        futures=[(s,r) for s,r in self.members.items() if r['index']==index and r['role'] in ('future','future_candidate')]
+        futures=[(s,r) for s,r in self.members.items() if r['index']==index and r['role'] in ('future','future_candidate')
+                 and (not r.get('expiry') or r['expiry']>=self.day)]
         liquid=[]
         for s,r in futures:
             a,b=self._sample(s,at-5),self._sample(s,at);book=self.books.get(s)
