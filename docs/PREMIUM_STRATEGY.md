@@ -24,8 +24,15 @@ Late-session only.
 Three strike intervals do not mean three lots/positions. Weekday routing never
 proves expiry. At/after 19:00, roll proposals wait for the next window.
 
-Late-session has no configured timed exit or fixed profit target. Its basket
-stop/trail applies; 19:00 ends new-entry permissions, not an automatic close.
+On actual expiry at 19:00 JST, propose closing the verified owned expiry basket,
+short before hedge, then reviewing an Everyday basket on the other index:
+NIFTY expiry → SENSEX ₹80 call target; SENSEX expiry → NIFTY ₹20 call target.
+This proposal overrides usual weekday routing. Confirm the old basket flat
+before considering the successor. Unknown expiry evidence or both indexes
+expiring blocks the successor. Fresh margin/books, a bought hedge and a confirmed
+open exchange session are required. There is no fixed profit target.
+The live controller's 19:00 entry cutoff is unchanged: this is a read-only
+handoff proposal, not an automatic timed exit or a live-entry exception.
 After expiry the journal requires two fresh complete broker-flat snapshots and
 terminal order/protection evidence before marking the basket closed. It does not
 invent an expiry settlement fill or settlement P&L. Live execution is paused.

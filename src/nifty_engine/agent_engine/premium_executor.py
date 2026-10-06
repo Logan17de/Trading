@@ -79,12 +79,15 @@ class PremiumExecutor:
         """Read-only carried-basket review, even when entries/activation are blocked."""
         result=dict(action='WAIT',reason='OWNED_FRESH_POSITION_REQUIRED',broker_writes=False)
         s=self._state()
-        if s.get('phase')!='MONITORING' or s.get('strategy')!='EVERYDAY': return result
+        if s.get('phase')!='MONITORING': return result
         try:
             if not obs or obs.get('complete') is not True or not fresh(obs.get('received_at'),self.clock(),10):
                 return result
             self._exclusive(s,obs)
             c=s['candidate'];qty=s['short_quantity']
+            handoff=policy.expiry_handoff_review(self.cfg,c['index'],c['expiry'],obs.get('expiry_evidence',{}),self.clock())
+            if handoff['action']=='REVIEW_OWNED_EXIT':return handoff
+            if s.get('strategy')!='EVERYDAY':return result
             sb=self._book(c['short'],obs,'BUY',qty)
             liquidation=-sb['ask']*qty
             for symbol,q in self._net(s).items():

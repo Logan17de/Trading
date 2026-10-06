@@ -139,6 +139,19 @@ def test_preentry_carried_review_is_fresh_owned_and_never_writes(tmp_path):
     assert len(s.broker.writes)==writes
 
 
+def test_paused_expiry_handoff_public_review_never_places_orders(tmp_path):
+    s=Session(tmp_path);s.monitoring();s.pause.touch()
+    s.now=s.now.replace(day=6,hour=19,minute=0)
+    for book in s.books.values():book['received_at']=s.now.isoformat()
+    obs=s.observation();obs['expiry_evidence']['SENSEX']=dict(status='CONFIRMED_CURRENT_MASTER',day_jst='2026-10-06',expiries=['2026-10-08'])
+    before=list(s.broker.writes)
+    review=s.executor.public(obs)['position_review']
+    assert review['reason']=='EXPIRY_1900_HANDOFF' and review['successor']['index']=='SENSEX'
+    obs['positions'][0]['ownership']='MANUAL_OR_UNKNOWN_PROTECTED'
+    assert s.executor.public(obs)['position_review']['action']=='WAIT'
+    assert s.broker.writes==before
+
+
 def test_full_hedge_first_entry_persistent_protection_stop_short_first_and_restart(tmp_path):
     s=Session(tmp_path);s.monitoring()
     assert [r[0] for r in s.broker.writes]==['ORDER','ORDER','GTT']

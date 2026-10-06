@@ -65,6 +65,22 @@ def test_one_thousand_stop_boundary_does_not_close_early():
     position['net_pnl_inr']=-1000
     assert p.everyday_review(POLICY,position,NOW)['action']=='REVIEW_OWNED_EXIT'
 
+
+@pytest.mark.parametrize('index,target,premium',[('NIFTY','SENSEX',80),('SENSEX','NIFTY',20)])
+def test_expiry_1900_handoff_is_close_first_other_index_review(index,target,premium):
+    at=NOW.replace(hour=19,minute=0);day=at.date().isoformat()
+    evidence={index:dict(status='CONFIRMED_CURRENT_MASTER',day_jst=day,expiries=[day]),
+              target:dict(status='CONFIRMED_CURRENT_MASTER',day_jst=day,expiries=['2026-10-08'])}
+    assert p.expiry_handoff_review(POLICY,index,day,evidence,at.replace(hour=18,minute=59))['action']=='WAIT'
+    r=p.expiry_handoff_review(POLICY,index,day,evidence,at)
+    assert r['action']=='REVIEW_OWNED_EXIT' and not r['broker_writes']
+    assert r['successor']['index']==target and r['successor']['short_call_target_rupees']==premium
+    assert r['successor']['status']=='REVIEW_AFTER_CONFIRMED_FLAT'
+    evidence[target]['expiries']=[day]
+    assert p.expiry_handoff_review(POLICY,index,day,evidence,at)['successor']['status']=='WAIT_FOR_NONEXPIRING_INDEX_EVIDENCE'
+    evidence[index]['status']='UNKNOWN'
+    assert p.expiry_handoff_review(POLICY,index,day,evidence,at)['action']=='WAIT'
+
 def test_calendar_window_and_expiry_three_intervals():
     assert p.entry_window(NOW.replace(hour=14,minute=0))
     assert not p.entry_window(NOW.replace(hour=19,minute=0))

@@ -199,7 +199,8 @@ function renderControl() {
   $("execution-status").textContent=execution?.code_implemented?`Oracle executor installed · ${String(execution.phase||'IDLE').replaceAll('_',' ').toLowerCase()} · ${execution.provider_execution_verified?'broker validation recorded':'live broker validation pending'}`:'';
   const review=execution?.position_review;
   if(review?.action==='REVIEW_ROLL_SHORT')$("execution-status").textContent+=' · Existing spread: review short rollover (premium ≤ ₹8)';
-  if(review?.action==='REVIEW_OWNED_EXIT')$("execution-status").textContent+=' · Existing spread: review exit (basket stop/trail)';
+  if(review?.action==='REVIEW_OWNED_EXIT'&&review?.reason!=='EXPIRY_1900_HANDOFF')$("execution-status").textContent+=' · Existing spread: review exit (basket stop/trail)';
+  if(review?.reason==='EXPIRY_1900_HANDOFF')$("execution-status").textContent+=` · 19:00 expiry close review → ${review.successor.index} entry review after flat/session checks`;
 }
 let withdrawalPending=false;
 const pendingWithdrawalKey='options-trader-pending-withdrawal-v1';

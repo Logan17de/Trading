@@ -4,6 +4,17 @@ October 5, 2026 · `Logan17de/Trading` · `main` · `D:\Money Trader\Trading`.
 Read AGENTS.md, PREMIUM_STRATEGY.md and HEADLESS_INTEGRATION_STATUS.md.
 The active owner policy is premium v3; historical v1/v2 studies are provenance.
 
+## October 6 expiry handoff proposal
+
+Owner requested expiry-basket close at 19:00 then switching indexes. The public
+read-only position review now proposes close short before hedge on confirmed
+actual expiry, followed by SENSEX ₹80 if NIFTY expired or NIFTY ₹20 if SENSEX
+expired. The successor requires confirmed flat, actual nonexpiring-index evidence,
+fresh margin/books and confirmed exchange session. Both-expiring/unknown evidence
+blocks the successor. This supersedes the older no-timed-review description.
+Manual/mixed/stale positions wait; no state or broker writes occur in this review.
+Real-money timed closing and the 19:00 new-entry exception are not enabled.
+
 ## October 6 stop threshold clarification
 
 Owner reduced basket loss trigger and trailing distance to ₹1,000. Policy,

@@ -130,6 +130,26 @@ def hedge_change(current_profit, replacement_profit, incremental_cost):
         "net_improvement_inr":round(improvement,2),"broker_writes":False}
 
 
+def expiry_handoff_review(cfg, index, expiry, evidence, now):
+    """19:00 expiry close/other-index review. Never submits or authorizes orders."""
+    validate(cfg)
+    day=now.astimezone(JST).date().isoformat()
+    result=dict(action='WAIT',reason='CONFIRMED_EXPIRY_1900_REQUIRED',broker_writes=False)
+    if index not in ('NIFTY','SENSEX') or expiry!=day or now.astimezone(JST).time()<time(19):return result
+    current=evidence.get(index,{})
+    if current.get('status')!='CONFIRMED_CURRENT_MASTER' or current.get('day_jst')!=day or day not in current.get('expiries',[]):return result
+    other='SENSEX' if index=='NIFTY' else 'NIFTY'
+    target=evidence.get(other,{})
+    eligible=sorted(d for d in target.get('expiries',[]) if isinstance(d,str) and d>day)
+    ready=target.get('status')=='CONFIRMED_CURRENT_MASTER' and target.get('day_jst')==day and day not in target.get('expiries',[]) and bool(eligible)
+    return dict(result,action='REVIEW_OWNED_EXIT',reason='EXPIRY_1900_HANDOFF',
+        exit_sequence='CLOSE_SHORT_THEN_HEDGE',successor=dict(index=other,strategy='EVERYDAY',
+            short_call_target_rupees=cfg['short_call_target_rupees'][other],expiry=eligible[0] if ready else None,
+            status='REVIEW_AFTER_CONFIRMED_FLAT' if ready else 'WAIT_FOR_NONEXPIRING_INDEX_EVIDENCE',
+            requires=['CONFIRMED_OWNED_FLAT','FRESH_MARGIN_AND_BOOKS','CONFIRMED_EXCHANGE_SESSION_OPEN'],
+            broker_writes=False),execution_enabled=False)
+
+
 def expiry_transition(active, proposed, *, complete):
     """Never adopt, cancel or exit manual trades, even when their contracts match."""
     result = {"action":"WAIT","broker_writes":False,"reason":"COMPLETE_EXACT_POSITIONS_REQUIRED"}
