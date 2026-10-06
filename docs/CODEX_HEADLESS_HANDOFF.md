@@ -15,6 +15,11 @@ were removed from policy review, preparation, controller and dashboard wording.
 Config uses `roll_reduction_pct: 60`; dashboard readiness exposes both derived
 thresholds. Stop/trail remains ₹1,000, hedge improvement strictly >₹100, one
 basket/two-lot cap and manual protection unchanged. Real writes remain paused.
+Deployed immutable source `6598b7b95e70fd8422011bb569f5e56efa27858b`; 63 relevant
+tests, JavaScript/config checks and offline demo passed. Remote derived thresholds
+verified ₹8/₹32. Pre/post integrity-checked SQLite backups made; only observer
+and viewer restarted. Shared services active, pause/Off preserved. Current Edge
+visual confirmation not performed; dashboard API is the verification evidence.
 
 ## October 6 expiry handoff proposal
 
