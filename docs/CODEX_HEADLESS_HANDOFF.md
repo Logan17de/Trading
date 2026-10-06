@@ -22,6 +22,16 @@ GTT carry validity and generated-child identity remain unverified; no real order
 activation proof, LIVE change, pause removal or manual-position action occurred.
 See ORACLE_EXECUTION.md for the remaining provider-validation boundary.
 
+Deployed immutable source `c5985dad31813c424c07affcffb05d78523e7518` to Oracle
+and refreshed the PC viewer's protected transport pin. Full suite: 335 passed,
+four platform skips (339 collected); config/JavaScript checks and offline demo
+passed. Current API reports CONNECTED, healthy heartbeat advancing from sequence
+2 to 9, owner Off, execution disabled and archive SYNCED. Shared five services
+remain active. Pre/post journal backups passed integrity; private off-host post
+copy is 45,580,288 bytes, SHA256
+`a71d82f0ada3893ab2bfb9f01c980f3a485d16539be46e9fb97bc2fba992c478`.
+No fresh owner Edge visual check was performed; dashboard API is the evidence.
+
 ## October 6 Premium Impulse Monitor and private Supabase archive
 
 The attached multi-threshold research specification applies to **both NIFTY and

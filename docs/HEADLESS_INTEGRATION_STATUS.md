@@ -1,6 +1,22 @@
-# Current deployment · October 5, 2026
+# Current deployment · October 6, 2026
 
-This section is current; older entries below are dated verification history.
+Latest release: `c5985dad31813c424c07affcffb05d78523e7518`. Oracle executor
+transport is CONNECTED; healthy advancing heartbeat and PC API verified.
+Pre-market waits, connection retries and worker-fault freezes are now distinct.
+Gated 19:00 actual-expiry owned short-first close is implemented; the other-index
+successor remains a proposal behind the new-entry cutoff. Pre-14:00 carried
+stop exits are tested; pre-14:00 short rolls remain proposals. Current stop is
+₹1,000, superseding the historical ₹2,000 record below.
+
+335 tests passed, four platform skips; config/JavaScript and offline demo passed.
+Integrity-checked pre/post SQLite backups and matching private off-host copy
+verified. Shared services remain active, archive SYNCED, owner Off/paper/pause
+preserved. Real broker write receipts, GTT carry validity and generated-child
+identity are still unverified. No live orders or activation performed. Read
+CODEX_HEADLESS_HANDOFF.md and ORACLE_EXECUTION.md for current limits; older dated
+entries below are deployment history, not current live-validation proof.
+
+The October 5 deployment record follows; older entries are dated history.
 Premium policy v3 supersedes offset/barrier/swing/reversal entries.
 The owner's October 5 follow-up retired active news collection and news gates.
 Read-only preparation and the durable Oracle entry/protection/trailing/roll/exit
