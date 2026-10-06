@@ -20,15 +20,39 @@ merged from approved root0600 call-seller.env into observer.env without rotation
 Archive retries do not affect collection or trading. Dashboard shows archive
 pending records and local uncaptured ticks; server credentials never reach PC.
 
-Implementation and isolated pinned-SDK test suite are complete: 328 passed,
-four platform skips (332 collected); JS syntax, config, offline demo and replay
-checks passed. Ordinary Python found user-site SDK1.2.0; use `-I` for SDK1.5.0
-as production already does. Pre-update SQLite backup integrity verified.
-Supabase additive migration and existing server-key HTTP200 read were verified.
-Deployment/live capture/cloud readback evidence follows after rollout. Preserve
-pause/paper/owner Off and shared services; no broker writes are part of this work.
+Implemented and deployed immutable source
+`7f566c19c9eb84af176a7d38d11ac4d14e7676d8` to Oracle and the PC viewer.
+Isolated pinned-SDK suite: 330 passed, four platform skips (334 collected).
+JS syntax, config validation, offline demo (two successful synthetic analysis
+jobs) and replay checks passed. Ordinary Python found user-site SDK1.2.0; use
+`-I` for SDK1.5.0 as production already does.
 
-October 5, 2026 · `Logan17de/Trading` · `main` · `D:\Money Trader\Trading`.
+Owner Edge showed the existing Codex API key Expired; its authorized Approve
+action renewed it to Approved. Actual Oracle authentication and NIFTY/SENSEX
+quote reads then passed. Socket preflight connected with 41 instruments and
+75 acknowledged NATS topics. The observed exact same-origin canonical socket
+auth route is requested directly; authentication redirects remain disabled.
+This pre-market test received zero ticks: market-hours cadence, field population
+and the 2–3-second confirmation target are still unverified.
+
+Private Supabase migration `trading_private_research_archive` applied; RLS and
+server-only grants verified, existing server-key HTTP200 read passed. Cloud
+readback contains 3,846 algo-P&L observations and two algo-state records, with a
+content hash matching Oracle. Last provider acknowledgment was 11:59:56 JST;
+dashboard archive SYNCED, zero pending/uncaptured at 12:04 JST. These are recorded
+observations, not executed trades: the journal owns zero orders. Real research
+tick/event/outcome capture and the first daily summary await market data.
+
+Pre/post SQLite backups passed integrity checks. Post backup
+`post-premium-research-20261006T030127Z.sqlite3` is 43,347,968 bytes; the private
+off-host copy has matching SHA256
+`fe73283e173bb59ef1d2acfbc8f8ccccd39a1b0f0b514f409bd788d4468e869c`.
+Only observer/viewer restarted; all five observer/shared services are active.
+PC dashboard API verified; a new Edge dashboard visual check is not recorded.
+Pause, paper mode and owner Off remain intact. No broker orders were written,
+no activation proof created, and no credentials rotated.
+
+October 6, 2026 · `Logan17de/Trading` · `main` · `D:\Money Trader\Trading`.
 Read AGENTS.md, PREMIUM_STRATEGY.md and HEADLESS_INTEGRATION_STATUS.md.
 The active owner policy is premium v3; historical v1/v2 studies are provenance.
 
