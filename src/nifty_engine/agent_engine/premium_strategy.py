@@ -57,6 +57,12 @@ def entry_window(now):
     return local.weekday()<5 and time(14)<=local.time()<time(19)
 
 
+def position_review_window(now):
+    """Existing-position proposals start at market open, independently of entries."""
+    local = now.astimezone(JST)
+    return local.weekday()<5 and time(12,45)<=local.time()<time(19)
+
+
 def set_intent(store, enabled, now):
     """Durable owner preference. Only explicit On/Off requests change it."""
     if type(enabled) is not bool:
@@ -103,9 +109,9 @@ def everyday_review(policy, position, now, *, end_of_day=False):
     except (ValueError,TypeError,KeyError):return result
     if pnl is not None and pnl <= -policy["loss_stop_inr"]:
         return dict(result,action="REVIEW_OWNED_EXIT",reason="BASKET_LOSS_STOP",exit_sequence="CLOSE_SHORT_THEN_HEDGE")
-    if premium < policy["roll_below_rupees"]:
-        return dict(result,action="REVIEW_ROLL_SHORT" if entry_window(now) else "QUEUE_NEXT_WINDOW_ROLL",
-            reason="SHORT_BELOW_8",target="NEXT_LISTED_SHORT_WITH_PREMIUM_ABOVE_8",keep_hedge=True,
+    if premium <= policy["roll_below_rupees"]:
+        return dict(result,action="REVIEW_ROLL_SHORT" if position_review_window(now) else "QUEUE_NEXT_WINDOW_ROLL",
+            reason="SHORT_AT_OR_BELOW_8",target="NEXT_LISTED_SHORT_WITH_PREMIUM_ABOVE_8",keep_hedge=True,
             hedge_change_min_improvement_inr=policy["hedge_change_min_improvement_inr"],
             exit_sequence="CONFIRM_OLD_SHORT_CLOSED_BEFORE_NEW_SHORT")
     if end_of_day:

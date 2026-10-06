@@ -24,6 +24,15 @@ Late-session only.
 Three strike intervals do not mean three lots/positions. Weekday routing never
 proves expiry. At/after 19:00, roll proposals wait for the next window.
 
+October 6 clarification: fresh, exactly owned existing Everyday baskets receive
+read-only reviews from market open (12:45 JST), independently of the 14:00
+fresh-entry start. Premium at or below ₹8 produces a rollover review; basket
+loss at ₹2,000 or the recorded trailing threshold produces an exit review first.
+The dashboard exposes these reviews even while owner intent is Off or the
+trading pause is present. Stale, incomplete and manual/mixed positions remain
+unknown/protected. This does not authorize an order. The live controller's entry
+and roll gates remain unchanged; pre-14:00 rollover execution is not enabled.
+
 These deterministic proposals feed the implemented Oracle order controller only
 after separate activation, ownership and freshness gates. Bounded preparation,
 durable hedge-first entry, persistent GTT/child reconciliation, trailing updates,

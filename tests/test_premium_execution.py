@@ -123,6 +123,22 @@ class Session:
         pytest.fail(str(self.journal.store.meta('premium-executor-status')))
 
 
+def test_preentry_carried_review_is_fresh_owned_and_never_writes(tmp_path):
+    s=Session(tmp_path);s.monitoring()
+    s.now=s.now.replace(hour=13,minute=0)
+    for c in s.books.values():c['received_at']=s.now.isoformat()
+    s.short.update(bid=7.95,ask=8)
+    writes=len(s.broker.writes)
+    s.pause.touch()
+    obs=s.observation()
+    assert s.executor.public(obs)['position_review']['action']=='REVIEW_ROLL_SHORT'
+    s.short.update(bid=60,ask=60.05)
+    assert s.executor.public(obs)['position_review']['action']=='REVIEW_OWNED_EXIT'
+    obs['positions'][0]['ownership']='MANUAL_OR_UNKNOWN_PROTECTED'
+    assert s.executor.public(obs)['position_review']['action']=='WAIT'
+    assert len(s.broker.writes)==writes
+
+
 def test_full_hedge_first_entry_persistent_protection_stop_short_first_and_restart(tmp_path):
     s=Session(tmp_path);s.monitoring()
     assert [r[0] for r in s.broker.writes]==['ORDER','ORDER','GTT']

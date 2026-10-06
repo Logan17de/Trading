@@ -4,6 +4,32 @@ October 5, 2026 · `Logan17de/Trading` · `main` · `D:\Money Trader\Trading`.
 Read AGENTS.md, PREMIUM_STRATEGY.md and HEADLESS_INTEGRATION_STATUS.md.
 The active owner policy is premium v3; historical v1/v2 studies are provenance.
 
+## October 6 VM viewer check · 10:14 JST
+
+Owner requested VM-hosted strategy monitoring with PC visualization after the
+autonomous live activation request was declined. No activation was performed.
+The existing deployment already provides this connection; no new service is
+needed. The local dashboard returned source Oracle VM / Groww read-only,
+collector host ORACLE and a healthy heartbeat advancing from sequence 11168 to
+11175. Both Everyday and Late-session appear, with no invented strategy outcomes.
+Trading observer and shared Qwen/mail/tunnel services are active. Desktop,
+Start-menu and Windows sign-in shortcuts point to the current PC app entry.
+
+The viewer can be opened any time while the PC is online and Oracle reachable.
+Five-second collection targets the existing weekday 12:40–19:45 JST window;
+before that window, prior market data must remain stale/unknown. Current owner
+intent remains Off, order writes disabled and pause preserved. Monitoring and
+strategy preparation do not constitute live execution. This check inspected the
+dashboard API, not a new owner Edge visual confirmation. Today's daily email
+shows scheduled; provider acceptance and inbox delivery are not yet verified.
+
+Relevant premium policy/controller, PC control and dashboard tests passed using
+isolated Python (`-I`), with the pinned Groww SDK 1.5.0. An initial non-isolated
+run imported a Windows user-site SDK and failed the exact scoped-request test;
+the pinned isolated rerun passed without changing request protections. Installed
+viewer startup already uses `-I`. Configuration validation and the synthetic
+offline demo passed; the demo sent no email and made no real orders.
+
 ## October 5 controller rollout · 18:35 JST
 
 Oracle now runs immutable source `1ad924810b8531346a20c4b2297c03e5408ca983`.

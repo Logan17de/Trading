@@ -197,6 +197,9 @@ function renderControl() {
   $("algo-start-result").textContent=algoStartPending?"Saving owner setting…":on?(algo.execution_enabled?"Algo On. Oracle monitors the approved rules; current margin and quotes determine entries.":`On is saved until you click Algo Off. Trading blocked: ${[...new Set(algo.blockers||[])].map(k=>labels[k]||k).join('; ')}.`):last?.status==='TRANSPORT_FAILED'?"Could not save the setting on Oracle. No change confirmed.":"Algo Off. Start saves your On preference across restarts; it does not bypass blocked trading readiness.";
   const execution=data.execution_controller;
   $("execution-status").textContent=execution?.code_implemented?`Oracle executor installed · ${String(execution.phase||'IDLE').replaceAll('_',' ').toLowerCase()} · ${execution.provider_execution_verified?'broker validation recorded':'live broker validation pending'}`:'';
+  const review=execution?.position_review;
+  if(review?.action==='REVIEW_ROLL_SHORT')$("execution-status").textContent+=' · Existing spread: review short rollover (premium ≤ ₹8)';
+  if(review?.action==='REVIEW_OWNED_EXIT')$("execution-status").textContent+=' · Existing spread: review exit (basket stop/trail)';
 }
 let withdrawalPending=false;
 const pendingWithdrawalKey='options-trader-pending-withdrawal-v1';

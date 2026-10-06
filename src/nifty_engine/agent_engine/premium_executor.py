@@ -72,7 +72,34 @@ class PremiumExecutor:
             phase=state.get('phase','IDLE'),strategy=state.get('strategy'),blockers=blockers,
             reason=status.get('reason'),at=status.get('at'),execution_enabled=not blockers,
             protection=protection,loss_cap_guaranteed=False,
-            provider_execution_verified=not bool('REVIEWED_LIVE_ACTIVATION_REQUIRED' in blockers))
+            provider_execution_verified=not bool('REVIEWED_LIVE_ACTIVATION_REQUIRED' in blockers),
+            position_review=self.position_review(obs))
+
+    def position_review(self,obs):
+        """Read-only carried-basket review, even when entries/activation are blocked."""
+        result=dict(action='WAIT',reason='OWNED_FRESH_POSITION_REQUIRED',broker_writes=False)
+        s=self._state()
+        if s.get('phase')!='MONITORING' or s.get('strategy')!='EVERYDAY': return result
+        try:
+            if not obs or obs.get('complete') is not True or not fresh(obs.get('received_at'),self.clock(),10):
+                return result
+            self._exclusive(s,obs)
+            c=s['candidate'];qty=s['short_quantity']
+            sb=self._book(c['short'],obs,'BUY',qty)
+            liquidation=-sb['ask']*qty
+            for symbol,q in self._net(s).items():
+                if q>0:
+                    contract=c['hedge'] if symbol==c['hedge']['symbol'] else s['roll_candidate']['hedge']
+                    liquidation+=self._book(contract,obs,'SELL',q)['bid']*q
+            pnl=self._cash(s)+liquidation-s['costs']
+            position=dict(ownership='ENGINE_VERIFIED',received_at=obs['received_at'],
+                short_entry=s['short_fill'],short_premium=sb['ask'],net_pnl_inr=pnl)
+            review=policy.everyday_review(self.cfg,position,self.clock())
+            if pnl<=max(-self.cfg['loss_stop_inr'],s.get('best_pnl',0)-self.cfg['loss_stop_inr']):
+                review.update(action='REVIEW_OWNED_EXIT',reason='BASKET_STOP_OR_TRAIL',exit_sequence='CLOSE_SHORT_THEN_HEDGE')
+            return dict(review,net_pnl_inr=round(pnl,2),execution_enabled=False)
+        except (ValueError,KeyError,TypeError):
+            return result
 
     def _status(self,reason,**extra):
         value=dict(reason=reason,at=self.clock().isoformat(),**extra)
