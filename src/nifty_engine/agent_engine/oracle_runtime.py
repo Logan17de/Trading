@@ -37,6 +37,8 @@ class Runtime:
         self.executor=None
         from .impulse_feed import StreamingImpulse
         self.impulse=StreamingImpulse(self.root,self.state.pnl_lines.store)
+        from .research_sync import SupabaseArchive
+        self.research_archive=SupabaseArchive(self.state.pnl_lines.store)
 
     def read(self):
         view=self.state.read()
@@ -51,6 +53,7 @@ class Runtime:
             "heartbeat_at":self.at,"error":self.error,"orders_enabled":execution["execution_enabled"],"collector_host":"ORACLE"}
         view["execution_controller"]=execution
         view['premium_impulse']=self.impulse.public()
+        view['research_archive']=self.research_archive.public()
         algo=view.get('control',{}).get('algo')
         if isinstance(algo,dict):
             algo['blockers']=list(dict.fromkeys([r for r in algo.get('blockers',[]) if r not in
@@ -148,6 +151,7 @@ class Runtime:
             except Exception as exc:self.mail_state={"status":"REPORT_"+type(exc).__name__,"provider_accepted":False,"inbox_verified":False}
 
     def run(self):
+        self.research_archive.start()
         threading.Thread(target=self.report_loop,daemon=True).start()
         with open(os.devnull,"w") as muted,contextlib.redirect_stdout(muted),contextlib.redirect_stderr(muted):
             logging.disable(logging.CRITICAL)

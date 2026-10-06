@@ -1,5 +1,33 @@
 # Current Trading handoff
 
+## October 6 Premium Impulse Monitor and private Supabase archive
+
+The attached multi-threshold research specification applies to **both NIFTY and
+SENSEX**. Read PREMIUM_IMPULSE_RESEARCH.md for exact storage fields, thresholds,
+30-second ATM/expiry locks, duplicate/gap/restart behavior, provisional labels,
+120-second objective outcomes, conditional summaries and offline replay.
+It is MONITOR_ONLY and never calls or influences the executor. Missing fields,
+IV regimes, aggressor flow and incomplete outcomes stay null/UNKNOWN. The older
+weighted score remains exploratory, not an optimized threshold or entry gate.
+
+Existing Oracle journal is authoritative. A separate durable outbox privately
+upserts raw research chunks/events/outcomes/summaries and journal-owned algo
+order/state versions and algo-only gross P&L into the existing Growing-Trader
+Supabase project's `trading_research_records`. No manual order/capital ledger or
+credentials are exported. RLS enabled, PUBLIC/anon/authenticated access revoked,
+server SELECT/INSERT/UPDATE verified. Existing server settings were securely
+merged from approved root0600 call-seller.env into observer.env without rotation.
+Archive retries do not affect collection or trading. Dashboard shows archive
+pending records and local uncaptured ticks; server credentials never reach PC.
+
+Implementation and isolated pinned-SDK test suite are complete: 328 passed,
+four platform skips (332 collected); JS syntax, config, offline demo and replay
+checks passed. Ordinary Python found user-site SDK1.2.0; use `-I` for SDK1.5.0
+as production already does. Pre-update SQLite backup integrity verified.
+Supabase additive migration and existing server-key HTTP200 read were verified.
+Deployment/live capture/cloud readback evidence follows after rollout. Preserve
+pause/paper/owner Off and shared services; no broker writes are part of this work.
+
 October 5, 2026 · `Logan17de/Trading` · `main` · `D:\Money Trader\Trading`.
 Read AGENTS.md, PREMIUM_STRATEGY.md and HEADLESS_INTEGRATION_STATUS.md.
 The active owner policy is premium v3; historical v1/v2 studies are provenance.

@@ -124,7 +124,8 @@ def test_private_sdk_credentials_stay_out_of_package(tmp_path,monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr(files,'generate_token_file',files.generate_token_file)
     monkeypatch.setattr(files,'generate_seed_file',files.generate_seed_file)
-    service=StreamingImpulse(tmp_path,SimpleNamespace(meta=lambda *args:[]))
+    from nifty_engine.agent_engine.store import Store
+    service=StreamingImpulse(tmp_path,Store(tmp_path/'test.sqlite3'))
     service._private_credentials()
     import pathlib
     path=pathlib.Path(files.generate_token_file('synthetic-not-a-real-token'))

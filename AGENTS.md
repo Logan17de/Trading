@@ -27,7 +27,12 @@
   modify real orders during maintenance/tests. Manual/unknown/mixed trades are
   protected; ownership needs reservation, exact broker acknowledgment and fills.
 - Five-second read-only observer targets 12:40–19:45 JST weekdays. Network delays
-  can extend cadence. A separate callback-driven premium impulse observer uses
+  can extend cadence. Premium Impulse Monitor research covers NIFTY and SENSEX with config-driven
+  five-second threshold ladders, 30-second ATM/expiry locks, raw ticks, nullable
+  fields and private outcomes/reports. Read PREMIUM_IMPULSE_RESEARCH.md. It must
+  never call or influence the executor. Private Supabase archive is one-way from
+  journal/outbox; server credentials stay on Oracle, public/browser access denied.
+  A separate callback-driven premium impulse observer uses
   GrowwFeed: five-second +₹10 NIFTY/+₹30 SENSEX impulses, 80/100 confirmation,
   2–3 second target/ten-second deadline. Read PREMIUM_IMPULSE.md. Missing evidence
   stays UNKNOWN; this observation layer never authorizes orders. PC SSE uses a

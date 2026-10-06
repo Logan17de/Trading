@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "trading_enabled": false,
+  "mode": "MONITOR_ONLY",
+  "nifty": {"window_seconds": 5, "thresholds": [5, 7.5, 10, 12.5, 15]},
+  "sensex": {"window_seconds": 5, "thresholds": [15, 20, 25, 30, 40]},
+  "fresh_seconds": 3,
+  "lock_seconds": 30,
+  "idle_seconds": 10,
+  "minimum_report_samples": 30,
+  "flat_underlying_points": 2,
+  "spread_widen_multiple": 2,
+  "report_after_jst": "20:00"
+}

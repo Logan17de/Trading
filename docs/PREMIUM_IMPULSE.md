@@ -1,5 +1,11 @@
 # Read-only streaming premium impulse detector
 
+The October 6 multi-threshold research specification is implemented for both
+indexes in [PREMIUM_IMPULSE_RESEARCH.md](PREMIUM_IMPULSE_RESEARCH.md). That module
+locks event contracts, records raw observations/outcomes and privately archives
+research/algo data to Supabase. The score below remains an exploratory observer;
+it is isolated from order authorization and is not an optimized strategy.
+
 Owner clarification October 6: detect a NIFTY +₹10 or SENSEX +₹30 ATM option
 premium move over five seconds. Aim to confirm at 80/100 within 2–3 seconds,
 with a ten-second deadline measured from the provider's impulse timestamp.
