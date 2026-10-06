@@ -7,19 +7,37 @@ import tempfile
 from pathlib import Path
 
 
+def server_configuration(source_values, previous_values):
+    """Preserve approved archive credentials through every observer deployment."""
+    result={}
+    for name in ('SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY'):
+        old=previous_values.get(name);new=source_values.get(name)
+        if old and new and old!=new:raise ValueError('ARCHIVE_CREDENTIAL_CHANGE_REQUIRES_REVIEW')
+        if old or new:result[name]=old or new
+    if result and (set(result)!={'SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY'} or
+            result['SUPABASE_URL'].rstrip('/')!='https://imirspxhbnerxknyynqx.supabase.co'):
+        raise ValueError('APPROVED_ARCHIVE_SETTINGS_REQUIRED')
+    return result
+
+
+def read_environment(path):
+    values={}
+    for line in path.read_text().splitlines():
+        if '=' not in line or line.lstrip().startswith('#'):continue
+        name,raw=line.split('=',1)
+        words=shlex.split(raw,comments=True)
+        if len(words)==1 and words[0]:values[name.strip()]=words[0]
+    return values
+
+
 def main():
     if os.name!='posix' or os.geteuid()!=0:raise PermissionError('root required')
     source=Path('/etc/growing-trader/call-seller.env')
     if source.is_symlink() or source.stat().st_uid!=0 or source.stat().st_mode&0o777!=0o600:
         raise PermissionError('existing protected mail environment required')
     names={'RESEND_API_KEY','TRADING_REPORT_FROM','TRADING_REPORT_TO'}
-    mail={}
-    for line in source.read_text().splitlines():
-        if '=' not in line:continue
-        name,raw=line.split('=',1);name=name.strip()
-        if name in names:
-            words=shlex.split(raw,comments=True)
-            if len(words)==1 and words[0]:mail[name]=words[0]
+    source_values=read_environment(source)
+    mail={k:source_values[k] for k in names if k in source_values}
     if set(mail)!=names or mail['TRADING_REPORT_TO']!='loganlogesh17@gmail.com':
         raise ValueError('existing approved mail identities required')
     if sys.argv[1:]==['--mail-pipe']:
@@ -34,6 +52,9 @@ def main():
     values=dict(mail,EXECUTION_MODE='paper',GROWW_OBSERVER_API_KEY=value['api_key'],GROWW_OBSERVER_API_SECRET=value['api_secret'])
     target=source.parent/'observer.env'
     if target.is_symlink():raise PermissionError('symlink refused')
+    if target.exists() and (target.stat().st_uid!=0 or target.stat().st_mode&0o777!=0o600):
+        raise PermissionError('existing protected observer environment required')
+    values.update(server_configuration(source_values,read_environment(target) if target.exists() else {}))
     fd,name=tempfile.mkstemp(dir=target.parent,prefix='.observer-')
     try:
         os.fchmod(fd,0o600)
