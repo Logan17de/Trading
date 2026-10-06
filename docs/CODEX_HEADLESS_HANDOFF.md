@@ -14,6 +14,11 @@ fresh margin/books and confirmed exchange session. Both-expiring/unknown evidenc
 blocks the successor. This supersedes the older no-timed-review description.
 Manual/mixed/stale positions wait; no state or broker writes occur in this review.
 Real-money timed closing and the 19:00 new-entry exception are not enabled.
+Deployed immutable source `e8602aeb892bf9768e8c4219ee1f110f4d3b3253`; 40
+policy/controller tests, config/JavaScript checks and offline demo passed. Remote
+synthetic handoff also verified with no broker writes. Pre/post journal backups
+passed integrity checks; shared services remained active, pause and Off retained.
+PC transport/assets refreshed; current visual Edge verification remains pending.
 
 ## October 6 stop threshold clarification
 
