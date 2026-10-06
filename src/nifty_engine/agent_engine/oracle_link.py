@@ -112,6 +112,41 @@ class RemoteViewer:
         self.incident=saved.get("id") if saved.get("status") not in (None,"RECOVERED") else None
         self.alert_status=saved.get("alert_status") if self.incident else None
         self.bad_reads=0;self.healthy_since=None
+        self.impulse=None;self.impulse_at=None
+
+    def impulse_read(self):
+        with self.lock:
+            if self.impulse is None or time.monotonic()-(self.impulse_at or 0)>4:
+                return {'format':'trading-impulse-v1','transport_status':'PC_STREAM_UNAVAILABLE','indices':{},'broker_writes':False}
+            return copy.deepcopy(self.impulse)
+
+    def impulse_watch(self,stop):
+        config=settings(self.config)
+        ssh=Path(os.environ.get('SYSTEMROOT','C:/Windows'))/'System32/OpenSSH/ssh.exe'
+        args=[str(ssh),'-F','NUL','-T','-i',config['identity_file'],'-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',
+              '-o','IdentitiesOnly=yes','-o','IdentityAgent=none','-o','PasswordAuthentication=no','-o','KbdInteractiveAuthentication=no',
+              '-o','ClearAllForwardings=yes','-o','ConnectTimeout=8','-o','ServerAliveInterval=5','-o','ServerAliveCountMax=2',
+              config['user']+'@'+config['host'],'sudo -n -u trading-observer '+config['python']+' -I -m nifty_engine.agent_engine.oracle_runtime client --root '+config['root']]
+        while not stop.is_set():
+            process=None
+            try:
+                process=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,
+                    **({'creationflags':subprocess.CREATE_NO_WINDOW} if os.name=='nt' else {}))
+                process.stdin.write('{"action":"watch_impulse"}\n');process.stdin.close()
+                while not stop.is_set():
+                    line=process.stdout.readline(65537)
+                    if not line or len(line)>65536:break
+                    value=json.loads(line)
+                    if value.get('format')!='trading-impulse-v1' or value.get('broker_writes') is not False:break
+                    with self.lock:self.impulse=value;self.impulse_at=time.monotonic()
+            except Exception:pass
+            finally:
+                if process:
+                    process.terminate()
+                    try:process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:process.kill()
+                with self.lock:self.impulse_at=None
+            stop.wait(5)
 
     def poll(self, now=None, *, fetch=request, alert=notify):
         fixed_clock=now is not None
@@ -201,6 +236,7 @@ class RemoteViewer:
         return result
 
     def run(self,stop):
+        threading.Thread(target=self.impulse_watch,args=(stop,),daemon=True).start()
         while not stop.is_set():
             start=time.monotonic()
             self.poll()

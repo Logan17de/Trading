@@ -1105,6 +1105,19 @@ def handler(state):
                     return self.respond(200, state.read())
                 except Exception:
                     return self.respond(503, {"status": "LOCAL_DATA_UNAVAILABLE"})
+            if self.path == '/api/impulse/events':
+                self.send_response(200);self.send_header('Content-Type','text/event-stream')
+                self.send_header('Cache-Control','no-store');self.end_headers()
+                previous=None
+                while not state.stop_event.is_set():
+                    value=state.remote.impulse_read() if state.remote else {'format':'trading-impulse-v1','transport_status':'ORACLE_CONNECTION_REQUIRED','indices':{},'broker_writes':False}
+                    body=json.dumps(value,separators=(',',':'))
+                    if body!=previous:
+                        try:self.wfile.write(('data: '+body+'\n\n').encode());self.wfile.flush()
+                        except (BrokenPipeError,ConnectionResetError):break
+                        previous=body
+                    state.stop_event.wait(.1)
+                return
             return self.respond(404, {"status": "NOT_FOUND"})
 
         def do_POST(self):

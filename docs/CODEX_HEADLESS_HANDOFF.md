@@ -4,6 +4,26 @@ October 5, 2026 · `Logan17de/Trading` · `main` · `D:\Money Trader\Trading`.
 Read AGENTS.md, PREMIUM_STRATEGY.md and HEADLESS_INTEGRATION_STATUS.md.
 The active owner policy is premium v3; historical v1/v2 studies are provenance.
 
+## October 6 streaming premium impulse implementation
+
+Added an independent read-only GrowwFeed price/depth observer in the existing
+Oracle runtime. Five-second +₹10 NIFTY/+₹30 SENSEX ATM premium impulses are
+scored with owner weights 25/20/20/15/10/10. Confirmation is 80/100 with a
+2–3-second target and ten-second provider-time deadline. Unknown signals stay
+UNKNOWN, not normalized; futures/breakout/OFI/neighbours must agree. Sixty-second
+warm-up and ≥5 prior-session time-of-day volume samples are needed. Breadth is
+an explicitly sampled equal-vote major-stock proxy, not full index breadth.
+Read PREMIUM_IMPULSE.md for precise thresholds, data dependencies and limits.
+
+The callback worker has no five-second timer and never invokes the broker
+executor. Exact feed authentication is allowed separately from order routes;
+ephemeral SDK credentials stay in private 0700/0600 state. Confirmations persist
+privately. Fixed Unix-socket watch → persistent protected SSH → loopback SSE
+updates the PC detector display independently of regular five-second account
+polling. No new GUI/framework/service and no public port. Live event reception,
+volume population and measured network latency require actual stream evidence;
+synthetic tests do not prove live latency or profit probability.
+
 ## October 6 percentage rollover clarification
 
 Owner clarified rollover as a 60% reduction from the configured index premium

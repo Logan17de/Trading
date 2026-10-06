@@ -40,7 +40,7 @@ def safe_error(exc):
             "code": code if re.fullmatch(r"(?:GA[0-9]{3}|[0-9]{3})", code) else None}
 
 
-def allowed_request(method, url, *, history=False, dashboard=False, calculations=False):
+def allowed_request(method, url, *, history=False, dashboard=False, calculations=False, feed=False):
     parsed = urlsplit(url)
     if dashboard and method.upper() == "GET" and url == "https://growwapi-assets.groww.in/instruments/instrument.csv":
         return True
@@ -48,6 +48,8 @@ def allowed_request(method, url, *, history=False, dashboard=False, calculations
         return False
     if calculations and method.upper() == "POST" and parsed.path == "/v1/margins/detail/orders" and not parsed.query:
         return True  # Broker's hypothetical basket calculation, not order submission.
+    if feed and method.upper()=='POST' and parsed.path=='/v1/api/apex/v1/socket/token/create/' and not parsed.query:
+        return True  # Ephemeral market-feed authentication only, never an order.
     read_paths = {"/v1/live-data/quote", "/v1/live-data/ltp", "/v1/historical/expiries", "/v1/user/detail"}
     if history:
         read_paths.update({"/v1/historical/candles", "/v1/historical/contracts"})
@@ -64,13 +66,13 @@ def allowed_request(method, url, *, history=False, dashboard=False, calculations
 
 
 @contextlib.contextmanager
-def readonly_transport(audit, *, history=False, dashboard=False, calculations=False, deadline=None, timeout_seconds=15):
+def readonly_transport(audit, *, history=False, dashboard=False, calculations=False, feed=False, deadline=None, timeout_seconds=15):
     """Guard this single-purpose process against order writes and auth redirects."""
     import requests
     original = requests.sessions.Session.request
 
     def guarded(session, method, url, **kwargs):
-        if not allowed_request(method, url, history=history, dashboard=dashboard, calculations=calculations):
+        if not allowed_request(method, url, history=history, dashboard=dashboard, calculations=calculations, feed=feed):
             from .execution_gate import consume_write
             if not consume_write(method, url, kwargs):
                 raise PermissionError("request outside read-only diagnostic scope")

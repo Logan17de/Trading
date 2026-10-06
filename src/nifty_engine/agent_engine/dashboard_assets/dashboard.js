@@ -196,6 +196,10 @@ function renderControl() {
   const labels={ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED:"Oracle executor is not connected",REPOSITORY_PAUSED:"trading is paused",LIVE_ENVIRONMENT_NOT_ACTIVATED:"live mode is not activated",REVIEWED_LIVE_ACTIVATION_REQUIRED:"broker execution and persistent protection need live verification",ORACLE_EXECUTOR_CONNECTION_REQUIRED:"waiting for Oracle broker connection",FRESH_COMPLETE_BROKER_STATE_REQUIRED:"fresh complete broker state is required",FRESH_MARKET_DATA_REQUIRED:"current data is required",OUTSIDE_1400_1900_JST:"outside 14:00–19:00 JST",OFFLINE_VIEW:"offline view",MAXIMUM_LOTS_REQUIRED:"lot cap missing",PREMIUM_POLICY_REQUIRED:"strategy settings are missing",OWNER_ALGO_OFF:"owner setting is Off",VM_UNHEALTHY_OR_STALE:"VM heartbeat/data unavailable"};
   $("algo-start-result").textContent=algoStartPending?"Saving owner setting…":on?(algo.execution_enabled?"Algo On. Oracle monitors the approved rules; current margin and quotes determine entries.":`On is saved until you click Algo Off. Trading blocked: ${[...new Set(algo.blockers||[])].map(k=>labels[k]||k).join('; ')}.`):last?.status==='TRANSPORT_FAILED'?"Could not save the setting on Oracle. No change confirmed.":"Algo Off. Start saves your On preference across restarts; it does not bypass blocked trading readiness.";
   const execution=data.execution_controller;
+  const impulse=data.premium_impulse;
+  $("impulse-status").textContent=impulse?`Stream: ${impulse.transport_status||impulse.status} · ${Object.entries(impulse.indices||{}).map(([index,r])=>`${index}: ${r.score??'—'}/100 (${r.status}, ${r.known_points}/100 evidence)`).join(' · ')||'waiting for current events and history'} · ${impulse.processing_ms??'—'} ms local processing · read-only`:'Streaming breakout detector: waiting for Oracle evidence';
+  const lastImpulse=impulse?.recent_confirmations?.at(-1);
+  if(lastImpulse)$("impulse-status").textContent+=` · Last confirmation: ${lastImpulse.index} ${lastImpulse.direction} ${lastImpulse.score}/100 at ${clockSeconds(lastImpulse.confirmed_at)} (historical event)`;
   $("execution-status").textContent=execution?.code_implemented?`Oracle executor installed · ${String(execution.phase||'IDLE').replaceAll('_',' ').toLowerCase()} · ${execution.provider_execution_verified?'broker validation recorded':'live broker validation pending'}`:'';
   const review=execution?.position_review;
   if(review?.action==='REVIEW_ROLL_SHORT')$("execution-status").textContent+=` · Existing spread: review short rollover (premium ≤ ${inr(review.rollover_threshold_rupees)})`;
@@ -363,5 +367,8 @@ $("demo-toggle").addEventListener("change",event=>{demo=event.target.checked;con
 for(const tab of document.querySelectorAll(".tab")) tab.addEventListener("click",()=>{selectedIndex=tab.dataset.index;try{localStorage.setItem("trading-index",selectedIndex);}catch{}contracts={buy:null,sell:null};renderOptions(true);});
 for(const side of ["buy","sell"]) $(side+"-option").addEventListener("change",event=>{contracts[side]=event.target.value||null;const market=data.markets.find(m=>m.index===selectedIndex);drawOption(side,market?.options.find(o=>o.symbol===contracts[side]));});
 load().then(()=>refresh());
+const impulseEvents=new EventSource('/api/impulse/events');
+impulseEvents.onmessage=event=>{try{const value=JSON.parse(event.data);if(!demo&&data){data.premium_impulse=value;renderControl();}}catch{}};
+impulseEvents.onerror=()=>{if(!demo&&data){data.premium_impulse={transport_status:'PC_STREAM_UNAVAILABLE',indices:{}};renderControl();}};
 setInterval(async()=>{if(!document.hidden){await load();if(autoRefresh&&!demo&&Date.now()-lastRequest>=4500) await refresh();}},5000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&autoRefresh&&!demo) refresh();});

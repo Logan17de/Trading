@@ -35,6 +35,8 @@ class Runtime:
         self.output=self.state.directory/"market-check-oracle-live.json"
         self.preparer=None
         self.executor=None
+        from .impulse_feed import StreamingImpulse
+        self.impulse=StreamingImpulse(self.root,self.state.pnl_lines.store)
 
     def read(self):
         view=self.state.read()
@@ -48,6 +50,7 @@ class Runtime:
         view["runtime"]={"host":"ORACLE","boot_id":self.boot_id,"heartbeat_sequence":self.sequence,
             "heartbeat_at":self.at,"error":self.error,"orders_enabled":execution["execution_enabled"],"collector_host":"ORACLE"}
         view["execution_controller"]=execution
+        view['premium_impulse']=self.impulse.public()
         algo=view.get('control',{}).get('algo')
         if isinstance(algo,dict):
             algo['blockers']=list(dict.fromkeys([r for r in algo.get('blockers',[]) if r not in
@@ -148,7 +151,8 @@ class Runtime:
         threading.Thread(target=self.report_loop,daemon=True).start()
         with open(os.devnull,"w") as muted,contextlib.redirect_stdout(muted),contextlib.redirect_stderr(muted):
             logging.disable(logging.CRITICAL)
-            with readonly_transport([],history=True,dashboard=True,calculations=True,timeout_seconds=5):
+            with readonly_transport([],history=True,dashboard=True,calculations=True,feed=True,timeout_seconds=5):
+                self.impulse.start()
                 threading.Thread(target=self.preparation_loop,daemon=True).start()
                 threading.Thread(target=self.execution_loop,daemon=True).start()
                 while not self.stop.is_set():
@@ -164,6 +168,7 @@ class Runtime:
                                 self.executor.reconcile_before_collection()
                                 value=self.collector.sample()
                             write_snapshot(self.output,value)
+                            self.impulse.attach(self.collector.market)
                             if value.get("status")=="BLOCKED" or any(r.get("code")=="403" for r in value.get("probes",{}).values()):
                                 raise ConnectionError("read unavailable")
                         # Collection already persists observations. Building full
@@ -179,6 +184,7 @@ class Runtime:
                         self.collector=None
                         self.preparer=None
                         self.executor=None
+                        self.impulse.detach()
                         write_snapshot(self.output,{"finished_at":now.isoformat(),"status":"BLOCKED","failure":self.error,"order_capability":False})
                     self.sequence+=1;self.at=datetime.now(timezone.utc).isoformat()
                     self.stop.wait(max(0,5-(time.monotonic()-started)))
@@ -200,7 +206,14 @@ def serve(root):
             try:
                 raw=self.rfile.readline(4097)
                 if len(raw)>4096:raise ValueError("oversized command")
-                result=runtime.command(json.loads(raw))
+                command=json.loads(raw)
+                if command=={'action':'watch_impulse'}:
+                    while not runtime.stop.is_set():
+                        result=runtime.impulse.next_view()
+                        self.wfile.write(dumps(result).encode()+b'\n');self.wfile.flush()
+                        time.sleep(.1)
+                    return
+                result=runtime.command(command)
             except Exception:result={"status":"OBSERVER_REQUEST_FAILED","order_capability":False}
             self.wfile.write(dumps(result).encode()+b"\n")
     class Server(socketserver.ThreadingUnixStreamServer):daemon_threads=True
@@ -217,7 +230,14 @@ def client(root):
     with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as channel:
         channel.settimeout(12);channel.connect(str(Path(root)/"observer.sock"))
         channel.sendall(dumps(value).encode()+b"\n")
-        with channel.makefile("rb") as stream:response=stream.readline(8_000_001)
+        with channel.makefile("rb") as stream:
+            if value=={'action':'watch_impulse'}:
+                while True:
+                    response=stream.readline(65537)
+                    if not response:return
+                    if len(response)>65536:raise ValueError('oversized impulse event')
+                    print(response.decode().strip(),flush=True)
+            else:response=stream.readline(8_000_001)
     if len(response)>8_000_000:raise ValueError("oversized response")
     print(response.decode().strip())
 

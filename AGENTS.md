@@ -27,7 +27,12 @@
   modify real orders during maintenance/tests. Manual/unknown/mixed trades are
   protected; ownership needs reservation, exact broker acknowledgment and fills.
 - Five-second read-only observer targets 12:40–19:45 JST weekdays. Network delays
-  can extend cadence. All charts are actual LTP lines at reception times with
+  can extend cadence. A separate callback-driven premium impulse observer uses
+  GrowwFeed: five-second +₹10 NIFTY/+₹30 SENSEX impulses, 80/100 confirmation,
+  2–3 second target/ten-second deadline. Read PREMIUM_IMPULSE.md. Missing evidence
+  stays UNKNOWN; this observation layer never authorizes orders. PC SSE uses a
+  persistent private read-only watch connection; ordinary account polling is five seconds.
+  All charts are actual LTP lines at reception times with
   five-minute grids. No fabricated movement/outage bridges/candles. Option
   panels require confirmed nonzero active positions; SL/target/entry evidence
   must match actual broker records. Do not adopt manual positions.
