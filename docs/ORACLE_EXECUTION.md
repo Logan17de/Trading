@@ -1,6 +1,6 @@
 # Oracle premium execution controller
 
-October 5, 2026. This extends the existing Python runtime; the PC remains a viewer
+October 6, 2026. This extends the existing Python runtime; the PC remains a viewer
 and protected owner-intent controller. No additional trading service/framework,
 public port or GUI was created. No real order was placed during implementation.
 
@@ -26,13 +26,17 @@ public port or GUI was created. No real order was placed during implementation.
   worthless; the independent basket monitor also uses both legs. This can exit
   earlier than a spread-mark-only stop. Charges are broker calculation estimates
   until the reviewed fee/statement ledger exists; no guaranteed loss cap is claimed.
-- Below-eight short roll: confirm old short flat before new short; preserve the
+- Sixty-percent premium-reduction short roll (NIFTY ₹8 / SENSEX ₹32): confirm old short flat before new short; preserve the
   hedge unless the whole-basket improvement after incremental broker costs exceeds
   the strict approved threshold. Buy a replacement hedge before disposing of the
   original. No roll increases lots. Refresh books and margin after the close.
 - End-of-day entry-minus-offset hold/next-window roll. Actual expiry/18:00 mapped
   Late-session replacement closes only the owned basket first. Exact matching
   positions skip; manual/unknown/mixed contracts are never adopted or managed.
+- At 19:00 on the basket's confirmed actual expiry, queue its owned short-first
+  exit through the existing controller. Save the other-index successor as a
+  read-only proposal; it cannot bypass the 19:00 new-entry cutoff. Unknown expiry
+  evidence does not cause an expiry exit. Existing risk exits retain priority.
 - Original operation references and monotonic fills reconcile uncertain writes.
   The actual sampled manual-order detail route returned GA004; the adapter can
   fall back to a fully paginated order list with an exact unique broker ID/reference
@@ -50,6 +54,16 @@ public port or GUI was created. No real order was placed during implementation.
   official broker/statement evidence.
 
 ## Current activation boundary
+
+Collection authenticates/connects at 12:40 JST on weekdays. Before that, an
+unconnected executor reports WAITING_FOR_COLLECTION_WINDOW alongside the actual
+pause/paper/owner/validation blockers. An authentication failure reports
+ORACLE_BROKER_CONNECTION_RETRY; CONNECTED means transport constructed, not broker
+writes verified. Unexpected executor-worker failures latch a visible
+EXECUTOR_WORKER_RECONCILIATION_REQUIRED blocker rather than silently terminating
+the thread or retrying an uncertain write. Restart reconciliation uses the
+existing durable references. Outside collection hours, monitoring reads the
+saved snapshot without changing its timestamp; it never manufactures freshness.
 
 Maintenance preserves `.trader-paused`, `EXECUTION_MODE=paper` and the actual owner
 Off. All production order writes remain disabled. Algo Start saves durable On;
@@ -77,6 +91,18 @@ Unknown parent creation/modify/cancel/child results freeze further writes rather
 than guessing or submitting a duplicate. These states need reconciliation.
 
 ## Remaining limits
+
+The owner authorized preparation/verification of connection, broker adapter,
+persistent protection and lifecycle on October 6 without autonomous activation.
+Installed SDK wire-format tests exercise actual methods against intercepted
+synthetic responses; isolated lifecycle tests cover partial fills, request
+timeouts, GTT creation/modify/cancel races, generated-child linkage, tightening,
+short-first rollover, pre-14:00 carried-basket risk exits and expiry-19:00 closes.
+They are not actual Groww write/receipt/protection evidence. No maintenance
+command submits a test order or creates an activation proof. Actual server-side
+GTT carry validity and generated-child identity remain required before activation.
+Pre-14:00 short rolls and the requested 19:00 successor entry remain proposals:
+their separately reviewed execution-window changes are not implemented here.
 
 Preparation samples a bounded chain/hedge set and explicitly labels its scope;
 maximum payoff means maximum among verified sampled candidates. It is not proof

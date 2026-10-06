@@ -285,6 +285,82 @@ def test_nineteen_hold_boundary_queues_until_next_window_without_clearing_on(tmp
     assert policy.intent(s.journal.store)['enabled']
 
 
+def test_carried_stop_exits_before_fresh_entry_window(tmp_path):
+    s=Session(tmp_path);s.monitoring()
+    s.now=(s.now+timedelta(days=1)).replace(hour=13,minute=0)
+    s.short.update(bid=52,ask=52.05)
+    for _ in range(20):
+        s.tick()
+        if s.executor._state()['phase']=='CLOSED':break
+    assert s.executor._state()['phase']=='CLOSED'
+    assert s.executor._state()['exit_reason']=='BASKET_STOP_OR_TRAIL'
+    orders=[r for k,r in s.broker.writes if k=='ORDER']
+    assert [r['transaction_type'] for r in orders]==['BUY','SELL','BUY','SELL']
+    assert orders[2]['trading_symbol']==s.short['symbol']
+
+
+@pytest.mark.parametrize('confirmed',[True,False])
+def test_actual_expiry_1900_closes_owned_basket_without_successor_entry(tmp_path,confirmed):
+    s=Session(tmp_path);s.monitoring()
+    s.now=datetime(2026,10,6,19,0,tzinfo=JST)
+    for _ in range(20):
+        s.now+=timedelta(seconds=5)
+        for book in s.books.values():book['received_at']=s.now.isoformat()
+        obs=s.observation()
+        if not confirmed:obs['expiry_evidence']['NIFTY']['status']='UNKNOWN'
+        s.executor.tick(obs,{})
+        if s.executor._state()['phase']=='CLOSED':break
+    orders=[r for k,r in s.broker.writes if k=='ORDER']
+    if confirmed:
+        assert s.executor._state()['phase']=='CLOSED'
+        assert s.executor._state()['exit_reason']=='ACTUAL_EXPIRY_1900'
+        assert [r['transaction_type'] for r in orders]==['BUY','SELL','BUY','SELL']
+        assert s.executor._state()['expiry_successor_review']['index']=='SENSEX'
+        s.executor.tick(obs,{})
+        assert len([r for k,r in s.broker.writes if k=='ORDER'])==4
+    else:
+        assert s.executor._state()['phase']=='MONITORING'
+        assert len(orders)==2
+
+
+def test_disconnected_runtime_reports_schedule_and_real_activation_blocks(tmp_path):
+    from nifty_engine.agent_engine.oracle_runtime import disconnected_execution
+    s=Session(tmp_path);s.gate.mode='paper';s.pause.touch()
+    policy.set_intent(s.journal.store,False,NOW)
+    at=NOW.replace(hour=12,minute=35)
+    value=disconnected_execution(s.gate,None,at,None)
+    assert value['connection_status']=='WAITING_FOR_COLLECTION_WINDOW'
+    assert {'REPOSITORY_PAUSED','OWNER_ALGO_OFF','LIVE_ENVIRONMENT_NOT_ACTIVATED'}<=set(value['blockers'])
+    assert not value['execution_enabled'] and not value['provider_execution_verified']
+    assert disconnected_execution(s.gate,None,NOW,None)['connection_status']=='ORACLE_EXECUTOR_CONNECTION_REQUIRED'
+    assert disconnected_execution(s.gate,None,at,{'error_type':'ConnectionError'})['connection_status']=='ORACLE_BROKER_CONNECTION_RETRY'
+
+
+def test_runtime_worker_fault_is_visible_sanitized_and_not_retried(tmp_path):
+    from nifty_engine.agent_engine.oracle_runtime import Runtime
+    s=Session(tmp_path);calls=[]
+    class Stop:
+        count=0
+        def wait(self,seconds):
+            self.count+=1
+            return self.count>3
+    class Failed:
+        def tick(self,*args):
+            calls.append(True)
+            raise RuntimeError('private broker response must never be exposed')
+    runtime=Runtime.__new__(Runtime)
+    runtime.stop=Stop();runtime.executor=Failed();runtime.execution_error=None
+    runtime.output=tmp_path/'missing.json'
+    runtime.output.write_text('{}',encoding='utf-8')
+    runtime.state=SimpleNamespace(pnl_lines=SimpleNamespace(store=s.journal.store))
+    runtime.execution_loop()
+    assert calls==[True]
+    assert runtime.execution_error=={'error_type':'RuntimeError'}
+    status=s.journal.store.meta('premium-executor-status')
+    assert status['reason']=='EXECUTOR_WORKER_RECONCILIATION_REQUIRED'
+    assert 'private' not in str(status)
+
+
 def test_expiry_replacement_exits_owned_basket_and_uses_a_new_strategy_slot(tmp_path):
     s=Session(tmp_path);s.monitoring();old_slot=s.executor._state()['slot'];s.now=s.now.replace(hour=18,minute=0)
     late_short=contract(24850,30,30.05,'PE');late_hedge=contract(24700,9.95,10,'PE')

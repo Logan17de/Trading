@@ -413,6 +413,15 @@ class PremiumExecutor:
         if pnl<=max(-self.cfg['loss_stop_inr'],s['best_pnl']-self.cfg['loss_stop_inr']):
             s.update(phase='EXIT_SHORT',exit_reason='BASKET_STOP_OR_TRAIL');self._save(s)
             return self._status('BASKET_STOP_EXIT_QUEUED')
+        handoff=policy.expiry_handoff_review(self.cfg,c['index'],c['expiry'],
+            obs.get('expiry_evidence',{}),self.clock())
+        if handoff['action']=='REVIEW_OWNED_EXIT':
+            # Close is an owned EXIT. The cross-index successor remains a proposal;
+            # it cannot bypass the separately enforced 19:00 new-entry cutoff.
+            s.update(phase='EXIT_SHORT',exit_reason='ACTUAL_EXPIRY_1900',
+                     expiry_successor_review=handoff.get('successor'))
+            self._save(s)
+            return self._status('ACTUAL_EXPIRY_CLOSE_QUEUED')
         # Persistent protection is tightened first, never loosened on drawdown.
         stop=cash_stop(self._cash(s),qty,s['costs'],short['tick_size'],s['best_pnl'],self.cfg['loss_stop_inr'])
         if stop['trigger_price']<=sb['ask']:

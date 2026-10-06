@@ -24,6 +24,17 @@ from .operations import backup_database
 from .visual_report import DailyMail
 
 
+def disconnected_execution(gate, obs, now, error):
+    """Distinguish scheduled authentication from a failed broker connection."""
+    reason=('ORACLE_BROKER_CONNECTION_RETRY' if error else
+            'ORACLE_EXECUTOR_CONNECTION_REQUIRED' if collection_window(now) else
+            'WAITING_FOR_COLLECTION_WINDOW')
+    return dict(code_implemented=True,status='BLOCKED',execution_enabled=False,
+                phase='IDLE',connection_status=reason,
+                blockers=list(dict.fromkeys(gate.blockers(obs)+[reason])),
+                provider_execution_verified=False,protection='UNKNOWN_DISCONNECTED')
+
+
 class Runtime:
     def __init__(self,root):
         self.root=Path(root)
@@ -35,6 +46,14 @@ class Runtime:
         self.output=self.state.directory/"market-check-oracle-live.json"
         self.preparer=None
         self.executor=None
+        self.execution_error=None
+        from .execution_gate import ExecutionGate
+        from . import premium_strategy
+        from .contracts import identity
+        self.gate=ExecutionGate(self.state.monitor.journal,self.root/'.trader-paused',
+            mode=os.environ.get('EXECUTION_MODE','paper'),
+            release=Path(__file__).resolve().parents[3].name,host='ORACLE',
+            clock=lambda:datetime.now(timezone.utc),policy_hash=identity(premium_strategy.load(self.root)))
         from .impulse_feed import StreamingImpulse
         self.impulse=StreamingImpulse(self.root,self.state.pnl_lines.store)
         from .research_sync import SupabaseArchive
@@ -46,9 +65,14 @@ class Runtime:
         revalidate(view,datetime.now(timezone.utc))
         from .premium_executor import observation
         from .dashboard import load_json
-        execution = self.executor.public(observation(load_json(self.output,8_000_000))) if self.executor else {
-            "code_implemented":True,"status":"BLOCKED","execution_enabled":False,"phase":"IDLE",
-            "blockers":["ORACLE_EXECUTOR_CONNECTION_REQUIRED"]}
+        try: obs=observation(load_json(self.output,8_000_000))
+        except (OSError,ValueError): obs=observation({})
+        execution = self.executor.public(obs) if self.executor else disconnected_execution(
+            self.gate,obs,datetime.now(timezone.utc),self.error)
+        if self.executor: execution['connection_status']='CONNECTED'
+        if self.execution_error:
+            execution.update(execution_enabled=False,status='BLOCKED')
+            execution['blockers'].append('EXECUTOR_WORKER_RECONCILIATION_REQUIRED')
         view["runtime"]={"host":"ORACLE","boot_id":self.boot_id,"heartbeat_sequence":self.sequence,
             "heartbeat_at":self.at,"error":self.error,"orders_enabled":execution["execution_enabled"],"collector_host":"ORACLE"}
         view["execution_controller"]=execution
@@ -98,15 +122,13 @@ class Runtime:
         self.preparer=GrowwPreparation(market,self.state.monitor.journal)
         from . import premium_strategy
         from .contracts import identity
-        from .execution_gate import ExecutionGate
         from .oracle_orders import GrowwOrderTransport, OracleOrderGateway
         from .oracle_protection import PersistentProtection
         from .premium_executor import PremiumExecutor
         cfg=premium_strategy.load(self.root)
         # Exact immutable source directory, never a mutable default branch pin.
-        release=Path(__file__).resolve().parents[3].name
-        gate=ExecutionGate(self.state.monitor.journal,self.root/'.trader-paused',mode=os.environ.get('EXECUTION_MODE','paper'),
-            release=release,host='ORACLE',clock=lambda:datetime.now(timezone.utc),policy_hash=identity(cfg))
+        gate=self.gate
+        if gate.policy_hash!=identity(cfg): raise ValueError('POLICY_CHANGED_RESTART_REQUIRED')
         transport=GrowwOrderTransport(market,gate);gateway=OracleOrderGateway(self.state.monitor.journal,transport,gate)
         protection=PersistentProtection(self.state.monitor.journal,transport,gateway)
         self.executor=PremiumExecutor(self.state.monitor.journal,gateway,protection,gate,cfg,clock=gate.clock)
@@ -133,9 +155,17 @@ class Runtime:
         from .premium_executor import observation
         while not self.stop.wait(5):
             executor=self.executor
-            if executor:
-                executor.tick(observation(load_json(self.output,8_000_000)),
-                    self.state.pnl_lines.store.meta('premium-preparation',{}))
+            if executor and not self.execution_error:
+                try:
+                    executor.tick(observation(load_json(self.output,8_000_000)),
+                        self.state.pnl_lines.store.meta('premium-preparation',{}))
+                except Exception as exc:
+                    # Do not kill the worker silently or retry an uncertain write.
+                    # A restart reconciles durable references before collection.
+                    self.execution_error={'error_type':type(exc).__name__}
+                    self.state.pnl_lines.store.set_meta('premium-executor-status',{
+                        'reason':'EXECUTOR_WORKER_RECONCILIATION_REQUIRED',
+                        'at':datetime.now(timezone.utc).isoformat()})
 
     def report_loop(self):
         while not self.stop.wait(30):
@@ -179,7 +209,8 @@ class Runtime:
                         # chart views here duplicates SSH-reader work and delays ticks.
                         if self.collector:
                             from .dashboard import load_json
-                            self.state.monitor.tick(value,load_json(self.root/"config/owner_strategies.json",16384),datetime.now(timezone.utc))
+                            self.state.monitor.tick(load_json(self.output,8_000_000),
+                                load_json(self.root/"config/owner_strategies.json",16384),datetime.now(timezone.utc))
                         self.error=None
                     except Exception as exc:
                         self.error=safe_error(exc)

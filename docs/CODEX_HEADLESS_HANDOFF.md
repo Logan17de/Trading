@@ -1,5 +1,27 @@
 # Current Trading handoff
 
+## October 6 executor connection and lifecycle preparation
+
+Owner authorized items 1–4 without autonomous activation. The existing executor
+connected automatically at the configured 12:40 JST collection start; its earlier
+connection blocker was a pre-market wait, not missing wiring. Runtime now exposes
+CONNECTED / WAITING_FOR_COLLECTION_WINDOW / ORACLE_BROKER_CONNECTION_RETRY and
+the independent paper/pause/Off/activation/freshness gates. Unexpected worker
+exceptions latch a sanitized reconciliation blocker instead of killing the
+thread or retrying an uncertain write. Outside collection hours the monitor reads
+the timestamped saved snapshot, avoiding an unbound/stale loop-local sample.
+
+Added gated 19:00 confirmed-expiry owned short-first exit. The other-index
+successor remains a proposal behind the existing new-entry cutoff; pre-14:00
+roll execution is also not enabled. Existing carried-basket stop exits are
+replay-tested before 14:00. Tests additionally cover unknown-expiry no-exit,
+no successor submission, pre-market diagnostics and worker-failure freeze.
+Actual SDK wire-format and isolated partial-fill/GTT/child/trail/roll lifecycle
+tests do not prove actual provider writes. Real broker acceptance, persistent
+GTT carry validity and generated-child identity remain unverified; no real orders,
+activation proof, LIVE change, pause removal or manual-position action occurred.
+See ORACLE_EXECUTION.md for the remaining provider-validation boundary.
+
 ## October 6 Premium Impulse Monitor and private Supabase archive
 
 The attached multi-threshold research specification applies to **both NIFTY and

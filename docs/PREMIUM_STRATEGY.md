@@ -31,8 +31,9 @@ This proposal overrides usual weekday routing. Confirm the old basket flat
 before considering the successor. Unknown expiry evidence or both indexes
 expiring blocks the successor. Fresh margin/books, a bought hedge and a confirmed
 open exchange session are required. There is no fixed profit target.
-The live controller's 19:00 entry cutoff is unchanged: this is a read-only
-handoff proposal, not an automatic timed exit or a live-entry exception.
+The gated controller queues the confirmed owned expiry basket's short-first
+exit at 19:00. The other-index successor is a read-only proposal: the controller's
+19:00 new-entry cutoff is unchanged, with no live-entry exception.
 After expiry the journal requires two fresh complete broker-flat snapshots and
 terminal order/protection evidence before marking the basket closed. It does not
 invent an expiry settlement fill or settlement P&L. Live execution is paused.
