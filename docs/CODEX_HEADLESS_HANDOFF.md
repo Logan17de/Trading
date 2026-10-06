@@ -4,6 +4,24 @@ October 5, 2026 · `Logan17de/Trading` · `main` · `D:\Money Trader\Trading`.
 Read AGENTS.md, PREMIUM_STRATEGY.md and HEADLESS_INTEGRATION_STATUS.md.
 The active owner policy is premium v3; historical v1/v2 studies are provenance.
 
+## October 6 carried-position review update
+
+Deployed source `fc0e4f09e543a1c64769cfaddc5458e4d8cfc8ed` adds a read-only
+`execution_controller.position_review` to the dashboard. Exactly owned, fresh
+Everyday baskets can propose rollover at or below ₹8 from 12:45 JST, before
+the 14:00 fresh-entry window. Basket loss/trailing exit reviews take precedence;
+stale/incomplete/manual/mixed evidence waits. Reviews run independently of owner
+Off/pause, do not create orders, and do not mutate basket state. Pre-14:00 live
+roll execution remains disabled; activation gates are unchanged.
+
+36 policy/controller tests passed with isolated pinned SDK, including pre-entry
+reviews under pause, stop priority and manual-position rejection with zero writes.
+JavaScript syntax, config and synthetic offline demo passed. SQLite backup and
+integrity verified before rollout. Existing isolated credentials reused, no
+rotation. Only read-only trading observer and PC viewer restarted; shared services
+remained active. PC transport now points to this immutable release. Latest view
+was checked through the API, not newly visually verified in owner Edge.
+
 ## October 6 VM viewer check · 10:14 JST
 
 Owner requested VM-hosted strategy monitoring with PC visualization after the
