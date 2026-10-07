@@ -149,7 +149,19 @@ class PremiumExecutor:
             return result
 
     def _status(self,reason,**extra):
-        value=dict(reason=reason,at=self.clock().isoformat(),**extra)
+        # This timestamp records a status change, not the worker heartbeat.
+        # Rewriting an unchanged Off/paper/error result every five seconds held
+        # the executor lock behind unrelated journal writers and delayed the
+        # collector before its sample timer started. Gates still run each tick;
+        # only an identical status payload avoids a new SQLite write.
+        now=self.clock()
+        body=dict(reason=reason,**extra)
+        previous=self.journal.store.meta('premium-executor-status',{})
+        if isinstance(previous,dict) and {k:v for k,v in previous.items() if k!='at'}==body:
+            try:
+                if stamp(previous['at'])<=now:return previous
+            except (KeyError,ValueError,TypeError):pass
+        value=dict(body,at=now.isoformat())
         self.journal.store.set_meta('premium-executor-status',value)
         return value
 

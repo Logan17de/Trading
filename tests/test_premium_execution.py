@@ -127,6 +127,46 @@ class Session:
         pytest.fail(str(self.journal.store.meta('premium-executor-status')))
 
 
+def test_unchanged_blocked_tick_does_not_wait_for_unrelated_sqlite_writer(tmp_path):
+    import threading
+    s=Session(tmp_path);s.gate.mode='paper'
+    first=s.tick()
+    assert first['reason']=='LIVE_ENVIRONMENT_NOT_ACTIVATED'
+    writer=s.journal.store.connect();writer.execute('BEGIN IMMEDIATE')
+    values=[];errors=[]
+    def tick():
+        try:values.append(s.tick())
+        except Exception as exc:errors.append(type(exc).__name__)
+    task=threading.Thread(target=tick)
+    try:
+        task.start();task.join(timeout=1)
+        returned_while_writer_held=not task.is_alive()
+    finally:
+        writer.rollback();writer.close();task.join(timeout=5)
+    assert returned_while_writer_held and not errors and values==[first]
+    assert s.broker.writes==[]
+    # Current intent/gates are evaluated again even when the last result matched.
+    policy.set_intent(s.journal.store,False,s.now)
+    s.gate.mode='live'
+    changed=s.tick()
+    assert changed['reason']=='OWNER_ALGO_OFF' and changed['at']!=first['at']
+    assert s.journal.store.meta('premium-executor-status')==changed and s.broker.writes==[]
+
+
+def test_status_dedup_keeps_last_change_time_but_persists_changed_details_and_errors(tmp_path):
+    s=Session(tmp_path)
+    first=s.executor._status('WAIT',detail='INITIAL')
+    s.now+=timedelta(seconds=5)
+    assert s.executor._status('WAIT',detail='INITIAL')==first
+    changed=s.executor._status('WAIT',detail='NEW_READINESS')
+    assert changed['at']==s.now.isoformat() and changed!=first
+    s.now+=timedelta(seconds=5)
+    failed=s.executor._status('EXECUTION_RECONCILIATION_REQUIRED',detail='NEW_ERROR')
+    assert failed['at']==s.now.isoformat() and s.journal.store.meta('premium-executor-status')==failed
+    s.journal.store.set_meta('premium-executor-status',dict(failed,at='invalid'))
+    assert s.executor._status('EXECUTION_RECONCILIATION_REQUIRED',detail='NEW_ERROR')==failed
+
+
 def test_preentry_carried_review_is_fresh_owned_and_never_writes(tmp_path):
     s=Session(tmp_path);s.monitoring()
     s.now=s.now.replace(hour=13,minute=0)

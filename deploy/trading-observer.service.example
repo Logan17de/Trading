@@ -30,11 +30,12 @@ RestrictSUIDSGID=true
 LockPersonality=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths=/var/lib/trading-observer
-MemoryHigh=160M
+# Normal collection briefly exceeds 160M; avoid reclaim stalls during snapshots.
+MemoryHigh=192M
 MemoryMax=240M
 TasksMax=48
-# 60% of one CPU; leaves capacity for shared services on the two-CPU VM.
-CPUQuota=60%
+# At most one CPU on the two-CPU VM; retain lower priority for shared services.
+CPUQuota=100%
 Nice=10
 StandardOutput=null
 StandardError=null
