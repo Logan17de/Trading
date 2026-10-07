@@ -52,6 +52,19 @@ and persisted. The observer template allows 192 MiB before reclaim, keeps its
 240 MiB hard limit, and permits at most one of the VM's two CPUs with Nice=10.
 The four shared services were idle during profiling and remain untouched.
 
+A later read still timed out. Frame-only, nonblocking Python samples showed the
+research worker repeatedly parsing the full instrument CSV while the viewer was
+waiting; lookup-only SQLite benchmarks did not justify a database redesign.
+Report data now parses each downloaded master once into an exact index/expiry
+catalog, reuses it for books and IV studies, and replaces it atomically with its
+actual receipt time. Restart cannot reuse saved expiry evidence before loading
+the corresponding current master. Streaming research keeps immutable filtered
+rows and recomputes dates/ATM selection without parsing the full CSV every 30s.
+Failed refreshes cannot extend source validity; reconnect rejects old selections.
+These changes passed 88 focused data/Normal tests and 22 stream tests locally;
+all 14 new catalog/stream regressions also passed on the installed final release.
+The isolated diagnostic environment was removed after sampling.
+
 Oracle read-only profile check confirmed required identity fields and active FNO
 access. The owner's Edge Groww portal showed the existing Codex key Approved,
 and its configured static IP matched Oracle's observed egress. A historical
@@ -62,12 +75,12 @@ actions. No private identity, credential or financial amount is recorded here.
 
 Verification: the local full suite passed 748 tests with six platform skips;
 the latest desktop GUI checks passed all 37 tests. On installed Oracle release
-`82008f0`, all 208 execution/protection checks passed in 186.85 seconds. Its
-execution implementation matches the final release apart from verification
-deadlines; release `45c9b71` then passed all 10 focused arm/deadline checks.
+`82008f0`, all 208 execution/protection checks passed in 186.85 seconds.
+Release `45c9b71` then passed all 10 focused arm/deadline checks. Later changes
+were separately tested for status-write deduplication and master parsing above.
 The subsequent status-write fix passed all 38 focused execution tests locally,
 including holding an independent SQLite writer lock; its two new regressions
-also passed on the final installed Oracle release.
+also passed on installed release `b77e7f3` before the final catalog update.
 Config, JS, Python compilation, PowerShell syntax and backup/restore checks
 passed. The isolated synthetic offline demo completed two successful jobs and
 queued an unsent report; it did not create production trades or send an email.
@@ -76,17 +89,22 @@ The pre-rollout SQLite backup
 capital and owner-control hashes matched after it completed.
 
 Current deployed code and the protected PC source pin are
-`b77e7f3aedd815b340aa09274fc5025ad20ce7b6`. Oracle remains paper, both the original
+`b7cf2457091ce219fee610be3b7bc8fdc8ec34b4`. Oracle remains paper, both the original
 shared pause and runtime pause are present, owner Algo and both strategy groups
 are Off, and no actual activation receipt or commissioning record exists. The
 observer and all four shared services are active. No real order, owner arm action
 or synthetic provider proof was inserted into the production journal.
 
-Intermittent socket timeouts and stale reads occurred during rollout, including
-approximately two minutes of final startup delay. After warm-up, the PC showed
-HEALTHY/RECENT data with available funds; a protected read at 08:22 UTC completed
-in 4.77 seconds and confirmed the same-boot heartbeat advancing to sequence 18,
-with no runtime or execution-worker error and fresh complete broker state.
+Intermittent socket timeouts and stale reads occurred during rollout. Four spaced
+reads of the final build completed in 3.96/10.01/11.58/11.91 seconds; the first was
+initializing and stale, one subsequent read was stale, and the other two were
+RECENT with available funds. The same boot progressed from sequence 1 to 7.
+At 08:38 UTC the protected read completed in 8.43 seconds at sequence 21, with
+RECENT data, available funds and no runtime or execution-worker error. The latest
+recorded collection cycle was 7.31 seconds (4.50 network collection plus 2.81
+journaling). Five-second cadence remains unmet in these samples. Complete broker
+state can still age out before a viewer read finishes; its gate remains closed
+when that occurs. No freshness limit was extended to mask the latency.
 The installed 192 MiB soft/240 MiB hard memory and one-CPU limits were verified.
 These samples do not establish continuous five-second collection or live trading
 readiness; stale values remain unknown without relaxing freshness limits.
