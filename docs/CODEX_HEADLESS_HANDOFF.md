@@ -22,8 +22,13 @@ Maintenance has not run test orders or the arm command and has not created proof
 The protected desktop setup POST uses a fixed pinned SSH command and private
 durable plan state. Preview identities survive lost responses; each broker write
 requires the exact reviewed plan hash, and arming requires the evidence digest.
-Opening the page never submits orders. Deployment installs pytest8.4.2 only into
-the release's isolated venv so the owner arm check can actually run on Oracle.
+An unsubmitted preview can be corrected after a confirmed rejection; uncertain
+or submitted actions retain their original identity. A lost arm response can be
+resolved by read-only status only when current live mode, absent runtime pause,
+owner Off, the selected plan's valid receipt and exact installed binding all agree.
+Status never retries arming. Opening the page never submits orders. Deployment
+installs pytest8.4.2 only into the release's isolated venv so the owner arm check
+can actually run on Oracle.
 
 Deployment now preserves existing mode/pause and refuses owner On, open owned
 orders or a running live unpaused observer. It shares setup's root lock and checks
@@ -38,16 +43,56 @@ unchanged. Snapshot timing separates collection and journal time. Backup hashing
 now streams the file; it no longer allocates an entire large journal in the capped
 observer. The actual journal was approximately 0.9 GB during this rollout.
 
+Additional profiling found repeated unchanged executor-status writes contending
+for the journal while holding the collector's shared lock, and transient memory
+reclaim at the service's 160 MiB soft limit. Identical status payloads now avoid
+another write; their timestamp means last status change, while runtime heartbeat
+still advances independently. Changed gates/reasons/details are still evaluated
+and persisted. The observer template allows 192 MiB before reclaim, keeps its
+240 MiB hard limit, and permits at most one of the VM's two CPUs with Nice=10.
+The four shared services were idle during profiling and remain untouched.
+
 Oracle read-only profile check confirmed required identity fields and active FNO
-access. No raw identity, credential or private financial amount was printed or
-committed. Full-suite verification passed 662 tests with six platform skips;
-after final commissioning result/recovery refinements, all 103 setup/core tests
-passed. The backup/restore regression passed after streaming-hash changes.
-Config, JS, Python compilation, PowerShell syntax and the isolated synthetic
-offline demo passed. The pre-rollout SQLite backup
+access. The owner's Edge Groww portal showed the existing Codex key Approved,
+and its configured static IP matched Oracle's observed egress. A historical
+manual target showed DAY validity; it does not prove persistent API GTT behavior
+or generated-child linkage. No API permission or key was changed. The desktop
+`/live-setup` page was visually verified in owner Edge without performing setup
+actions. No private identity, credential or financial amount is recorded here.
+
+Verification: the local full suite passed 748 tests with six platform skips;
+the latest desktop GUI checks passed all 37 tests. On installed Oracle release
+`82008f0`, all 208 execution/protection checks passed in 186.85 seconds. Its
+execution implementation matches the final release apart from verification
+deadlines; release `45c9b71` then passed all 10 focused arm/deadline checks.
+The subsequent status-write fix passed all 38 focused execution tests locally,
+including holding an independent SQLite writer lock; its two new regressions
+also passed on the final installed Oracle release.
+Config, JS, Python compilation, PowerShell syntax and backup/restore checks
+passed. The isolated synthetic offline demo completed two successful jobs and
+queued an unsent report; it did not create production trades or send an email.
+The pre-rollout SQLite backup
 `pre-owner-live-setup-20261007T072802Z.sqlite3` passed full integrity checking;
-capital and owner-control hashes still matched after it completed. Actual
-deployment/readiness observations follow after rollout.
+capital and owner-control hashes matched after it completed.
+
+Current deployed code and the protected PC source pin are
+`b77e7f3aedd815b340aa09274fc5025ad20ce7b6`. Oracle remains paper, both the original
+shared pause and runtime pause are present, owner Algo and both strategy groups
+are Off, and no actual activation receipt or commissioning record exists. The
+observer and all four shared services are active. No real order, owner arm action
+or synthetic provider proof was inserted into the production journal.
+
+Intermittent socket timeouts and stale reads occurred during rollout, including
+approximately two minutes of final startup delay. After warm-up, the PC showed
+HEALTHY/RECENT data with available funds; a protected read at 08:22 UTC completed
+in 4.77 seconds and confirmed the same-boot heartbeat advancing to sequence 18,
+with no runtime or execution-worker error and fresh complete broker state.
+The installed 192 MiB soft/240 MiB hard memory and one-CPU limits were verified.
+These samples do not establish continuous five-second collection or live trading
+readiness; stale values remain unknown without relaxing freshness limits.
+Actual broker persistence, generated-child linkage and fills remain unverified
+until the owner completes the explicit commissioning workflow. Test fixtures
+must not be substituted for that evidence.
 
 ## October 7 protection and external-closure update
 
