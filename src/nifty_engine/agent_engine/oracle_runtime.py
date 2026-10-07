@@ -237,7 +237,11 @@ class Runtime:
         # cannot place, cancel, modify or arm broker orders. Never stall collection.
         from . import premium_strategy
         from .dashboard import load_json
-        while not self.stop.wait(60):
+        next_network_check = 0
+        while not self.stop.wait(5):
+            self.connect_research_snapshot()
+            if time.monotonic() < next_network_check: continue
+            next_network_check = time.monotonic() + 60
             preparer=self.preparer
             research_reader=self.report_data
             if research_reader:
@@ -254,6 +258,21 @@ class Runtime:
                     self.state.pnl_lines.store.set_meta("premium-preparation",{"status":"WAIT",
                         "reason":"PREPARATION_INPUT_UNAVAILABLE","at":datetime.now(timezone.utc).isoformat(),
                         "execution_enabled":False,"broker_writes":False,"selected":None})
+
+    def connect_research_snapshot(self):
+        """Derived research writes run off the account collector/heartbeat path."""
+        from .dashboard import load_json
+        from .report_data import connect_snapshot
+        try:
+            value = load_json(self.output, 8_000_000)
+            if not isinstance(value, dict) or not value.get('execution_observation'): return
+            connect_snapshot(self.state.pnl_lines.store, value, self.research_catalog,
+                             datetime.now(timezone.utc), self.normal_catalog)
+        except Exception:
+            for index in self.research_catalog['indices']:
+                self.state.pnl_lines.store.set_meta('report-data-status-' + index, {
+                    'status':'WAIT', 'reason':'RESEARCH_SNAPSHOT_UNAVAILABLE',
+                    'at':datetime.now(timezone.utc).isoformat(), 'broker_writes':False})
 
     def execution_loop(self):
         while not self.stop.wait(5):self.execution_step()
@@ -342,13 +361,6 @@ class Runtime:
                                 self.executor.reconcile_before_collection()
                                 value=self.collector.sample()
                             write_snapshot(self.output,value)
-                            from .report_data import connect_snapshot
-                            try:connect_snapshot(self.state.pnl_lines.store,value,self.research_catalog,datetime.now(timezone.utc),self.normal_catalog)
-                            except Exception:
-                                for index in self.research_catalog['indices']:
-                                    self.state.pnl_lines.store.set_meta('report-data-status-'+index,{
-                                        'status':'WAIT','reason':'RESEARCH_SNAPSHOT_UNAVAILABLE',
-                                        'at':datetime.now(timezone.utc).isoformat(),'broker_writes':False})
                             if value.get("status")=="BLOCKED" or any(r.get("code")=="403" for r in value.get("probes",{}).values()):
                                 raise ConnectionError("read unavailable")
                         # Collection already persists observations. Building full

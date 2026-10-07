@@ -35,7 +35,13 @@ Read-only evaluation still rechecks present input freshness. All65 Normal/runtim
 diagnostic tests passed after that change; separate52 dashboard/runtime/diagnostic
 checks also passed. The two-CPU VM throttled84% of observer scheduling periods at
 CPUQuota35%. Observer allowance is now60% of one CPU; memory/task/security caps
-remain. No freshness policy was relaxed. Final rollout receipt follows below.
+remain. No freshness policy was relaxed. Derived research snapshot writes now
+run in the existing preparation worker every five seconds; its network research
+checks retain the60s budget. They no longer hold the collector heartbeat after
+snapshot publication. Stale timestamps are preserved, unavailable research is
+UNKNOWN. All67 Normal/runtime/diagnostic tests passed; the final scheduling test
+replacement also passed all four diagnostic/scheduling tests. Final rollout
+receipt follows below.
 
 ## October 7 additional investment control
 
