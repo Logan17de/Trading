@@ -1,5 +1,63 @@
 # Oracle premium execution controller
 
+## October 7 report basket adapter and strategy switches
+
+The existing PremiumExecutor now dispatches bull put, bear call and iron condor
+baskets to `report_executor.py`, sharing the same lock, slot, transport, gate,
+ownership reservations and journal. Calendar has no order route: its multi-expiry
+cash-settlement payoff/margin model is still absent. The pure research evaluator
+remains MONITOR_ONLY and cannot call the broker.
+
+Four private switches in `report-strategy-controls-v1` default Off, survive
+restart and use a revision to reject conflicting desktop submissions. The fixed
+local endpoint and Oracle socket accept only a strategy ID, boolean and revision.
+There is no browser order/activation endpoint. Switching a strategy Off denies
+new entries immediately, including at the final SDK HTTP boundary. An incomplete
+entry is cancelled/reconciled and unwound while global Algo remains On; a
+completed basket keeps protection and exit management. Global Off preserves the
+existing contract: no engine broker writes, including exits/cancels. Already armed
+broker protection and outstanding exchange orders may still trigger/fill.
+
+All bought wings fill and receive exact net-position confirmation before shorts.
+Each short receives verified persistent GTT protection before the next short.
+Risk is recalculated from actual fills and fresh conservative books; margin and
+hedge-only requirements are actual analytical broker quotes. Hedge-only purchase
+debit plus estimated costs cannot exceed the declared risk limit. Only the same
+selected structure may continue, with fresh regime/IV/event/expiry evidence;
+entry times out after three minutes. Partial/failed entries unwind instead of
+increasing size or adopting existing positions. Original operation keys survive
+restarts/timeouts. Pending entry LIMITs must be terminal before unwind.
+
+Condor protection allocates actual reconciled cash among the currently filled
+shorts, excluding unsold-leg proceeds and hedge resale. When the second short
+fills, the first stop can tighten before the second GTT is created. It never
+loosens. Partial construction and sequential orders are not atomic: gaps, fees,
+timeouts and stop-limit nonfills can exceed a loss trigger. The quoted completed
+basket expiry bound does not guarantee intermediate execution losses.
+
+Owned exits use actual cash plus liquidation at bid/ask minus quoted round-trip
+charges: 50% of actual entry credit less those charges, loss at the lesser of
+₹1,000 or 1.5× credit, or ≤7 calendar DTE. Management runs during the existing
+collection window, including before 14:00. Entry still requires 14:00–19:00 JST,
+one basket/max two lots. Cancel/child readback must settle before closing any
+short; all shorts must be flat before any bought wing is sold. Expired flat
+baskets require two complete snapshots, terminal orders and inactive protection;
+settlement P&L remains UNKNOWN without broker settlement evidence. Manual,
+unknown or mixed contracts never become owned.
+
+Production is deliberately still Off/paper/paused. The immutable release-bound
+provider activation receipt is not fabricated by setup. Missing dated IV30,
+matched 252-session IV history and event coverage also block entries. Owner
+approved continued monitoring when these sources are absent. Sampled dated
+NIFTY/SENSEX contract IV/Greeks/books now join the existing private one-way
+Supabase archive; no account balances, credentials or commands are added to it.
+
+Before any owner-controlled real-order check, validate the exact deployed build,
+real broker order acknowledgments, persistent GTT expiry and generated-child
+reference linkage. Synthetic replay is not evidence those provider behaviors
+work. Until that validation and data provisioning are complete, clicking Start
+saves On but does not place a trade. Historical implementation details follow.
+
 October 6, 2026. This extends the existing Python runtime; the PC remains a viewer
 and protected owner-intent controller. No additional trading service/framework,
 public port or GUI was created. No real order was placed during implementation.

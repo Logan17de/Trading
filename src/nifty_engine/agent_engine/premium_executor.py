@@ -48,10 +48,14 @@ def cash_stop(cash,quantity,costs,tick,best_pnl,limit=1000):
 
 
 class PremiumExecutor:
-    def __init__(self,journal,gateway,protection,gate,cfg,*,clock):
+    def __init__(self,journal,gateway,protection,gate,cfg,*,clock,report_cfg=None):
         self.journal,self.gateway,self.protection,self.gate=journal,gateway,protection,gate
         self.cfg,self.clock=policy.validate(cfg),clock
         self.lock=threading.RLock()
+        self.report = None
+        if report_cfg:
+            from .report_executor import ReportExecution
+            self.report = ReportExecution(self, report_cfg)
 
     def _state(self): return self.journal.store.meta(KEY,{})
 
@@ -60,6 +64,13 @@ class PremiumExecutor:
     def public(self,obs=None):
         state=self._state(); blockers=self.gate.blockers(obs,purpose='ENTRY')
         status=self.journal.store.meta('premium-executor-status',{})
+        prepared = None
+        if self.report:
+            try:
+                prepared = self.report.preparation(self.report.evidence(obs or {}))
+                if not prepared['selected']: blockers.append('REPORT_INPUTS_OR_STRATEGY_SELECTION_REQUIRED')
+                else: self.report.validate(prepared['selected'],self.report.evidence(obs or {}))
+            except (ValueError,KeyError,TypeError): blockers.append('REPORT_EXECUTION_INPUT_UNAVAILABLE')
         protection='NOT_ARMED'
         if state.get('protection_key'):
             record=self.protection.record(state['protection_key']) or {}
@@ -68,17 +79,35 @@ class PremiumExecutor:
                 protection='UNKNOWN_STALE_READBACK'
             if 'RECONCILIATION_REQUIRED' in protection or protection=='UNKNOWN_STALE_READBACK':
                 blockers.append('BROKER_PROTECTION_RECONCILIATION_REQUIRED')
+        if state.get('catalog') == 'report-v1':
+            states=[]
+            for p in state.get('protections',{}).values():
+                record=self.protection.record(p['key']) or {}
+                current=record.get('status','UNKNOWN')
+                if current=='VERIFIED_ACTIVE' and not fresh(record.get('checked_at'),self.clock(),30):
+                    current='UNKNOWN_STALE_READBACK'
+                states.append(current)
+            protection='VERIFIED_ACTIVE' if states and all(r=='VERIFIED_ACTIVE' for r in states) else ','.join(states) or 'NOT_ARMED'
+            if any('RECONCILIATION_REQUIRED' in r or r.startswith('UNKNOWN') for r in states):
+                blockers.append('BROKER_PROTECTION_RECONCILIATION_REQUIRED')
         return dict(code_implemented=True,status='BLOCKED' if blockers else 'READY',
             phase=state.get('phase','IDLE'),strategy=state.get('strategy'),blockers=blockers,
             reason=status.get('reason'),at=status.get('at'),execution_enabled=not blockers,
             protection=protection,loss_cap_guaranteed=False,
             provider_execution_verified=not bool('REVIEWED_LIVE_ACTIVATION_REQUIRED' in blockers),
-            position_review=self.position_review(obs))
+            management_enabled=not self.gate.blockers(obs,purpose='PROTECT'),
+            report_preparation=prepared,position_review=self.position_review(obs))
 
     def position_review(self,obs):
         """Read-only carried-basket review, even when entries/activation are blocked."""
         result=dict(action='WAIT',reason='OWNED_FRESH_POSITION_REQUIRED',broker_writes=False)
         s=self._state()
+        if self.report and s.get('catalog')=='report-v1' and s.get('phase')=='REPORT_MONITORING':
+            try:
+                if not obs or obs.get('complete') is not True or not fresh(obs['received_at'],self.clock(),10): return result
+                self._exclusive(s,obs)
+                return self.report.close_reason(s,self.report.evidence(obs))
+            except (ValueError,KeyError,TypeError): return result
         if s.get('phase')!='MONITORING': return result
         try:
             if not obs or obs.get('complete') is not True or not fresh(obs.get('received_at'),self.clock(),10):
@@ -116,6 +145,7 @@ class PremiumExecutor:
             if not state or state.get('phase')=='CLOSED': return
             for key in set(state.get('all_operations',[]))|set(state.get('operations',{}).values()): self.gateway.reconcile(key)
             if state.get('protection_key'): self.protection.reconcile(state['protection_key'])
+            for p in state.get('protections',{}).values(): self.protection.reconcile(p['key'])
 
     def _net(self,state):
         rows=self.journal.store.read('SELECT symbol,side,filled FROM pc_orders WHERE slot=? AND broker_hash IS NOT NULL',(state['slot'],))
@@ -234,6 +264,12 @@ class PremiumExecutor:
 
     def tick(self,obs,prepared):
         with self.lock:
+            state = self._state()
+            if self.report and (not state or state.get('phase')=='CLOSED' or state.get('catalog')=='report-v1'):
+                return self.report.tick(obs)
+            if self.report and state.get('phase') in ('ENTRY_HEDGE','ENTRY_SHORT','ROLL_CLOSE_SHORT','ROLL_REHEDGE'):
+                state.update(phase='EXIT_SHORT',exit_reason='LEGACY_ENTRY_AND_ROLL_RETIRED')
+                self._save(state)
             try:
                 self.gate.check(obs,purpose='PROTECT')
                 state=self._state()

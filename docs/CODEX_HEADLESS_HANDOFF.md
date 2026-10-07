@@ -1,5 +1,29 @@
 # Current Trading handoff
 
+## October 7 guarded report execution and per-strategy controls
+
+Owner requested finishing software setup while retaining Off until the owner
+clicks Start. Three same-expiry report basket routes now share the existing
+PremiumExecutor, transport, lock, journal slot and persistent protection; the
+calendar remains monitoring-only. Four private revision-checked owner switches
+default Off and persist. Disabling a held strategy stops new entries, preserving
+owned management while global Algo is On; global Off denies all engine writes.
+Read ORACLE_EXECUTION.md for the full staged entry/protection/exit contract.
+
+Missing data was confirmed by the owner: no IV history/event source is available.
+Owner approved continued monitoring if public sources cannot be verified. NSE
+India VIX is not substituted for matched SENSEX/contract IV history. Dated sampled
+contract IV/Greeks/books now join the private one-way Supabase archive. Fixed a
+real reader schema error that had rejected valid books containing Greek metadata;
+strict book validation now precedes adding separately dated Greeks.
+
+Real provider order/GTT/generated-child verification remains pending. Setup does
+not fabricate activation proofs, enable LIVE, remove pause or send test orders.
+Actual production remains Off/paper/paused with no owned orders. A Start click
+alone cannot overcome these validation/data blockers. Calendar settlement risk
+and out-of-sample strategy validation also remain unfinished. Deployment and
+post-install verification are recorded separately below when completed.
+
 ## October 7 read-only connections and explicit owner Start
 
 Owner requested connecting the components while retaining Off until an explicit

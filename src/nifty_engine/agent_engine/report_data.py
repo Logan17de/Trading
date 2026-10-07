@@ -161,7 +161,10 @@ class ReportData:
             try:
                 raw=self.call(self.market.groww.get_quote,exchange=EXCHANGES[index],segment='FNO',trading_symbol=row['symbol'])
                 at=self.clock();q=quote_summary(raw,at)
-                book=leg(dict(row,bid=q['bid_price'],ask=q['offer_price'],bid_quantity=q['bid_quantity'],ask_quantity=q['offer_quantity'],received_at=at.isoformat()))
+                # Contract validation is deliberately strict. Greeks have their
+                # own receipt clock and must not enter the book-only schema.
+                base={k:row[k] for k in ('symbol','index','expiry','strike','lot_size','tick_size')}
+                book=leg(dict(base,bid=q['bid_price'],ask=q['offer_price'],bid_quantity=q['bid_quantity'],ask_quantity=q['offer_quantity'],received_at=at.isoformat()))
                 books.append(dict(book,delta=row['delta'],iv=row['iv'],iv_unit=row['iv_unit'],greeks_received_at=greek_at))
             except Exception:continue  # Unavailable book stays unknown, never zero.
         return books
@@ -188,11 +191,13 @@ class ReportData:
                         quantity=qty,order_type='LIMIT',price=r['ask'] if side=='BUY' else r['bid'])
                 try:
                     entry=self.call(self.market.groww.get_order_margin_details,segment='FNO',orders=[order(r,side) for r,side in legs])
+                    hedge=self.call(self.market.groww.get_order_margin_details,segment='FNO',orders=[order(r,side) for r,side in legs if side=='BUY'])
                     exit=self.call(self.market.groww.get_order_margin_details,segment='FNO',orders=[order(r,'BUY' if side=='SELL' else 'SELL') for r,side in legs])
                     requirement=number(entry['total_requirement']);cost=number(entry['brokerage_and_charges'])+number(exit['brokerage_and_charges'])
                     if requirement<0 or cost<0:continue
                     key=identity({'legs':[(r['symbol'],side) for r,side in legs],'quantity':qty})
-                    margins[key]=dict(received_at=self.clock().isoformat(),basket_requirement_inr=requirement,round_trip_charges_inr=cost)
+                    margins[key]=dict(received_at=self.clock().isoformat(),basket_requirement_inr=requirement,
+                        hedge_requirement_inr=number(hedge['total_requirement']),round_trip_charges_inr=cost)
                 except Exception:continue
         return margins
 

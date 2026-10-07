@@ -2,8 +2,17 @@
 
 The owner asked to derive strategies from the supplied deep-research report and
 replace overlapping original strategies. Both NIFTY and SENSEX are studied. The
-new catalog is the current dashboard/email strategy list. It is MONITOR_ONLY;
-there is no new broker execution path or activation.
+new catalog is the current dashboard/email strategy list. Its pure evaluator is
+MONITOR_ONLY. A separate guarded adapter inside the existing PremiumExecutor now
+routes the three same-expiry structures. Calendar is research only. Production
+remains paused/paper/Off: dated IV history, event coverage and live provider
+validation are absent. No real order was placed. See ORACLE_EXECUTION.md.
+
+Four owner switches default Off and persist privately on Oracle. They select new
+entries; they do not approve missing evidence or activate LIVE. Disabling a held
+strategy retains protection/exits while global Algo is On. Global Algo Off denies
+all engine writes; existing broker GTTs/orders are not cancelled by that button.
+Off strategies continue producing research observations for study.
 
 ## Replacement and provenance
 
@@ -96,6 +105,17 @@ historical index minute prices are not substituted for an option-volatility
 history. The module does not fetch or purchase SPX datasets. All new strategy
 performance bars remain unknown until reviewed closed-trade/out-of-sample data
 exists; old strategy results are not copied to the new strategies.
+
+Owner confirmed no existing IV/event data source on October 7 and approved
+continued monitoring when a suitable source cannot be verified. Public source
+review found [NSE India VIX](https://www.nseindia.com/static/products-services/indices-indiavix-index)
+and [its historical report access](https://www.nseindia.com/static/resources/historical-reports-capital-market-daily-monthly-archives).
+India VIX is based on NIFTY options and represents 30-day expected volatility;
+it is not a matched SENSEX volatility history or individual-contract IV series.
+No unverified substitution, free-history claim, purchase or scraped dataset was
+installed. Current dated contract IV/Greeks/books are archived for study, without
+pretending that the first observation creates 252 prior sessions. Event coverage
+remains unknown, not assumed clear. Calendar remains monitoring-only.
 
 ## Private replay / evidence import
 

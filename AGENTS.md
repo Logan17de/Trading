@@ -5,8 +5,14 @@
 - Extend the existing headless `src/nifty_engine/agent_engine/` runtime. Oracle
   is the observer/policy/report host; the loopback PC app is viewer/controller.
   No new GUI or execution framework. Keep shared Qwen/Colab/mail/tunnels running.
-- Active October 7 catalog is report-based MONITOR_ONLY research: bull put, bear
-  call, iron condor and calendar for NIFTY/SENSEX. Read REPORT_STRATEGIES.md.
+- Active October 7 catalog is report-based bull put, bear call, iron condor and
+  calendar for NIFTY/SENSEX. Read REPORT_STRATEGIES.md and ORACLE_EXECUTION.md.
+  Three same-expiry baskets have a guarded adapter inside PremiumExecutor;
+  calendar stays MONITOR_ONLY. Pure research evaluation never authorizes orders.
+  Four private owner switches default Off and persist with revision checks.
+  Switch Off prevents new entries, not existing owned management while global
+  Algo is On. Global Off/pause/paper still deny every broker write. Missing IV
+  history/calendar and actual provider validation keep production blocked.
   New Everyday/Late-session entries and rolls are retired even if intent is On.
   Keep original records/ownership/exits/protection; never relabel legacy positions
   or migrate fictional SPX win rates. New research requires point-in-time IV/RV,

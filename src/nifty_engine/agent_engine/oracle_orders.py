@@ -90,6 +90,7 @@ class GrowwOrderTransport:
 
 class OracleOrderGateway(PreparedOrderGateway):
     """Reuse exact reservations, acknowledgment, fills and uncertain-write recovery."""
+    strategies = ('EVERYDAY', 'LATE_SESSION', 'bull_put', 'bear_call', 'iron_condor')
     def __init__(self, journal, broker, gate):
         super().__init__(journal, broker, gate.pause_file, deployed=True, clock=gate.clock)
         self.gate, self.purpose = gate, 'ENTRY'
@@ -98,8 +99,8 @@ class OracleOrderGateway(PreparedOrderGateway):
         self.gate.check(observation, purpose=self.purpose)
 
     @contextlib.contextmanager
-    def scope(self, observation, purpose):
+    def scope(self, observation, purpose, strategy=None):
         old = self.purpose; self.purpose = purpose
         try:
-            with self.broker.scope(observation, purpose): yield
+            with self.gate.strategy_scope(strategy), self.broker.scope(observation, purpose): yield
         finally: self.purpose = old

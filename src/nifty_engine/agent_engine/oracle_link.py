@@ -27,9 +27,13 @@ def settings(value):
 def request(config, command, *, run=subprocess.run):
     settings(config)
     accounting = isinstance(command,dict) and set(command)=={"action","withdrawal"} and command["action"]=="record_withdrawal"
+    strategy_switch = isinstance(command,dict) and set(command)=={'action','switch'} and command['action']=='strategy_switch'
     if accounting:
         from .capital import withdrawal
         withdrawal(command["withdrawal"],datetime.now(timezone.utc))
+    elif strategy_switch:
+        from .strategy_controls import validate_command
+        validate_command(command['switch'])
     elif command not in ({"action":"read"},{"action":"intent","enabled":True},{"action":"intent","enabled":False}):
         raise ValueError("fixed read, intent or accounting command required")
     ssh=Path(os.environ.get("SYSTEMROOT","C:/Windows"))/"System32/OpenSSH/ssh.exe"
@@ -222,6 +226,13 @@ class RemoteViewer:
     def set_intent(self,enabled):
         if type(enabled) is not bool:raise ValueError("explicit owner boolean required")
         result=request(self.config,{"action":"intent","enabled":enabled})
+        self.poll()
+        return result
+
+    def strategy_switch(self,body):
+        result=request(self.config,{'action':'strategy_switch','switch':body})
+        if result.get('status') not in ('SAVED','UNCHANGED','REVISION_CONFLICT') or result.get('broker_writes') is not False:
+            raise ConnectionError('Strategy preference was not confirmed')
         self.poll()
         return result
 

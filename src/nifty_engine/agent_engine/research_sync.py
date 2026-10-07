@@ -15,7 +15,9 @@ from zoneinfo import ZoneInfo
 PROJECT_URL='https://imirspxhbnerxknyynqx.supabase.co'
 TABLE='trading_research_records'
 IST=ZoneInfo('Asia/Kolkata')
-META_KEYS=('premium-executor-v1','premium-executor-status','premium-preparation','report-strategy-evaluations')
+META_KEYS=('premium-executor-v1','premium-executor-status','premium-preparation','report-strategy-evaluations',
+           'report-strategy-controls-v1','report-execution-preparation',
+           'report-contracts-NIFTY','report-contracts-SENSEX')
 
 
 def encoded(body):

@@ -128,6 +128,23 @@ def test_stale_worker_performs_no_broker_calls_or_owner_changes(tmp_path):
     assert not premium_strategy.intent(j.store)['enabled']
 
 
+def test_real_signed_greeks_are_separate_from_strict_executable_book_schema(tmp_path):
+    j=PcJournal(tmp_path/'j.sqlite3');calls=[]
+    def chain(**kw):
+        return {'strikes':{'25000':{'CE':{'trading_symbol':'NIFTY26N1025000CE','greeks':{'delta':.2,'iv':25}}},
+                           '25050':{'CE':{'trading_symbol':'NIFTY26N1025050CE','greeks':{'delta':.1,'iv':24}}}}}
+    def quote(**kw):
+        calls.append(kw['trading_symbol'])
+        return {'last_price':5,'bid_price':4.95,'offer_price':5,'bid_quantity':1000,'offer_quantity':1000}
+    market=SimpleNamespace(groww=SimpleNamespace(get_option_chain=chain,get_quote=quote),limiter=SimpleNamespace(wait=lambda:None))
+    reader=data.ReportData(market,j,CFG,clock=lambda:NOW)
+    reader.master_text='trading_symbol,underlying_symbol,segment,exchange,expiry_date,lot_size,tick_size,strike_price\nNIFTY26N1025000CE,NIFTY,FNO,NSE,2026-11-10,65,.05,25000\nNIFTY26N1025050CE,NIFTY,FNO,NSE,2026-11-10,65,.05,25050\n'
+    books=reader.books('NIFTY','2026-11-10',set())
+    assert len(books)==2 and len(calls)==2
+    assert books[0]['greeks_received_at']==NOW.isoformat() and books[0]['iv_unit']=='annualized_percent'
+    assert strategy._contract(books[0],'NIFTY',NOW)['delta']==.2
+
+
 @pytest.mark.parametrize('purpose',['ENTRY','ROLL','EXIT','PROTECT'])
 def test_off_blocks_all_order_purposes_even_with_valid_activation(tmp_path,purpose):
     j=PcJournal(tmp_path/'j.sqlite3');release='a'*40

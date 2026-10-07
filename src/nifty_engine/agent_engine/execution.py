@@ -181,6 +181,7 @@ def protective_stop(short_fill, hedge_fill, quantity, costs, tick, loss_limit=10
 
 
 class PreparedOrderGateway:
+    strategies = ('EVERYDAY', 'LATE_SESSION')
     """Crash-safe standard-order gateway for replay and future reviewed wiring.
 
     It is deliberately absent from Runtime's broker-write path. A caller must
@@ -230,7 +231,7 @@ class PreparedOrderGateway:
                 return {"status":"RECONCILIATION_REQUIRED", "reference":record["reference"], "broker_writes":False}
             if db.execute("SELECT 1 FROM pc_orders WHERE slot<>? AND state<>'CLOSED'", (slot,)).fetchone():
                 raise ValueError("ONE_ACTIVE_ENGINE_BASKET_ONLY")
-            if strategy not in ("EVERYDAY", "LATE_SESSION"):
+            if strategy not in self.strategies:
                 raise ValueError("ACTIVE_STRATEGY_REQUIRED")
             owner = db.execute("SELECT strategy FROM pc_slots WHERE slot=?", (slot,)).fetchone()
             if owner and owner[0] != strategy:

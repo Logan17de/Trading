@@ -17,6 +17,7 @@ from .execution import fresh
 from . import premium_strategy as policy
 
 _grant = contextvars.ContextVar('oracle_broker_write', default=None)
+_strategy = contextvars.ContextVar('oracle_entry_strategy', default=None)
 
 
 class ExecutionDenied(PermissionError):
@@ -24,13 +25,21 @@ class ExecutionDenied(PermissionError):
 
 
 class ExecutionGate:
-    def __init__(self, journal, pause_file, *, mode, release, host, clock, policy_hash, entries_retired=False):
+    def __init__(self, journal, pause_file, *, mode, release, host, clock, policy_hash, entries_retired=False,
+                 strategy_switches_required=False):
         self.journal, self.pause_file = journal, Path(pause_file)
         self.mode, self.release, self.host = mode, release, host
         self.clock, self.policy_hash = clock, policy_hash
         self.entries_retired=entries_retired
+        self.strategy_switches_required = strategy_switches_required
 
-    def blockers(self, observation=None, *, purpose='ENTRY'):
+    @contextlib.contextmanager
+    def strategy_scope(self, strategy):
+        token = _strategy.set(strategy)
+        try: yield
+        finally: _strategy.reset(token)
+
+    def blockers(self, observation=None, *, purpose='ENTRY', strategy=None):
         result = []
         if self.host != 'ORACLE': result.append('ORACLE_HOST_REQUIRED')
         if self.mode != 'live': result.append('LIVE_ENVIRONMENT_NOT_ACTIVATED')
@@ -47,6 +56,16 @@ class ExecutionGate:
             result.append('KNOWN_EXECUTION_PURPOSE_REQUIRED')
         if purpose in ('ENTRY','ROLL') and self.entries_retired:
             result.append('RETIRED_STRATEGY_NEW_ENTRY_DISABLED')
+        if purpose in ('ENTRY', 'ROLL') and self.strategy_switches_required:
+            from .strategy_controls import read, EXECUTABLE
+            sid = strategy or _strategy.get()
+            try:
+                enabled = read(self.journal.store)['enabled']
+                if sid is None:
+                    if not any(enabled[i] for i in EXECUTABLE): result.append('ALL_EXECUTABLE_STRATEGIES_OFF')
+                elif sid not in EXECUTABLE: result.append('MONITOR_ONLY_OR_RETIRED_STRATEGY')
+                elif not enabled[sid]: result.append('STRATEGY_SWITCH_OFF')
+            except ValueError: result.append('STRATEGY_CONTROLS_CORRUPT')
         if purpose in ('ENTRY', 'ROLL') and not policy.entry_window(self.clock()):
             result.append('OUTSIDE_1400_1900_JST')
         if observation is None:
@@ -59,14 +78,16 @@ class ExecutionGate:
                 result.append('FRESH_COMPLETE_BROKER_STATE_REQUIRED')
         return result
 
-    def check(self, observation, *, purpose='ENTRY'):
-        reasons = self.blockers(observation, purpose=purpose)
+    def check(self, observation, *, purpose='ENTRY', strategy=None):
+        reasons = self.blockers(observation, purpose=purpose, strategy=strategy)
         if reasons: raise ExecutionDenied(reasons[0])
 
     @contextlib.contextmanager
     def authorize(self, method, path, body, observation, *, purpose):
         """Permit exactly one SDK request; recheck the gates at network time."""
         self.check(observation, purpose=purpose)
+        if self.strategy_switches_required and purpose in ('ENTRY', 'ROLL') and _strategy.get() is None:
+            raise ExecutionDenied('EXACT_ENTRY_STRATEGY_REQUIRED')
         if not write_route(method, path): raise PermissionError('UNSUPPORTED_ORDER_WRITE_ROUTE')
         value = dict(method=method, path=path, fingerprint=identity(body), gate=self,
                      observation=observation, purpose=purpose, used=False)

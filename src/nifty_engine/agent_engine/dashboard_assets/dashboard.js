@@ -11,6 +11,7 @@ let liveData = null, data = null, demo = false, selectedIndex = "NIFTY", timeZon
 let contracts = {buy:null, sell:null}, refreshPending = false, lastRequest = 0;
 let chartRange = 'session';
 let algoStartPending=false, algoStartResult=null;
+let strategySwitchPending=false, strategySwitchMessage='';
 try {selectedIndex = localStorage.getItem("trading-index") || "NIFTY"; timeZone = localStorage.getItem("trading-timezone") || timeZone;} catch {}
 if (!["NIFTY","SENSEX","BANKNIFTY"].includes(selectedIndex)) selectedIndex = "NIFTY";
 if (!["Asia/Tokyo","Asia/Kolkata"].includes(timeZone)) timeZone = "Asia/Tokyo";
@@ -191,14 +192,14 @@ function renderControl() {
   $("control-note").textContent="By 19:00: hold when the short premium is above its entry premium − ₹5; otherwise queue a return to ₹20 / ₹80. Expiry at 18:00: uptrend → put 3 strikes below ATM; downtrend → call 3 strikes above ATM. Hedges are required. Broker activation and verification are shown above.";
   if(policy?.format==='trading-report-research-v1') {
     $("everyday-rule").textContent="Bull put · Bear call · Iron condor · Calendar";
-    $("monitor-schedule").textContent="14:00–19:00 JST · research only · NIFTY + SENSEX";
+    $("monitor-schedule").textContent="14:00–19:00 JST entries · owned exits monitored from market open · NIFTY + SENSEX";
     $("expiry-status").textContent="Research: 30–45 DTE shorts · close by 7 DTE · actual expiry evidence required";
     $("strategy-priority").textContent="One basket. Trend selects bullish puts or bearish calls; range selects condor. Legacy entry rules retired; manual trades protected.";
     $("analysis-status").textContent="IV history, realized volatility, ADX, deltas, event calendar and exact margin evidence required. Missing evidence stays UNKNOWN.";
     const studies=data.strategy_research;
     if(studies?.indices)$("analysis-status").textContent=Object.entries(studies.indices).map(([index,r])=>`${index}: ${r.regime||'UNKNOWN'} · ${r.input_connection?.current_snapshot?'current snapshot connected':'waiting for current snapshot'} · ${[...new Set((r.strategies||[]).flatMap(s=>s.reasons||[]))].join('; ')}`).join(' | ');
-    $("preparation-status").textContent=studies?`Research data: ${Object.entries(studies.data_connections||{}).map(([index,r])=>`${index} ${r.status}${r.reasons?.length?': '+r.reasons.join(', '):r.reason?': '+r.reason:''}`).join(' · ')||'waiting for collection window'} · monitor only; trading disabled`:"Waiting for research reader";
-    $("control-note").textContent="Report-based hypotheses, not backtested performance. Take-profit at 50% of quoted net credit; loss trigger capped at ₹1,000. Calendar needs a separate payoff model. No automatic entries or rolls.";
+    $("preparation-status").textContent=studies?`Research data: ${Object.entries(studies.data_connections||{}).map(([index,r])=>`${index} ${r.status}${r.reasons?.length?': '+r.reasons.join(', '):r.reason?': '+r.reason:''}`).join(' · ')||'waiting for collection window'} · ${data.execution_controller?.report_preparation?.status||'waiting for executor connection'}`:"Waiting for research reader";
+    $("control-note").textContent="Switches select new entries; disabling a strategy keeps existing owned protection and exits while Algo is On. Three credit baskets have guarded execution routes. Calendar is monitoring only. Start requires live validation and complete data. ₹1,000 is an exit trigger, not a guaranteed loss cap."+(strategySwitchMessage?' '+strategySwitchMessage:'');
   }
   $("algo-start").disabled=data.demo||algoStartPending||on;
   $("algo-start").textContent=on?"Algo On":"Algo Start";
@@ -266,7 +267,8 @@ function renderAccount() {
   if(a.portfolio_series?.length>=2) chart($("portfolio-chart"),a.portfolio_series,{color:"#fb861c",area:true,label:"Reviewed portfolio value"});
   else emptyChart($("portfolio-chart"),"No portfolio history yet","Your account values are never estimated from index moves.");
   $("strategy-count").textContent=data.strategies.length;
-  $("strategy-rows").innerHTML=data.strategies.map((s,i)=>`<tr><td><div class="strategy-info ${known(s.net_pnl_inr)&&s.net_pnl_inr<0?"negative":""}"><span class="strategy-number">${i+1}</span><div class="strategy-content"><div class="strategy-name">${escapeHTML(s.name)}</div><p class="strategy-description">${escapeHTML(s.description)}</p><div class="outcome-track" role="img" aria-label="${escapeHTML(s.name)}: ${s.closed_trades?`${s.non_loss_pct.toFixed(1)}% non-losing, ${s.loss_pct.toFixed(1)}% losing, ${s.closed_trades} closed trades`:"No results"}"><span class="profit-segment" style="width:${s.non_loss_pct??0}%"></span><span class="loss-segment" style="width:${s.loss_pct??0}%"></span></div><span class="outcome-caption">${s.closed_trades?`${s.non_loss_pct.toFixed(0)}% non-loss · ${s.loss_pct.toFixed(0)}% loss · ${s.closed_trades} trades`:"No results"}</span></div></div></td><td class="${known(s.return_pct)?s.return_pct<0?"negative":"positive":""}">${percent(s.return_pct)}</td><td class="${known(s.net_pnl_inr)?s.net_pnl_inr<0?"negative":"positive":""}">${signed(s.net_pnl_inr)}</td></tr>`).join("");
+  const strategyHTML=data.strategies.map((s,i)=>`<tr><td><div class="strategy-info ${known(s.net_pnl_inr)&&s.net_pnl_inr<0?"negative":""}"><span class="strategy-number">${i+1}</span><div class="strategy-content"><div class="strategy-name">${escapeHTML(s.name)}</div>${data.control?.strategy_controls?`<button class="strategy-toggle" type="button" role="switch" aria-checked="${Boolean(s.desired_enabled)}" aria-label="${escapeHTML(s.name)} ${s.mode==='MONITOR_ONLY'?'monitoring':'new entries'}" data-strategy="${escapeHTML(s.id)}" ${strategySwitchPending||data.demo||data.vm?.status!=='HEALTHY'?'disabled':''}>${s.mode==='MONITOR_ONLY'?'Monitor ':''}${s.desired_enabled?'On':'Off'}</button><small class="strategy-route">${s.mode==='MONITOR_ONLY'?'Research only · payoff model required':'Guarded executor · see readiness above'}</small>`:''}<p class="strategy-description">${escapeHTML(s.description)}</p><div class="outcome-track" role="img" aria-label="${escapeHTML(s.name)}: ${s.closed_trades?`${s.non_loss_pct.toFixed(1)}% non-losing, ${s.loss_pct.toFixed(1)}% losing, ${s.closed_trades} closed trades`:"No results"}"><span class="profit-segment" style="width:${s.non_loss_pct??0}%"></span><span class="loss-segment" style="width:${s.loss_pct??0}%"></span></div><span class="outcome-caption">${s.closed_trades?`${s.non_loss_pct.toFixed(0)}% non-loss · ${s.loss_pct.toFixed(0)}% loss · ${s.closed_trades} trades`:"No results"}</span></div></div></td><td class="${known(s.return_pct)?s.return_pct<0?"negative":"positive":""}">${percent(s.return_pct)}</td><td class="${known(s.net_pnl_inr)?s.net_pnl_inr<0?"negative":"positive":""}">${signed(s.net_pnl_inr)}</td></tr>`).join("");
+  if($("strategy-rows").innerHTML!==strategyHTML) $("strategy-rows").innerHTML=strategyHTML;
 }
 function render() {
   if(!data) return;
@@ -322,6 +324,19 @@ async function setAlgo(enabled){
   } catch {algoStartResult={status:'TRANSPORT_FAILED',blockers:['LOCAL_ENGINE_UNAVAILABLE']};}
   finally {algoStartPending=false;renderControl();}
 }
+$("strategy-rows").addEventListener('click',async event=>{
+  const button=event.target.closest('[data-strategy]');
+  if(!button||strategySwitchPending||demo||!data.control?.strategy_controls)return;
+  const body={id:button.dataset.strategy,enabled:button.getAttribute('aria-checked')!=='true',revision:data.control.strategy_controls.revision};
+  strategySwitchPending=true;strategySwitchMessage='Saving strategy preference…';render();
+  try {
+    const response=await fetch('/api/strategies/switch',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':document.querySelector('meta[name="local-token"]').content},body:JSON.stringify(body),cache:'no-store'});
+    const result=await response.json();
+    strategySwitchMessage=response.ok&&['SAVED','UNCHANGED'].includes(result.status)?'Strategy preference saved on Oracle.':result.status==='REVISION_CONFLICT'?'Settings changed in another window. Refreshed; select again.':'Oracle did not confirm the change.';
+    await refresh();
+  } catch {strategySwitchMessage='Connection interrupted. Read Oracle state before retrying.';}
+  finally {strategySwitchPending=false;render();}
+});
 $("algo-start").addEventListener("click",()=>setAlgo(true));
 $("algo-stop").addEventListener("click",()=>setAlgo(false));
 function pendingWithdrawal() {try{return JSON.parse(localStorage.getItem(pendingWithdrawalKey));}catch{return null;}}

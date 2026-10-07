@@ -963,6 +963,12 @@ class DashboardState:
     def algo_start(self):
         return self.algo_set(True)
 
+    def strategy_switch(self,body):
+        from .strategy_controls import validate_command,set_switch
+        validate_command(body)
+        if self.remote: return self.remote.strategy_switch(body)
+        return set_switch(self.pnl_lines.store,body,datetime.now(timezone.utc))
+
     def close(self):
         self.stop_event.set()
         self.lease_file.unlink(missing_ok=True)
@@ -1123,6 +1129,19 @@ def handler(state):
         def do_POST(self):
             if not self.local() or not secrets.compare_digest(self.headers.get("X-Local-Token", ""), state.token):
                 return self.respond(403, {"status": "LOCAL_ACCESS_ONLY"})
+            if self.path == '/api/strategies/switch':
+                try:
+                    length=int(self.headers.get('Content-Length','0'))
+                    if (not 0<length<=256 or self.headers.get('Transfer-Encoding')
+                            or self.headers.get('Content-Type','').split(';')[0]!='application/json'):
+                        raise ValueError('INVALID_STRATEGY_SWITCH')
+                    raw=self.rfile.read(length);self.body_consumed=True
+                    result=state.strategy_switch(json.loads(raw))
+                    return self.respond(409 if result['status']=='REVISION_CONFLICT' else 200,result)
+                except (ValueError,TypeError,KeyError):
+                    return self.respond(400,{'status':'INVALID_STRATEGY_SWITCH','broker_writes':False})
+                except Exception:
+                    return self.respond(503,{'status':'STRATEGY_CONTROL_UNAVAILABLE','broker_writes':False})
             if self.path == "/api/capital/withdrawals":
                 try:
                     length=int(self.headers.get("Content-Length","0"))

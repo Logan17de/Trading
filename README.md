@@ -47,7 +47,11 @@ Late-session NEW entries and rolls. The dashboard/email show four strategies:
 - Iron condor: range and rich volatility, with both short sides hedged.
 - Calendar: low IV percentile and front/back inversion; payoff model still required.
 
-These are MONITOR_ONLY hypotheses, not a new live executor or validated profits.
+These are unbacktested hypotheses. The existing executor now has guarded bull put,
+bear call and iron condor adapters, plus four persistent strategy switches.
+Calendar remains MONITOR_ONLY. Production is still Off/paper/paused: provider
+activation, dated IV history and event coverage remain required. Start does not
+bypass those blockers. See [execution status](docs/ORACLE_EXECUTION.md).
 Missing IV history, Greeks, calendar, expiry, current books or exact margin keep
 proposals unknown. One basket/max two lots and ₹1,000 risk bound are preserved.
 Original records/exits/protection and manual trades are not relabeled or changed.

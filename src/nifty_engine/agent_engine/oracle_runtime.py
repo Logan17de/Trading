@@ -59,7 +59,7 @@ class Runtime:
             release=Path(__file__).resolve().parents[3].name,host='ORACLE',
             clock=lambda:datetime.now(timezone.utc),policy_hash=identity({
                 'legacy_management':premium_strategy.load(self.root),'research':self.research_catalog}),
-            entries_retired=bool(self.research_catalog))
+            entries_retired=False,strategy_switches_required=True)
         from .impulse_feed import StreamingImpulse
         self.impulse=StreamingImpulse(self.root,self.state.pnl_lines.store)
         from .research_sync import SupabaseArchive
@@ -99,6 +99,8 @@ class Runtime:
             {"status":"WAIT","reason":"PREPARATION_NOT_STARTED","execution_enabled":False,"broker_writes":False})
         if self.research_catalog:
             cfg=self.research_catalog
+            from .strategy_controls import read as switches, EXECUTABLE
+            preferences=switches(self.state.pnl_lines.store)
             review=execution.get('position_review',{})
             if review.get('action') in ('REVIEW_ROLL_SHORT','QUEUE_NEXT_WINDOW_ROLL'):
                 execution['position_review']=dict(action='WAIT',reason='LEGACY_ROLL_RETIRED',broker_writes=False)
@@ -106,7 +108,10 @@ class Runtime:
             view['strategy_research']=self.state.pnl_lines.store.meta('report-strategy-evaluations',{})
             view['retired_strategy_results']=view['strategies']
             view['strategies']=[dict(r,closed_trades=0,non_loss_pct=None,loss_pct=None,
-                net_pnl_inr=None,return_pct=None,mode='MONITOR_ONLY') for r in cfg['strategies']]
+                net_pnl_inr=None,return_pct=None,mode='GUARDED_EXECUTOR' if r['id'] in EXECUTABLE else 'MONITOR_ONLY',
+                desired_enabled=preferences['enabled'][r['id']],
+                execution_route_implemented=r['id'] in EXECUTABLE) for r in cfg['strategies']]
+            view['control']['strategy_controls']=preferences
             view['control']['strategy_rules']=cfg
             view['control']['everyday']=None
             if isinstance(algo,dict):algo['policy_version']=cfg['format']
@@ -115,6 +120,9 @@ class Runtime:
 
     def command(self,value):
         if value=={"action":"read"}:return self.read()
+        if isinstance(value,dict) and set(value)=={'action','switch'} and value['action']=='strategy_switch':
+            from .strategy_controls import set_switch
+            return set_switch(self.state.pnl_lines.store,value['switch'],datetime.now(timezone.utc))
         if isinstance(value,dict) and set(value)=={"action","enabled"} and value["action"]=="intent" and type(value["enabled"]) is bool:
             result=self.state.algo_set(value["enabled"])
             current=self.read().get('control',{}).get('algo')
@@ -155,7 +163,8 @@ class Runtime:
             raise ValueError('POLICY_CHANGED_RESTART_REQUIRED')
         transport=GrowwOrderTransport(market,gate);gateway=OracleOrderGateway(self.state.monitor.journal,transport,gate)
         protection=PersistentProtection(self.state.monitor.journal,transport,gateway)
-        self.executor=PremiumExecutor(self.state.monitor.journal,gateway,protection,gate,cfg,clock=gate.clock)
+        self.executor=PremiumExecutor(self.state.monitor.journal,gateway,protection,gate,cfg,clock=gate.clock,
+            report_cfg=self.research_catalog)
         self.collector.before_ownership=self.executor.reconcile_before_collection
         self.token_day=now.date()
 
