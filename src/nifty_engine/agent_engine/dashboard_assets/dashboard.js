@@ -189,6 +189,14 @@ function renderControl() {
   $("analysis-status").textContent="60% premium reduction: NIFTY ≤ ₹8 / SENSEX ≤ ₹32. Review replacing the short with the next listed premium above its threshold. Keep the hedge unless net improvement exceeds ₹100.";
   $("trailing-status").textContent=`Loss-stop trigger ₹1,000 per algo basket · ${data.execution_controller?.protection==='VERIFIED_ACTIVE'?'broker GTT verified':'broker protection not armed'} · fills and maximum loss are not guaranteed.`;
   $("control-note").textContent="By 19:00: hold when the short premium is above its entry premium − ₹5; otherwise queue a return to ₹20 / ₹80. Expiry at 18:00: uptrend → put 3 strikes below ATM; downtrend → call 3 strikes above ATM. Hedges are required. Broker activation and verification are shown above.";
+  if(policy?.format==='trading-report-research-v1') {
+    $("everyday-rule").textContent="Bull put · Bear call · Iron condor · Calendar";
+    $("monitor-schedule").textContent="14:00–19:00 JST · research only · NIFTY + SENSEX";
+    $("expiry-status").textContent="Research: 30–45 DTE shorts · close by 7 DTE · actual expiry evidence required";
+    $("strategy-priority").textContent="One basket. Trend selects bullish puts or bearish calls; range selects condor. Legacy entry rules retired; manual trades protected.";
+    $("analysis-status").textContent="IV history, realized volatility, ADX, deltas, event calendar and exact margin evidence required. Missing evidence stays UNKNOWN.";
+    $("control-note").textContent="Report-based hypotheses, not backtested performance. Take-profit at 50% of quoted net credit; loss trigger capped at ₹1,000. Calendar needs a separate payoff model. No automatic entries or rolls.";
+  }
   $("algo-start").disabled=data.demo||algoStartPending||on;
   $("algo-start").textContent=on?"Algo On":"Algo Start";
   $("algo-stop").disabled=data.demo||algoStartPending||!on;

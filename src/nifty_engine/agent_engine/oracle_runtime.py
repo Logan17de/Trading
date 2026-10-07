@@ -50,10 +50,15 @@ class Runtime:
         from .execution_gate import ExecutionGate
         from . import premium_strategy
         from .contracts import identity
+        from .report_strategies import load as research_catalog
+        self.research_catalog=research_catalog(self.root)
+        if self.research_catalog is None:raise ValueError('RESEARCH_CATALOG_REQUIRED')
         self.gate=ExecutionGate(self.state.monitor.journal,self.root/'.trader-paused',
             mode=os.environ.get('EXECUTION_MODE','paper'),
             release=Path(__file__).resolve().parents[3].name,host='ORACLE',
-            clock=lambda:datetime.now(timezone.utc),policy_hash=identity(premium_strategy.load(self.root)))
+            clock=lambda:datetime.now(timezone.utc),policy_hash=identity({
+                'legacy_management':premium_strategy.load(self.root),'research':self.research_catalog}),
+            entries_retired=bool(self.research_catalog))
         from .impulse_feed import StreamingImpulse
         self.impulse=StreamingImpulse(self.root,self.state.pnl_lines.store)
         from .research_sync import SupabaseArchive
@@ -91,6 +96,20 @@ class Runtime:
         view["daily_email"]=self.mail_state
         view["execution_preparation"]=self.state.pnl_lines.store.meta("premium-preparation",
             {"status":"WAIT","reason":"PREPARATION_NOT_STARTED","execution_enabled":False,"broker_writes":False})
+        if self.research_catalog:
+            cfg=self.research_catalog
+            review=execution.get('position_review',{})
+            if review.get('action') in ('REVIEW_ROLL_SHORT','QUEUE_NEXT_WINDOW_ROLL'):
+                execution['position_review']=dict(action='WAIT',reason='LEGACY_ROLL_RETIRED',broker_writes=False)
+            if isinstance(review.get('successor'),dict):review['successor']['status']='RETIRED_ENTRY_DISABLED'
+            view['strategy_research']=self.state.pnl_lines.store.meta('report-strategy-evaluations',{})
+            view['retired_strategy_results']=view['strategies']
+            view['strategies']=[dict(r,closed_trades=0,non_loss_pct=None,loss_pct=None,
+                net_pnl_inr=None,return_pct=None,mode='MONITOR_ONLY') for r in cfg['strategies']]
+            view['control']['strategy_rules']=cfg
+            view['control']['everyday']=None
+            if isinstance(algo,dict):algo['policy_version']=cfg['format']
+            view['retired_strategies']=cfg['retired_entries']
         return view
 
     def command(self,value):
@@ -120,6 +139,7 @@ class Runtime:
         self.collector.account_loader=lambda:None
         from .execution_data import GrowwPreparation
         self.preparer=GrowwPreparation(market,self.state.monitor.journal)
+        self.preparer.entries_retired=bool(self.research_catalog)
         from . import premium_strategy
         from .contracts import identity
         from .oracle_orders import GrowwOrderTransport, OracleOrderGateway
@@ -128,7 +148,8 @@ class Runtime:
         cfg=premium_strategy.load(self.root)
         # Exact immutable source directory, never a mutable default branch pin.
         gate=self.gate
-        if gate.policy_hash!=identity(cfg): raise ValueError('POLICY_CHANGED_RESTART_REQUIRED')
+        if gate.policy_hash!=identity({'legacy_management':cfg,'research':self.research_catalog}):
+            raise ValueError('POLICY_CHANGED_RESTART_REQUIRED')
         transport=GrowwOrderTransport(market,gate);gateway=OracleOrderGateway(self.state.monitor.journal,transport,gate)
         protection=PersistentProtection(self.state.monitor.journal,transport,gateway)
         self.executor=PremiumExecutor(self.state.monitor.journal,gateway,protection,gate,cfg,clock=gate.clock)
@@ -171,6 +192,12 @@ class Runtime:
         while not self.stop.wait(30):
             try:
                 now=datetime.now(timezone.utc)
+                from .report_strategies import update as update_research
+                try:update_research(self.state.pnl_lines.store,self.root,now)
+                except Exception:
+                    self.state.pnl_lines.store.set_meta('report-strategy-evaluations',{
+                        'status':'RESEARCH_INPUT_UNAVAILABLE','mode':'MONITOR_ONLY',
+                        'broker_writes':False,'execution_enabled':False})
                 self.state.capital_ledger.accrue(now)
                 self.mail_state=self.mail.tick(self.read(),now)
                 from .pc_control import JST

@@ -1,4 +1,13 @@
-# Current deployment · October 6, 2026
+# Current work · October 7, 2026
+
+Report-based MONITOR_ONLY catalog now replaces overlapping legacy entries:
+bull put, bear call, iron condor and calendar for NIFTY/SENSEX. Read
+REPORT_STRATEGIES.md and CODEX_HEADLESS_HANDOFF.md for current status. Original
+Everyday/Late-session records/exits are provenance and management only. New
+entry/roll gating remains closed; no new live strategy executor or activation.
+Data, calendar, scenario modeling and out-of-sample validation remain required.
+
+# Deployment history · October 6, 2026
 
 Latest release: `c5985dad31813c424c07affcffb05d78523e7518`. Oracle executor
 transport is CONNECTED; healthy advancing heartbeat and PC API verified.

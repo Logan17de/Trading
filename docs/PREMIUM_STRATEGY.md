@@ -1,4 +1,9 @@
-# Active owner policy · version 3
+# Historical premium policy · version 3
+
+October 7: new Everyday and Late-session entries/rolls are retired in favor of
+the report research catalog. Read REPORT_STRATEGIES.md for the current four
+research strategies. The rules below remain provenance and legacy owned-position
+management; their records are not relabeled or used as new-strategy performance.
 
 The October 5 premium instructions replace the old strike-offset, barrier, swing
 and expiry-reversal entries. Preserve studies/history; display Everyday and

@@ -24,10 +24,11 @@ class ExecutionDenied(PermissionError):
 
 
 class ExecutionGate:
-    def __init__(self, journal, pause_file, *, mode, release, host, clock, policy_hash):
+    def __init__(self, journal, pause_file, *, mode, release, host, clock, policy_hash, entries_retired=False):
         self.journal, self.pause_file = journal, Path(pause_file)
         self.mode, self.release, self.host = mode, release, host
         self.clock, self.policy_hash = clock, policy_hash
+        self.entries_retired=entries_retired
 
     def blockers(self, observation=None, *, purpose='ENTRY'):
         result = []
@@ -44,6 +45,8 @@ class ExecutionGate:
             result.append('REVIEWED_LIVE_ACTIVATION_REQUIRED')
         if purpose not in ('ENTRY', 'ROLL', 'EXIT', 'PROTECT'):
             result.append('KNOWN_EXECUTION_PURPOSE_REQUIRED')
+        if purpose in ('ENTRY','ROLL') and self.entries_retired:
+            result.append('RETIRED_STRATEGY_NEW_ENTRY_DISABLED')
         if purpose in ('ENTRY', 'ROLL') and not policy.entry_window(self.clock()):
             result.append('OUTSIDE_1400_1900_JST')
         if observation is None:

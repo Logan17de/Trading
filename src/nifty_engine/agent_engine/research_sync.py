@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 PROJECT_URL='https://imirspxhbnerxknyynqx.supabase.co'
 TABLE='trading_research_records'
 IST=ZoneInfo('Asia/Kolkata')
-META_KEYS=('premium-executor-v1','premium-executor-status','premium-preparation')
+META_KEYS=('premium-executor-v1','premium-executor-status','premium-preparation','report-strategy-evaluations')
 
 
 def encoded(body):
@@ -124,7 +124,8 @@ class SupabaseArchive:
                     body=dict(r)
                     if body['strategy'] not in ('EVERYDAY','LATE_SESSION'):continue
                     self._enqueue(db,'algo_order',r['reference'],day,body,append=True)
-            for r in db.execute("SELECT * FROM meta WHERE key IN (?,?,?) OR key LIKE 'prepared-order-%'",META_KEYS).fetchall():
+            placeholders=','.join('?' for _ in META_KEYS)
+            for r in db.execute("SELECT * FROM meta WHERE key IN ("+placeholders+") OR key LIKE 'prepared-order-%'",META_KEYS).fetchall():
                 self._enqueue(db,'algo_state',r['key'],day,json.loads(r['body']),append=True)
             if 'pc_pnl_observations' in tables:
                 cursor=db.execute("SELECT body FROM meta WHERE key='research-sync-pnl-cursor'").fetchone()

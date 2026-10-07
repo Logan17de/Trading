@@ -1,0 +1,30 @@
+{
+  "format": "trading-report-research-v1",
+  "mode": "MONITOR_ONLY",
+  "trading_enabled": false,
+  "source_sha256": "e5251ed43d84d0b59c81543cd9366c1bc80dd527da619f7bacd64efcdb1d50a6",
+  "indices": ["NIFTY", "SENSEX"],
+  "retired_entries": ["EVERYDAY", "LATE_SESSION"],
+  "maximum_lots": 2,
+  "risk_limit_inr": 1000,
+  "entry_window_jst": ["14:00", "19:00"],
+  "short_dte": [30, 45],
+  "calendar_long_dte": [60, 90],
+  "close_dte": 7,
+  "iv_percentile_min": 70,
+  "iv_percentile_low": 30,
+  "iv_history_sessions": 252,
+  "vrp_min_vol_points": 5,
+  "trend_adx_min": 25,
+  "range_adx_max": 20,
+  "short_abs_delta": [0.15, 0.25],
+  "calendar_abs_delta": [0.45, 0.55],
+  "take_profit_fraction": 0.5,
+  "stop_credit_multiple": 1.5,
+  "strategies": [
+    {"id": "bull_put", "name": "Trend bull put spread", "description": "Bullish trend + rich IV; bought lower put hedge"},
+    {"id": "bear_call", "name": "Trend bear call spread", "description": "Bearish trend + rich IV; bought higher call hedge"},
+    {"id": "iron_condor", "name": "Range volatility iron condor", "description": "Range + rich IV; both short sides hedged"},
+    {"id": "calendar", "name": "Term-structure calendar", "description": "Low IV percentile + front/back inversion; risk model required"}
+  ]
+}

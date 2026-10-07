@@ -301,6 +301,11 @@ class GrowwPreparation:
                             trend=trend, active=active, complete=True)
 
     def safe_check(self, snapshot, cfg):
+        if getattr(self,'entries_retired',False):
+            result=dict(status='WAIT',reason='RETIRED_STRATEGY_NEW_ENTRY_DISABLED',
+                at=self.clock().isoformat(),broker_writes=False,selected=None,execution_enabled=False)
+            self.journal.store.set_meta('premium-preparation',result)
+            return result
         try:
             result = self.check(snapshot, cfg)
         except Exception as exc:

@@ -1,5 +1,35 @@
 # Current Trading handoff
 
+## October 7 report-based strategy replacement
+
+Owner requested strategies from the supplied SPX/ES research report, replacing
+overlapping originals. Current NIFTY/SENSEX catalog: bull put, bear call, iron
+condor and calendar; MONITOR_ONLY, not executable or backtested. Read
+REPORT_STRATEGIES.md. Source hash, exact declared hypotheses, point-in-time
+features, short30–45 DTE / calendar60–90 DTE, half-credit exit studies, ≤7 DTE
+exit and bounded margin/risk comparisons are documented. Fictional US Sharpe/win
+tables and inconsistent directional examples are excluded. Calendar loss/payoff
+model remains unknown. No naked short straddle, GEX guess or news-worker restart.
+
+New Everyday/Late-session entries/rolls are explicitly retired in the production
+gate and preparer. Original journals, attribution, owned exits/protection and
+manual trades are preserved. The catalog is required; combined policy hash binds
+research and legacy management. Current dashboard/email list has only the four
+new research strategies with unknown performance. Research reevaluates private
+stored evidence every30 seconds without affecting mail when inputs fail; versioned
+evaluations reuse the private Supabase outbox as algo_state/research state, never
+orders or cloud commands. Empty/stale/insufficient history/calendar inputs WAIT.
+No verified252-session matched Indian IV history or continuously provisioned
+event calendar exists yet; acquire these and run chronological out-of-sample
+replays before proposing execution. Feature replay/import CLI is documented.
+
+354 tests passed, four platform skips (358 collected); focused24 tests, config,
+JS/compile checks and synthetic offline demo passed. Oracle pre-update journal
+backup integrity verified; zero algo-owned order records. Pause/paper/actual owner
+intent and shared services remain unchanged. Noon heartbeat prompt updated to
+the new catalog, preserving its schedule and quiet notifications. Deployment
+and archive readback evidence follows after rollout.
+
 ## October 6 executor connection and lifecycle preparation
 
 Owner authorized items 1–4 without autonomous activation. The existing executor
