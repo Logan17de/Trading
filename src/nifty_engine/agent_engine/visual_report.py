@@ -64,10 +64,14 @@ def build(view, day):
     for s in view.get("strategies",[]):
         pct=s.get("non_loss_pct")
         bar=f'<div style="background:#edf2f4;height:7px;width:150px"><div style="background:#08b75d;height:7px;width:{max(0,min(100,pct))}%"></div></div>' if pct is not None else '<small>Results unknown</small>'
-        strategies+=f'<tr><td style="padding:12px"><b>{esc(s["name"])}</b>{bar}</td><td>{esc("—" if pct is None else str(round(pct,1))+"% non-loss")}</td><td>{esc(money(s.get("net_pnl_inr")))}</td></tr>'
+        switch=(('Monitor selected' if s.get('mode')=='MONITOR_ONLY' else 'Entry selected') if s.get('desired_enabled') else 'Off') if 'desired_enabled' in s else None
+        badge=f'<small style="display:block;color:#718096">{esc(switch)}</small>' if switch else ''
+        strategies+=f'<tr><td style="padding:12px"><b>{esc(s["name"])}</b>{badge}{bar}</td><td>{esc("—" if pct is None else str(round(pct,1))+"% non-loss")}</td><td>{esc(money(s.get("net_pnl_inr")))}</td></tr>'
     control=view.get("control",{}); algo=control.get("algo",{})
     cells=tile("Used margin",money(funds.get("total_margin_used_inr")))+tile("Option sell / buy",money(funds.get("option_sell_available_inr"))+" / "+money(funds.get("option_buy_available_inr")))
-    status=f'Algo {"ON · blocked" if algo.get("desired_enabled") else "OFF"} · Broker writes OFF'
+    permitted=(algo.get('desired_enabled') is True and algo.get('execution_enabled') is True
+               and view.get('execution_controller',{}).get('execution_enabled') is True)
+    status=f'Algo {"ON · ready" if permitted else "ON · blocked" if algo.get("desired_enabled") else "OFF"} · Broker writes {"permitted" if permitted else "OFF"}'
     body=f'''<!doctype html><html><body style="margin:0;background:#edf6f4;font-family:Arial,sans-serif;color:#18334b"><table role="presentation" width="100%"><tr><td align="center"><table role="presentation" width="680" style="max-width:100%;background:white"><tr><td style="padding:24px;background:#18334b;color:white"><div style="font-size:25px;font-weight:bold">Options Trader</div><div style="margin-top:8px;font-size:13px">{esc(day)} · 19:30 JST report</div></td></tr><tr><td style="padding:16px">{capital_html}<table width="100%"><tr>{cards}</tr><tr>{split}</tr><tr>{cells}</tr></table><div style="padding:10px;background:#f4faf8;font-size:12px">{esc(status)}<br>Observed: {esc(view.get("as_of") or "Unknown")}</div>{images}<table width="100%"><tr>{markets}</tr></table><h2 style="font-size:16px">Open positions</h2><table width="100%" style="font-size:12px">{''.join(positions) or '<tr><td>No confirmed open positions</td></tr>'}</table><h2 style="font-size:16px">Strategies · net results</h2><table width="100%" style="font-size:12px">{strategies}</table><div style="margin-top:20px;color:#718096;font-size:10px">Gross P&amp;L excludes charges. Net results require the reviewed ledger. Gaps = missing reads. Manual positions protected. No guaranteed profit.</div></td></tr></table></td></tr></table></body></html>'''
     return {"mode":"OBSERVE","day":day,"observed_at":view.get("as_of"),"mail":{
         "subject":"Options Trader · "+day,"html":body,"text":"Options Trader · "+day+"\n"+status+"\nToday gross: "+money(pnl.get("total_inr")),"attachments":attachments}}

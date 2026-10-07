@@ -225,3 +225,20 @@ def test_local_switch_endpoint_requires_owner_token_and_rejects_order_payloads(t
         with pytest.raises(HTTPError) as exc:urlopen(Request(url,data=b'{"id":"bear_call","enabled":true,"revision":1,"order":{}}',headers=headers))
         assert exc.value.code==400
     finally:server.shutdown();server.server_close();thread.join(timeout=2)
+
+
+def test_email_distinguishes_selection_readiness_and_permitted_writes():
+    from nifty_engine.agent_engine.visual_report import build
+    from nifty_engine.agent_engine.dashboard import view_model
+    from test_dashboard import protocol
+    view=view_model(None,protocol(),now=NOW)
+    view['strategies']=[dict(name='Calendar',mode='MONITOR_ONLY',desired_enabled=True)]
+    view['control']={'algo':dict(desired_enabled=True,execution_enabled=False)}
+    view['execution_controller']={'execution_enabled':False}
+    html=build(view,NOW.date().isoformat())['mail']['html']
+    assert 'ON · blocked' in html and 'Broker writes OFF' in html and 'Monitor selected' in html
+    view['control']['algo']['execution_enabled']=True
+    assert 'Broker writes OFF' in build(view,NOW.date().isoformat())['mail']['html']
+    view['execution_controller']['execution_enabled']=True
+    html=build(view,NOW.date().isoformat())['mail']['html']
+    assert 'ON · ready' in html and 'Broker writes permitted' in html
