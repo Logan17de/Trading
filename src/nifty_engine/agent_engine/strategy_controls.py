@@ -9,6 +9,10 @@ EXECUTABLE = IDS[:-1]
 
 
 def validate_command(body):
+    if isinstance(body,dict) and body.get('id') in ('normal_theta','research'):
+        from .strategy_groups import validate_command as group_command
+        group_command(body)
+        return body
     if (not isinstance(body, dict) or set(body) != {'id', 'enabled', 'revision'}
             or body['id'] not in IDS or type(body['enabled']) is not bool
             or type(body['revision']) is not int or not 0 <= body['revision'] < 2**31):

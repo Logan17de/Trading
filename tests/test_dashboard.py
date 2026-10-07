@@ -43,7 +43,7 @@ def test_money_endpoint_remains_get_only_and_cannot_place_or_calculate_orders():
     assert not allowed_request('POST','https://api.groww.in/v1/margins/detail/orders',dashboard=True)
 
 
-def test_money_reads_every_thirty_seconds_and_failed_reads_do_not_keep_fresh_cash():
+def test_money_reads_every_five_seconds_and_failed_reads_do_not_keep_fresh_cash():
     current=[NOW]; calls=[]
     def money(**kwargs):
         calls.append(current[0])
@@ -56,9 +56,9 @@ def test_money_reads_every_thirty_seconds_and_failed_reads_do_not_keep_fresh_cas
     collector=DashboardCollector(SimpleNamespace(groww=broker,limiter=SimpleNamespace(wait=lambda:None)),
         clock=lambda:current[0],background_history=False)
     assert collector.sample()['funds']['clear_cash_inr']==10000
-    current[0]+=timedelta(seconds=5)
+    current[0]+=timedelta(seconds=4)
     assert collector.sample()['funds']['clear_cash_inr']==10000 and len(calls)==1
-    current[0]+=timedelta(seconds=25)
+    current[0]+=timedelta(seconds=1)
     result=collector.sample()
     assert result['funds']['status']=='UNAVAILABLE' and len(calls)==2
     assert 'PRIVATE' not in dumps(result)

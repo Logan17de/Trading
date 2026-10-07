@@ -90,7 +90,7 @@ class GrowwOrderTransport:
 
 class OracleOrderGateway(PreparedOrderGateway):
     """Reuse exact reservations, acknowledgment, fills and uncertain-write recovery."""
-    strategies = ('EVERYDAY', 'LATE_SESSION', 'bull_put', 'bear_call', 'iron_condor')
+    strategies = ('EVERYDAY', 'LATE_SESSION', 'bull_put', 'bear_call', 'iron_condor', 'normal_theta')
     def __init__(self, journal, broker, gate):
         super().__init__(journal, broker, gate.pause_file, deployed=True, clock=gate.clock)
         self.gate, self.purpose = gate, 'ENTRY'

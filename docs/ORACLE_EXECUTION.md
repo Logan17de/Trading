@@ -211,3 +211,12 @@ alerts require an awake/online PC; no external always-on watchdog is installed.
 Primary contracts: [Groww orders](https://groww.in/trade-api/docs/python-sdk/orders),
 [Groww smart orders](https://groww.in/trade-api/docs/curl/smart-orders),
 [Groww margin](https://groww.in/trade-api/docs/python-sdk/margin).
+# October 7 normal strategy addition
+
+Read NORMAL_THETA.md for the current two owner choices. Production new entries
+permit only `normal_theta`; Research is monitoring only. Normal reuses the same
+durable hedge-first entry, protection and short-first exit lifecycle and private
+release/policy-bound gates. Normal's current trend/theta/quote/margin policy is
+independent of the unavailable historical-IV dataset. Removing that requirement
+for this separate hypothesis does not supply real broker-write/GTT/child proof.
+No maintenance path generates activation or bypasses pause/paper/global Off.

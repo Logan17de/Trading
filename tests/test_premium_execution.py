@@ -390,7 +390,8 @@ def test_runtime_worker_fault_is_visible_sanitized_and_not_retried(tmp_path):
     runtime.state=SimpleNamespace(pnl_lines=SimpleNamespace(store=s.journal.store))
     runtime.execution_loop()
     assert calls==[True]
-    assert runtime.execution_error=={'error_type':'RuntimeError'}
+    assert runtime.execution_error['error_type']=='RuntimeError'
+    assert runtime.execution_error['stage']=='EXECUTOR_TICK' and runtime.execution_error['frames']
     status=s.journal.store.meta('premium-executor-status')
     assert status['reason']=='EXECUTOR_WORKER_RECONCILIATION_REQUIRED'
     assert 'private' not in str(status)

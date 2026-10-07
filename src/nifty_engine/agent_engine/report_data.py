@@ -38,7 +38,7 @@ def daily_rows(payload, now):
     return rows
 
 
-def connect_snapshot(store, snapshot, cfg, now):
+def connect_snapshot(store, snapshot, cfg, now, normal_cfg=None):
     """Cheap collector-side bridge; never refresh a saved receipt timestamp."""
     for index in cfg['indices']:
         key='report-strategy-evidence-'+index
@@ -88,16 +88,24 @@ def connect_snapshot(store, snapshot, cfg, now):
             historical_features=list(history),sampled_contracts=len(b['contracts']),
             exact_margin_comparisons=len(b['margins']),broker_writes=False)
         store.set_meta(key,b)
+        if normal_cfg:
+            normal=copy.deepcopy(b)
+            cache=store.meta('normal-theta-contracts-'+index,{})
+            normal['contracts']=copy.deepcopy(cache.get('contracts',[]))
+            normal['margins']=copy.deepcopy(cache.get('margins',{}))
+            store.set_meta('normal-theta-evidence-'+index,normal)
 
 
 class ReportData:
     """Independent bounded research reads using the collector's rate limiter."""
-    def __init__(self,market,journal,cfg,*,clock=lambda:datetime.now(timezone.utc),master=download_instrument_text,snapshot_reader=None):
+    def __init__(self,market,journal,cfg,*,clock=lambda:datetime.now(timezone.utc),master=download_instrument_text,snapshot_reader=None,normal_cfg=None):
         self.market,self.store,self.cfg=market,journal.store,cfg
         self.clock,self.master=clock,master
         self.snapshot_reader=snapshot_reader
+        self.normal_cfg=normal_cfg
         self.master_text=None;self.master_at=None;self.next_history={}
         self.chains={}
+        self.book_checks={}
         from .event_calendar import OfficialCalendar
         self.calendar=OfficialCalendar(self.store)
 
@@ -181,6 +189,12 @@ class ReportData:
                     if symbol not in rows or symbol in protected or float(strike)!=rows[symbol]['strike']:continue
                     if not(0<delta<1 if kind=='CE' else -1<delta<0) or iv<=0:continue
                     candidates.append(dict(rows[symbol],delta=delta,iv=iv,iv_unit='annualized_percent',greeks_received_at=greek_at))
+                    # Keep provider theta separate from any historical IV feature.
+                    # Public API docs don't specify a day/unit convention. Use
+                    # only a same-provider sign comparison, never INR/day income.
+                    try:
+                        candidates[-1].update(theta=number(r['greeks']['theta']),theta_unit='groww_native')
+                    except (KeyError,ValueError,TypeError):pass
                 except (KeyError,ValueError,TypeError):continue
         wanted={}
         for kind in ('CE','PE'):
@@ -194,23 +208,32 @@ class ReportData:
             atm=sorted((r for r in side if .45<=abs(r['delta'])<=.55),key=lambda r:abs(abs(r['delta'])-.5))[:1]
             for r in atm:wanted[r['symbol']]=r
         books=[]
+        check=dict(expiry=expiry,signed_greek_contracts=len(candidates),sampled_quotes=len(wanted),
+            available_books=0,missing_depth=0,invalid_books=0,read_failures=0,broker_writes=False)
         for row in list(wanted.values())[:8]:
             try:
                 raw=self.call(self.market.groww.get_quote,exchange=EXCHANGES[index],segment='FNO',trading_symbol=row['symbol'])
                 at=self.clock();q=quote_summary(raw,at)
+                if any(q.get(k) is None or q[k]<=0 for k in ('bid_price','offer_price','bid_quantity','offer_quantity')):
+                    check['missing_depth']+=1
+                    continue
                 # Contract validation is deliberately strict. Greeks have their
                 # own receipt clock and must not enter the book-only schema.
                 base={k:row[k] for k in ('symbol','index','expiry','strike','lot_size','tick_size')}
                 book=leg(dict(base,bid=q['bid_price'],ask=q['offer_price'],bid_quantity=q['bid_quantity'],ask_quantity=q['offer_quantity'],received_at=at.isoformat()))
-                books.append(dict(book,delta=row['delta'],iv=row['iv'],iv_unit=row['iv_unit'],greeks_received_at=greek_at))
-            except Exception:continue  # Unavailable book stays unknown, never zero.
+                books.append(dict(book,delta=row['delta'],iv=row['iv'],iv_unit=row['iv_unit'],greeks_received_at=greek_at,
+                    **{k:row[k] for k in ('theta','theta_unit') if k in row}))
+            except (ValueError,TypeError,KeyError):check['invalid_books']+=1
+            except Exception:check['read_failures']+=1
+        check.update(available_books=len(books),checked_at=self.clock().isoformat())
+        self.book_checks[(index,expiry)]=check
         return books
 
-    def margins(self,index,books):
-        cfg=self.cfg;now=self.clock();day=now.astimezone(JST).date()
+    def margins(self,index,books,cfg=None):
+        cfg=cfg or self.cfg;now=self.clock();day=now.astimezone(JST).date()
         front=[r for r in books if cfg['short_dte'][0]<=(date.fromisoformat(r['expiry'])-day).days<=cfg['short_dte'][1]]
         puts=list(policy._pairs(front,'PE',cfg));calls=list(policy._pairs(front,'CE',cfg))
-        condors=[p+c for p,c in itertools.product(puts,calls) if p[1][0]['strike']<c[1][0]['strike'] and p[0][0]['expiry']==c[0][0]['expiry']]
+        condors=[] if cfg.get('format')=='normal-theta-v1' else [p+c for p,c in itertools.product(puts,calls) if p[1][0]['strike']<c[1][0]['strike'] and p[0][0]['expiry']==c[0][0]['expiry']]
         margins={};attempts=0
         for legs in puts+calls+condors:
             if len({r['lot_size'] for r,_ in legs})!=1:continue
@@ -268,23 +291,36 @@ class ReportData:
                 for lo,hi in (self.cfg['short_dte'],self.cfg['calendar_long_dte']):
                     dates=[d for d in expiry['expiries'] if lo<=(date.fromisoformat(d)-day).days<=hi]
                     if dates:chosen.append(dates[0])
+                    elif (lo,hi)==tuple(self.cfg['short_dte']):faults.append('LISTED_30_45_DTE_SHORT_UNAVAILABLE')
+                normal_dates=[]
+                if self.normal_cfg:
+                    lo,hi=self.normal_cfg['short_dte']
+                    normal_dates=[d for d in expiry['expiries'] if lo<=(date.fromisoformat(d)-day).days<=hi][:1]
                 books=[]
-                for d in chosen:books.extend(self.books(index,d,set(b['protected_symbols'])))
+                all_books=[]
+                for d in dict.fromkeys(normal_dates+chosen):all_books.extend(self.books(index,d,set(b['protected_symbols'])))
+                books=[r for r in all_books if r['expiry'] in chosen]
                 margins=self.margins(index,books)
                 # Separate worker cache avoids overwriting a simultaneous collector refresh.
                 self.store.set_meta('report-contracts-'+index,dict(contracts=books,margins=margins))
+                if self.normal_cfg:
+                    normal_books=[r for r in all_books if r['expiry'] in normal_dates]
+                    normal_margins=self.margins(index,normal_books,self.normal_cfg)
+                    self.store.set_meta('normal-theta-contracts-'+index,dict(contracts=normal_books,margins=normal_margins))
                 if not chosen:faults.append('LISTED_30_45_OR_60_90_DTE_CONTRACTS_UNAVAILABLE')
                 elif not books:faults.append('CURRENT_SIGNED_GREEKS_AND_BOOKS_REQUIRED')
                 elif not margins:faults.append('CURRENT_AFFORDABLE_BASKET_MARGIN_UNAVAILABLE')
             except Exception:
                 faults.append('CONTRACT_RESEARCH_READ_UNAVAILABLE')
                 self.store.set_meta('report-contracts-'+index,dict(contracts=[],margins={}))
+                if self.normal_cfg:self.store.set_meta('normal-theta-contracts-'+index,dict(contracts=[],margins={}))
                 self.store.set_meta('report-expiries-'+index,{'status':'UNKNOWN_BLOCKED'})
             self.store.set_meta('report-data-status-'+index,dict(status='PARTIAL' if faults else 'CONNECTED',
                 reasons=faults,at=self.clock().isoformat(),broker_writes=False,
+                book_checks=[v for (i,_),v in self.book_checks.items() if i==index],
                 iv_history='MATCHED_RESEARCH_COLLECTION_NOT_EXECUTION_HISTORY',
                 event_calendar=self.store.meta('report-official-event-calendar',{}).get('status','UNKNOWN')))
             from .research_campaign import observe
             now=self.clock()
-            connect_snapshot(self.store,self.snapshot_reader() if self.snapshot_reader else snapshot,self.cfg,now)
+            connect_snapshot(self.store,self.snapshot_reader() if self.snapshot_reader else snapshot,self.cfg,now,self.normal_cfg)
             observe(self.store,index,self.store.meta(key,{}),now)

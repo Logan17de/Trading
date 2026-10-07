@@ -1,5 +1,54 @@
 # Current Trading handoff
 
+## October 7 normal theta and two owner groups
+
+Latest owner requested a normal selling strategy derived from research, rather
+than restoring Everyday. Read NORMAL_THETA.md. Added a separate unbacktested
+trend-aligned, positive-net-model-theta same-expiry vertical for NIFTY/SENSEX.
+14–45 calendar DTE, signed short delta .15–.25, prior MA20/50 and ADX14, current
+two-sided depth, exact costs/margin and INR 1,000 quoted expiry-risk/hedge-debit
+bounds are required. It has no historical-IV or strict event-free-horizon gate;
+scheduled-event status remains visible information. No trade is forced.
+
+The two private owner choices are Normal theta spread and Research, both default
+Off. Normal uses the existing PremiumExecutor basket lifecycle; Research cannot
+authorize new orders. Old switches/records and exact legacy management remain.
+The four studies and original private38-day campaign are not reset, shortened or
+promoted. Research group selection is a saved preference; ongoing campaign
+collection continues independently. Normal evaluations/contracts/preferences
+are included in the existing one-way private archive allowlist. Actual archive
+acknowledgments must be checked after rollout; code configuration is not a send.
+
+Added startup handling: a missing/malformed snapshot before an executor call
+waits for the first valid input. A fault after tick starts still latches and
+exposes only error type/stage/filename/function/line, never raw messages or
+responses. Journal failure also preserves the memory latch. The prior actual
+Oracle worker latch's root cause was not recoverable from its old receipt;
+an isolated copy returned an expected paper gate instead of reproducing it.
+Do not claim a diagnosed root cause or automatically retry uncertain orders.
+
+Live read-only Groww auth, listed expiries and chain signed Greeks worked.
+Current API/master listing had no NIFTY30–45 DTE short on October7; SENSEX had
+November12. Book diagnostics now distinguish missing depth, invalid schemas
+and request failures. Normal samples are cached separately. PC viewer was
+stopped at turn start and restarted. It later alternated healthy/reconnecting;
+actual cash/market values sometimes exceeded freshness limits during collection.
+Cash reads now target5seconds instead of30; no freshness threshold was relaxed,
+and network/worker delays are not claimed to meet a guaranteed5second cadence.
+
+Verification: full493 tests:489 passed/four platform skips; new normal replays
+cover both indexes/directions, hedge-first entry, GTT readback, restart, profit
+and pre-entry-window loss exit, Off/pause/paper/proof/manual controls, and exact
+strategy group/fixed transport behavior. Follow-up cash cadence/failure test,
+config/JS checks and offline demo passed. Synthetic provider evidence is not
+real broker-write/GTT/child validation. No broker writes or owner intent changes.
+
+Verified pre-rollout SQLite backup475250688bytes, integrity and SHA256
+72c692a1531cbc34f7bb135aeb4bb2014178a474778238650cce87e8027718ca,
+pre-observer-startup-fix-20261007.sqlite3. The earlier
+pre-live-commissioning copy was used for diagnostic replay and is not a pristine
+deployment backup. Rollout receipts will follow this section after verification.
+
 ## October 7 Start button and selected strategies
 
 Verified the desktop HTTP Start/Stop and strategy-switch requests through the

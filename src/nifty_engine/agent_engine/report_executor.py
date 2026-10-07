@@ -33,6 +33,22 @@ class ReportExecution:
     def __init__(self, executor, cfg):
         self.e, self.cfg = executor, cfg
 
+    def enabled(self, sid):
+        if self.e.gate.normal_catalog:return False
+        return controls.read(self.e.journal.store)['enabled'].get(sid, False)
+
+    def allowed(self, sid):
+        return sid in controls.EXECUTABLE
+
+    def spread_type(self, c):
+        return c['strategy']
+
+    def input_bundle(self, c):
+        return self.e.journal.store.meta('report-strategy-evidence-' + c['index'], {})
+
+    def matched_iv_required(self):
+        return self.e.gate.matched_iv_required
+
     def evidence(self, obs):
         """Add independently dated prospective books without redating either source."""
         result = copy.deepcopy(obs)
@@ -80,12 +96,13 @@ class ReportExecution:
 
     def validate(self, c, obs, state=None):
         e, now = self.e, self.e.clock()
-        if c['strategy'] not in controls.EXECUTABLE: raise ValueError('MONITOR_ONLY_OR_RETIRED_STRATEGY')
-        if not controls.read(e.journal.store)['enabled'][c['strategy']]: raise ValueError('STRATEGY_SWITCH_OFF')
+        if not self.allowed(c['strategy']): raise ValueError('MONITOR_ONLY_OR_RETIRED_STRATEGY')
+        if not self.enabled(c['strategy']): raise ValueError('STRATEGY_SWITCH_OFF')
         if not fresh(c['prepared_at'], now, 10): raise ValueError('FRESH_REPORT_PREPARATION_REQUIRED')
         if type(c['lots']) is not int or not 1 <= c['lots'] <= self.cfg['maximum_lots']:
             raise ValueError('REPORT_LOT_LIMIT')
-        legs = c['legs']; expected = 4 if c['strategy'] == 'iron_condor' else 2
+        spread = self.spread_type(c)
+        legs = c['legs']; expected = 4 if spread == 'iron_condor' else 2
         if (len(legs) != expected or len({r['symbol'] for r in legs}) != expected
                 or len({r['lot_size'] for r in legs}) != 1
                 or any(r['expiry'] != c['expiry'] or r['index'] != c['index'] for r in legs)
@@ -97,13 +114,13 @@ class ReportExecution:
                     or not (hedge['strike'] > short['strike'] if kind == 'CE' else hedge['strike'] < short['strike'])):
                 raise ValueError('BOUGHT_EQUAL_QUANTITY_WING_REQUIRED')
         kinds = [r['symbol'][-2:] for r in legs if r['side'] == 'SELL']
-        if kinds != (['PE', 'CE'] if expected == 4 else ['PE'] if c['strategy'] == 'bull_put' else ['CE']):
+        if kinds != (['PE', 'CE'] if expected == 4 else ['PE'] if spread == 'bull_put' else ['CE']):
             raise ValueError('STRATEGY_LEG_TYPES_REQUIRED')
         if expected == 4 and legs[1]['strike'] >= legs[3]['strike']: raise ValueError('CONDOR_STRIKE_ORDER_REQUIRED')
         dte = (date.fromisoformat(c['expiry']) - now.astimezone(JST).date()).days
         if not self.cfg['short_dte'][0] <= dte <= self.cfg['short_dte'][1]: raise ValueError('REPORT_DTE_REQUIRED')
-        bundle = e.journal.store.meta('report-strategy-evidence-' + c['index'], {})
-        if e.gate.matched_iv_required:
+        bundle = self.input_bundle(c)
+        if self.matched_iv_required():
             from .iv_history import features
             values=features(e.journal.store,c['index'],now)
             if not values:
@@ -181,7 +198,7 @@ class ReportExecution:
             # New-entry switches do not orphan a held basket. An incomplete
             # entry is unwound; completed baskets retain protection and exits.
             entering = state['phase'] in ('REPORT_ENTRY_HEDGES', 'REPORT_ENTRY_SHORTS')
-            enabled = controls.read(e.journal.store)['enabled'][state['strategy']]
+            enabled = self.enabled(state['strategy'])
             if state['phase'] in ('REPORT_ENTRY_HEDGES','REPORT_ENTRY_SHORTS','REPORT_PROTECTION') and e._net(state):
                 review=self.close_reason(state,obs)
                 if review.get('reason')=='LOSS_TRIGGER':

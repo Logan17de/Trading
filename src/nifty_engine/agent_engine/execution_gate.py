@@ -26,13 +26,14 @@ class ExecutionDenied(PermissionError):
 
 class ExecutionGate:
     def __init__(self, journal, pause_file, *, mode, release, host, clock, policy_hash, entries_retired=False,
-                 strategy_switches_required=False, matched_iv_required=False):
+                 strategy_switches_required=False, matched_iv_required=False, normal_catalog=False):
         self.journal, self.pause_file = journal, Path(pause_file)
         self.mode, self.release, self.host = mode, release, host
         self.clock, self.policy_hash = clock, policy_hash
         self.entries_retired=entries_retired
         self.strategy_switches_required = strategy_switches_required
         self.matched_iv_required = matched_iv_required
+        self.normal_catalog = normal_catalog
 
     @contextlib.contextmanager
     def strategy_scope(self, strategy):
@@ -58,7 +59,10 @@ class ExecutionGate:
         if purpose in ('ENTRY','ROLL') and self.entries_retired:
             result.append('RETIRED_STRATEGY_NEW_ENTRY_DISABLED')
         if purpose in ('ENTRY', 'ROLL') and self.strategy_switches_required:
-            from .strategy_controls import read, EXECUTABLE
+            if self.normal_catalog:
+                from .strategy_groups import read, EXECUTABLE
+            else:
+                from .strategy_controls import read, EXECUTABLE
             sid = strategy or _strategy.get()
             try:
                 enabled = read(self.journal.store)['enabled']

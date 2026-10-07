@@ -16,6 +16,8 @@ PROJECT_URL='https://imirspxhbnerxknyynqx.supabase.co'
 TABLE='trading_research_records'
 IST=ZoneInfo('Asia/Kolkata')
 META_KEYS=('premium-executor-v1','premium-executor-status','premium-preparation','report-strategy-evaluations',
+           'normal-theta-evaluations','strategy-groups-v1',
+           'normal-theta-contracts-NIFTY','normal-theta-contracts-SENSEX',
            'report-strategy-controls-v1','report-execution-preparation',
            'report-contracts-NIFTY','report-contracts-SENSEX',
            'report-iv30-monitor-NIFTY','report-iv30-monitor-SENSEX',
@@ -126,7 +128,7 @@ class SupabaseArchive:
             if 'pc_orders' in tables:
                 for r in db.execute('SELECT o.*,s.strategy FROM pc_orders o JOIN pc_slots s USING(slot)').fetchall():
                     body=dict(r)
-                    if body['strategy'] not in ('EVERYDAY','LATE_SESSION','bull_put','bear_call','iron_condor'):continue
+                    if body['strategy'] not in ('EVERYDAY','LATE_SESSION','bull_put','bear_call','iron_condor','normal_theta'):continue
                     self._enqueue(db,'algo_order',r['reference'],day,body,append=True)
             placeholders=','.join('?' for _ in META_KEYS)
             for r in db.execute("SELECT * FROM meta WHERE key IN ("+placeholders+") OR key LIKE 'prepared-order-%'",META_KEYS).fetchall():

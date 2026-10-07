@@ -561,7 +561,7 @@ class DashboardCollector:
             read(index + "_quote", self.market.groww.get_quote, lambda raw: quote_summary(raw, self.clock()),
                  exchange=EXCHANGES[index], segment="CASH", trading_symbol=index)
         def money():
-            self.funds_next_at = started.timestamp() + 30
+            self.funds_next_at = started.timestamp() + 5
             method = getattr(self.market.groww,"get_available_margin_details",None)
             raw = read("available_money",method,funds_summary) if method else None
             self.funds = dict(probes["available_money"]["value"],status="AVAILABLE",

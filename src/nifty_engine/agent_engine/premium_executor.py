@@ -48,7 +48,7 @@ def cash_stop(cash,quantity,costs,tick,best_pnl,limit=1000):
 
 
 class PremiumExecutor:
-    def __init__(self,journal,gateway,protection,gate,cfg,*,clock,report_cfg=None):
+    def __init__(self,journal,gateway,protection,gate,cfg,*,clock,report_cfg=None,normal_cfg=None):
         self.journal,self.gateway,self.protection,self.gate=journal,gateway,protection,gate
         self.cfg,self.clock=policy.validate(cfg),clock
         self.lock=threading.RLock()
@@ -56,6 +56,15 @@ class PremiumExecutor:
         if report_cfg:
             from .report_executor import ReportExecution
             self.report = ReportExecution(self, report_cfg)
+        self.normal = None
+        if normal_cfg:
+            from .normal_executor import NormalExecution
+            self.normal = NormalExecution(self, normal_cfg)
+
+    def basket_router(self,state):
+        if self.normal and (not state or state.get('phase')=='CLOSED' or state.get('strategy')=='normal_theta'):
+            return self.normal
+        return self.report
 
     def _state(self): return self.journal.store.meta(KEY,{})
 
@@ -65,11 +74,12 @@ class PremiumExecutor:
         state=self._state(); blockers=self.gate.blockers(obs,purpose='ENTRY')
         status=self.journal.store.meta('premium-executor-status',{})
         prepared = None
-        if self.report:
+        router=self.basket_router(state)
+        if router:
             try:
-                prepared = self.report.preparation(self.report.evidence(obs or {}))
+                prepared = router.preparation(router.evidence(obs or {}))
                 if not prepared['selected']: blockers.append('REPORT_INPUTS_OR_STRATEGY_SELECTION_REQUIRED')
-                else: self.report.validate(prepared['selected'],self.report.evidence(obs or {}))
+                else: router.validate(prepared['selected'],router.evidence(obs or {}))
             except (ValueError,KeyError,TypeError): blockers.append('REPORT_EXECUTION_INPUT_UNAVAILABLE')
         protection='NOT_ARMED'
         if state.get('protection_key'):
@@ -102,11 +112,12 @@ class PremiumExecutor:
         """Read-only carried-basket review, even when entries/activation are blocked."""
         result=dict(action='WAIT',reason='OWNED_FRESH_POSITION_REQUIRED',broker_writes=False)
         s=self._state()
-        if self.report and s.get('catalog')=='report-v1' and s.get('phase')=='REPORT_MONITORING':
+        router=self.basket_router(s)
+        if router and s.get('catalog')=='report-v1' and s.get('phase')=='REPORT_MONITORING':
             try:
                 if not obs or obs.get('complete') is not True or not fresh(obs['received_at'],self.clock(),10): return result
                 self._exclusive(s,obs)
-                return self.report.close_reason(s,self.report.evidence(obs))
+                return router.close_reason(s,router.evidence(obs))
             except (ValueError,KeyError,TypeError): return result
         if s.get('phase')!='MONITORING': return result
         try:
@@ -265,8 +276,9 @@ class PremiumExecutor:
     def tick(self,obs,prepared):
         with self.lock:
             state = self._state()
-            if self.report and (not state or state.get('phase')=='CLOSED' or state.get('catalog')=='report-v1'):
-                return self.report.tick(obs)
+            router=self.basket_router(state)
+            if router and (not state or state.get('phase')=='CLOSED' or state.get('catalog')=='report-v1'):
+                return router.tick(obs)
             if self.report and state.get('phase') in ('ENTRY_HEDGE','ENTRY_SHORT','ROLL_CLOSE_SHORT','ROLL_REHEDGE'):
                 state.update(phase='EXIT_SHORT',exit_reason='LEGACY_ENTRY_AND_ROLL_RETIRED')
                 self._save(state)

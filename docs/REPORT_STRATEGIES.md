@@ -1,5 +1,12 @@
 # Report-based strategy research · October 7, 2026
 
+Latest owner catalog has two choices: Normal theta spread and Research. Read
+NORMAL_THETA.md. The four studies below are now inside Research; production
+does not permit their new entries. Their adapter code remains for replay and
+original owned-position management, not activation. The private campaign and
+historical-IV/event policies remain unchanged. Earlier rollout notes below
+describe the previous four-switch catalog.
+
 The owner asked to derive strategies from the supplied deep-research report and
 replace overlapping original strategies. Both NIFTY and SENSEX are studied. The
 new catalog is the current dashboard/email strategy list. Its pure evaluator is

@@ -1,5 +1,15 @@
 # Trading workspace
 
+- October 7 latest catalog: two owner choices, Normal theta spread and Research.
+  Read NORMAL_THETA.md. Normal is a separate unbacktested, trend-aligned 14–45
+  DTE hedged credit spread using positive net model theta; no historical-IV gate.
+  Both choices default Off. Production entry gates permit normal_theta only;
+  the four report studies are monitoring only. Preserve their original private
+  38-day campaign, strict event horizon, IV requirements and legacy management.
+  Official scheduled-event status is visible information for Normal, not its
+  entry gate. Retired Everyday/Late-session entries remain retired. Do not
+  manufacture provider validation, activate LIVE or trade during maintenance.
+
 - Work in `D:\Money Trader\Trading` / `Logan17de/Trading`. Read
   `docs/CODEX_HEADLESS_HANDOFF.md` and `docs/PREMIUM_STRATEGY.md` first.
 - Extend the existing headless `src/nifty_engine/agent_engine/` runtime. Oracle

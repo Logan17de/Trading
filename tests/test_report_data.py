@@ -12,6 +12,52 @@ from nifty_engine.agent_engine.oracle_runtime import Runtime
 from test_report_strategies import NOW, CFG, priced_bundle
 
 
+def test_executor_waits_for_first_snapshot_then_recovers_without_activation(tmp_path):
+    import json
+    j=PcJournal(tmp_path/'j.sqlite3');calls=[]
+    runtime=Runtime.__new__(Runtime)
+    runtime.output=tmp_path/'snapshot.json';runtime.execution_error=None
+    runtime.state=SimpleNamespace(pnl_lines=SimpleNamespace(store=j.store))
+    runtime.executor=SimpleNamespace(tick=lambda obs,prepared:calls.append(obs))
+    for content in (None,'{broken', '[]', '{"execution_observation":[]}'):
+        if content is not None:runtime.output.write_text(content)
+        runtime.execution_step()
+        assert not calls and runtime.execution_error is None
+        assert j.store.meta('premium-executor-status')['reason']=='CURRENT_EXECUTION_SNAPSHOT_REQUIRED'
+    obs=dict(complete=True,received_at=NOW.isoformat(),positions=[],books={})
+    runtime.output.write_text(json.dumps(dict(execution_observation=obs)))
+    runtime.execution_step();assert calls==[obs]
+    assert not premium_strategy.intent(j.store)['enabled']
+    assert j.store.meta('premium-execution-activation') is None
+
+
+def test_fault_after_executor_tick_latches_and_never_retries_or_logs_sensitive_message(tmp_path):
+    import json
+    j=PcJournal(tmp_path/'j.sqlite3');calls=[]
+    runtime=Runtime.__new__(Runtime);runtime.output=tmp_path/'snapshot.json'
+    runtime.output.write_text(json.dumps(snapshot()))
+    runtime.execution_error=None;runtime.state=SimpleNamespace(pnl_lines=SimpleNamespace(store=j.store))
+    def tick(*args):calls.append(1);raise RuntimeError('secret-token-and-request-body')
+    runtime.executor=SimpleNamespace(tick=tick)
+    runtime.execution_step();runtime.execution_step()
+    assert calls==[1]
+    failure=j.store.meta('premium-executor-status')['failure']
+    assert failure['error_type']=='RuntimeError' and failure['frames']
+    assert 'secret-token' not in str(failure)
+    assert runtime.execution_error==failure
+
+
+def test_journal_failure_latches_even_when_fault_receipt_cannot_be_saved(tmp_path):
+    runtime=Runtime.__new__(Runtime);runtime.output=tmp_path/'missing.json'
+    runtime.execution_error=None;calls=[]
+    def unavailable(*args):raise OSError('private database path')
+    runtime.state=SimpleNamespace(pnl_lines=SimpleNamespace(store=SimpleNamespace(set_meta=unavailable)))
+    runtime.executor=SimpleNamespace(tick=lambda *args:calls.append(1))
+    runtime.execution_step();runtime.execution_step()
+    assert not calls and runtime.execution_error['stage']=='SNAPSHOT_STATUS_WRITE'
+    assert 'private database' not in str(runtime.execution_error)
+
+
 def snapshot():
     return dict(finished_at=NOW.isoformat(),positions_status='AVAILABLE',orders_status='AVAILABLE',
         probes={i+'_quote':dict(ok=True,received_at=NOW.isoformat(),value={'last_price':25000}) for i in CFG['indices']},
