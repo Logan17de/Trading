@@ -117,7 +117,7 @@ fault is isolated from the collector, owner intent and report delivery.
 The real SDK response labels daily history as interval_in_minutes1440; this and
 the documented1day alias are checked explicitly. An unavailable next-year expiry
 response is recorded separately; only individually matched API/master dates are
-usable. No missing future date is assumed or discarded current date invented.
+usable. Missing future dates remain unknown; verified current-year dates are retained.
 
 Current-IV30/252-session matched IV history and dated event-calendar evidence
 still need a verified source; no substitute or presumed clear calendar is made.

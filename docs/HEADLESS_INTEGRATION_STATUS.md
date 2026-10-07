@@ -1,5 +1,18 @@
 # Current work · October 7, 2026
 
+Read-only connection update deployed `14e88733d8ff41e6b0033c75a12541dade23deac`.
+Owner switch remains Off; Start is the explicit durable intent action and cannot
+bypass monitor-only or live-validation gates. New studies automatically receive
+actual collector evidence plus independent daily OHLC/Greeks/books/margin reads.
+Approved existing Groww key verified in owner Edge; actual isolated Oracle reads
+passed authentication, both indexes, positions/orders, funds, expiry and81 daily
+sessions per index. Market-hours books/cadence, IV history, event evidence and
+execution validation remain pending. Full suite365 passed/four skipped;33 focused
+retests after real-response fixes, offline demo/config/JS checks passed. Protected
+pre/post backups verified. Supabase SYNCED, heartbeat healthy, shared services active.
+October6 email provider/recipient-server accepted; inbox unverified. Today's
+scheduled email has not run. See current handoff for precise evidence and limits.
+
 Report-based MONITOR_ONLY catalog now replaces overlapping legacy entries:
 bull put, bear call, iron condor and calendar for NIFTY/SENSEX. Read
 REPORT_STRATEGIES.md and CODEX_HEADLESS_HANDOFF.md for current status. Original

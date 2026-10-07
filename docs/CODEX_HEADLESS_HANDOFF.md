@@ -1,5 +1,49 @@
 # Current Trading handoff
 
+## October 7 read-only connections and explicit owner Start
+
+Owner requested connecting the components while retaining Off until an explicit
+Start click. Deployed source `14e88733d8ff41e6b0033c75a12541dade23deac` to Oracle
+and refreshed the PC's protected transport pin. New report_data bridge connects
+the five-second collector snapshot to the studies; independent minute research
+reads fetch prior daily OHLC, exact API/master expiry intersections, chain Greeks,
+books and bounded hypothetical basket margins. Actual response metadata accepts
+1440-minute daily bars and1day explicitly;120-day requests respect the verified
+180-day provider limit. Unavailable next-year expiries remain separate unknown
+coverage, not invented dates. Greek timestamps expire independently of books.
+Research errors do not change owner intent or stop the account collector/mail.
+
+Initial Oracle authentication failed. Owner signed in and approved the existing
+key; owner Edge then visibly showed Codex Approved, resetting6AM tomorrow.
+No key, permission or static-IP change was made. Corrected isolated real read-only
+preflight passed authentication, both quotes, complete positions/orders, money,
+current expiry/master intersections and81 prior completed daily OHLC sessions
+per index. Before market open no valid sampled option books passed validation;
+market-hours Greeks/books/margin cadence remains unverified. Current IV30,
+252-session matched IV history and dated event evidence still need a verified
+source. Studies WAIT, MONITOR_ONLY; no fixture/isolated read journal was imported
+into production. Collection remains scheduled12:40–19:45 JST; the actual
+continuous collection run for today's market session has not yet occurred.
+
+Full suite365 passed/four skipped (369 collected); subsequent real-response fixes
+passed33 focused tests. Config/JS/compile and offline synthetic demo passed.
+Isolated tests with otherwise valid activation prove Off denies ENTRY, ROLL, EXIT
+and PROTECT capabilities. Only an explicit protected boolean owner command changes
+intent, which persists across restart. Production remains owner Off/paper/paused,
+zero owned-order records. Start saves On intent; new strategies remain monitor-only
+and cannot bypass missing research inputs or pending live provider validation.
+
+Oracle heartbeat advances, PC connection is healthy, Supabase evaluation archive
+is SYNCED with no pending rows and direct readback remains MONITOR_ONLY. All five
+shared observer/Qwen/mail/tunnel services remain active. Pre/post SQLite backups
+passed integrity; final private off-host backup hash verified:
+`e924050d47812e11cd6b3c2324eed2832658ec17e56103b5c7637818c88feca7`,
+114,733,056 bytes. Existing19:30 daily email scheduler/settings are connected;
+October6 receipt records provider and recipient-server acceptance, not inbox
+verification. No new email/order was sent by these checks. Private preview
+contains four current strategy rows. Fresh rendered owner Edge dashboard is
+still unverified because automated loopback navigation was blocked.
+
 ## October 7 report-based strategy replacement
 
 Owner requested strategies from the supplied SPX/ES research report, replacing
