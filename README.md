@@ -37,23 +37,21 @@ online. Oracle collection and scheduled reporting run independently.
 See [app setup and operations](docs/LOCAL_HEADLESS.md#local-options-dashboard).
 For another installation, run `scripts/Install-TradingApp.ps1` after local setup.
 
-## Current premium rules
+## Current strategy research
 
-Everyday and Late-session are the only active review policies. The action window
-is 14:00 inclusive–19:00 exclusive JST. One algo basket may contain up to two lots,
-within actual available broker margin, with an equal-quantity same-expiry bought hedge.
+October 7: report-based NIFTY/SENSEX research replaces overlapping Everyday and
+Late-session NEW entries and rolls. The dashboard/email show four strategies:
 
-- Everyday: NIFTY Mon/Tue/Fri short CALL near ₹20; SENSEX Wed/Thu near ₹80.
-  Skip actual expiry proved by Groww and the current master, including holiday shifts.
-- Below ₹8, review closing the old short before replacing it with the next listed
-  short above ₹8. Keep the hedge unless improvement after incremental costs exceeds ₹100.
-- By 19:00, hold when short premium is above its entry minus ₹5; otherwise queue
-  a return to the index's target premium for the next allowed window.
-- Late-session: actual expiry after 18:00, UP → PUT three listed strikes below
-  ATM; DOWN → CALL three above; flat/unknown → no entry. Matching positions skip;
-  replacement requires verified algo exits and flat confirmation. Manual trades stay protected.
-- ₹2,000 basket-loss stop has priority over rolls. Persistent GTT protection and
-  trailing updates are implemented but unarmed; this is not a guaranteed loss cap.
+- Bull put spread: bullish trend and rich volatility, with a lower put hedge.
+- Bear call spread: bearish trend and rich volatility, with a higher call hedge.
+- Iron condor: range and rich volatility, with both short sides hedged.
+- Calendar: low IV percentile and front/back inversion; payoff model still required.
+
+These are MONITOR_ONLY hypotheses, not a new live executor or validated profits.
+Missing IV history, Greeks, calendar, expiry, current books or exact margin keep
+proposals unknown. One basket/max two lots and ₹1,000 risk bound are preserved.
+Original records/exits/protection and manual trades are not relabeled or changed.
+Read [the current rules and evidence requirements](docs/REPORT_STRATEGIES.md).
 
 Owner On/Off persists until explicitly changed. The button cannot bypass the
 pause or live-validation gates. Hedge-first entry, short-first exits, rolls and
@@ -61,7 +59,7 @@ expiry replacement use exact journal-owned orders. Actual preparation labels its
 sampled scope; replay tests do not prove live persistent broker protection.
 News workers, news entry gates and news dashboard/email wording are retired.
 Historical offset, barrier, swing and news research remain provenance.
-Read [the exact premium policy](docs/PREMIUM_STRATEGY.md) and
+Read [the legacy management policy](docs/PREMIUM_STRATEGY.md) and
 [execution preparation](docs/EXECUTION_PREPARATION.md) and
 [the Oracle controller and activation boundary](docs/ORACLE_EXECUTION.md).
 

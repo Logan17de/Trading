@@ -27,8 +27,26 @@ replays before proposing execution. Feature replay/import CLI is documented.
 JS/compile checks and synthetic offline demo passed. Oracle pre-update journal
 backup integrity verified; zero algo-owned order records. Pause/paper/actual owner
 intent and shared services remain unchanged. Noon heartbeat prompt updated to
-the new catalog, preserving its schedule and quiet notifications. Deployment
-and archive readback evidence follows after rollout.
+the new catalog, preserving its schedule and quiet notifications.
+
+Deployed immutable source `6c225f9649e11f65ebf200c6a011a01931b9fa25` to Oracle
+and refreshed the protected PC viewer interpreter pin. Only trading-observer
+was restarted; all five shared observer/Qwen/mail/tunnel services remain active.
+Current loopback API confirms four new rows, MONITOR_ONLY, owner Off, execution
+disabled, no runtime error, healthy VM and heartbeat advancement from 35 to52.
+Before collection starts at12:40 JST, saved market values are stale and correctly
+unknown. Both indexes WAIT for actual inputs; no fixture was imported into the
+production research journal. Archive is SYNCED with zero pending; direct private
+Supabase readback verified five evaluation versions at10:11 JST, all MONITOR_ONLY.
+
+Pre/post SQLite backups passed integrity. Matching private off-host post copy:
+114,733,056 bytes, SHA256
+`163b75a951205c12607907f93db437456b18df2a229a7ea006b92d8d90ad4af8`.
+Private generated email preview contains all four strategy names and unknown
+results. No diagnostic email was sent; today's scheduled19:30 send, provider
+acceptance and inbox delivery are not yet verified. Owner Edge automation refused
+loopback navigation with ERR_BLOCKED_BY_CLIENT; no fresh rendered-dashboard
+verification is claimed. Dashboard API and generated email HTML are the evidence.
 
 ## October 6 executor connection and lifecycle preparation
 

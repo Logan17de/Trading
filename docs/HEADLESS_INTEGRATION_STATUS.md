@@ -7,6 +7,16 @@ Everyday/Late-session records/exits are provenance and management only. New
 entry/roll gating remains closed; no new live strategy executor or activation.
 Data, calendar, scenario modeling and out-of-sample validation remain required.
 
+Deployed source `6c225f9649e11f65ebf200c6a011a01931b9fa25`; PC transport pin
+refreshed. Healthy heartbeat advances, owner Off, execution disabled; all five
+shared services active. Full suite354 passed/four skipped, focused24 passed;
+config/JavaScript checks and synthetic offline demo passed. Pre/post journal
+integrity and matching private off-host backup verified. Actual Supabase readback
+confirms monitor-only evaluation versions; archive SYNCED, zero pending.
+API and private email preview contain all four strategies. Rendered owner Edge
+check blocked by ERR_BLOCKED_BY_CLIENT; no new email sent or delivery claimed.
+Current pre-market research is WAIT/UNKNOWN until real dated inputs are supplied.
+
 # Deployment history · October 6, 2026
 
 Latest release: `c5985dad31813c424c07affcffb05d78523e7518`. Oracle executor
