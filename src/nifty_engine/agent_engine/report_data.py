@@ -20,7 +20,9 @@ from . import report_strategies as policy
 
 def daily_rows(payload, now):
     """Documented 1day exchange OHLC; omit the current incomplete session."""
-    if payload.get('candle_interval') != '1day' or not isinstance(payload.get('candles'), list):
+    interval=payload.get('candle_interval')
+    if (interval not in (None,'1day') or (interval is None and payload.get('interval_in_minutes')!=1440)
+            or not isinstance(payload.get('candles'), list)):
         raise ValueError('DAILY_EXCHANGE_HISTORY_REQUIRED')
     rows=[]
     for raw in payload['candles'][:800]:
@@ -110,11 +112,15 @@ class ReportData:
         day=now.astimezone(JST).date();key='report-expiries-'+index
         saved=self.store.meta(key,{})
         if saved.get('day_jst')==day.isoformat() and fresh(saved['received_at'],now,3600):return saved
-        dates=set()
+        dates=set();unavailable_years=[]
         years={day.year,(day+timedelta(days=90)).year}
         for year in sorted(years):
-            raw=self.call(self.market.groww.get_expiries,exchange=EXCHANGES[index],underlying_symbol=index,year=year)
-            dates.update(date.fromisoformat(d).isoformat() for d in raw['expiries'])
+            try:
+                raw=self.call(self.market.groww.get_expiries,exchange=EXCHANGES[index],underlying_symbol=index,year=year)
+                dates.update(date.fromisoformat(d).isoformat() for d in raw['expiries'])
+            except Exception:
+                if year==day.year:raise
+                unavailable_years.append(year)  # Current verified dates remain usable; no future dates invented.
         if self.master_at is None or not fresh(self.master_at,now,3600):
             self.master_text=self.master();self.master_at=self.clock().isoformat()
         matched=[d for d in sorted(dates) if day<=date.fromisoformat(d)<=day+timedelta(days=90)
@@ -122,6 +128,7 @@ class ReportData:
         evidence=dict(status='CONFIRMED_CURRENT_MASTER' if matched else 'UNKNOWN_BLOCKED',
             day_jst=day.isoformat(),expiries=matched,received_at=self.clock().isoformat(),
             comparison_scope='INDIVIDUAL_API_AND_MASTER_INTERSECTION_UP_TO_90_DTE')
+        evidence['unavailable_years']=unavailable_years
         self.store.set_meta(key,evidence)
         return evidence
 

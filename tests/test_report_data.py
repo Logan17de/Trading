@@ -98,6 +98,28 @@ def test_daily_fetch_respects_real_provider_window_and_never_fabricates_iv(tmp_p
     assert set(features)=={'ma20','ma50','adx14','rv30'} and features['ma50']['sessions']==50
 
 
+def test_real_daily_response_minutes_alias_is_verified_not_assumed():
+    yesterday=(NOW-timedelta(days=1)).date().isoformat()
+    raw=dict(interval_in_minutes=1440,candles=[[yesterday+'T00:00:00',100,102,99,101,0]])
+    assert len(data.daily_rows(raw,NOW))==1
+    with pytest.raises(ValueError):data.daily_rows(dict(raw,interval_in_minutes=5),NOW)
+    with pytest.raises(ValueError):data.daily_rows(dict(raw,candle_interval='5minute'),NOW)
+
+
+def test_unavailable_next_year_does_not_invent_dates_or_discard_matched_current_year(tmp_path):
+    j=PcJournal(tmp_path/'j.sqlite3');called=[]
+    def expiries(**kw):
+        called.append(kw['year'])
+        if kw['year']==2027:raise ValueError('future-year data unavailable')
+        return {'expiries':['2026-11-10']}
+    market=SimpleNamespace(groww=SimpleNamespace(get_expiries=expiries),limiter=SimpleNamespace(wait=lambda:None))
+    master='trading_symbol,underlying_symbol,segment,exchange,expiry_date,lot_size,tick_size,strike_price\nNIFTY26N1025000CE,NIFTY,FNO,NSE,2026-11-10,65,.05,25000\n'
+    reader=data.ReportData(market,j,CFG,clock=lambda:NOW,master=lambda:master)
+    evidence=reader.expiries('NIFTY',NOW)
+    assert called==[2026,2027] and evidence['unavailable_years']==[2027]
+    assert evidence['expiries']==['2026-11-10'] and evidence['status']=='CONFIRMED_CURRENT_MASTER'
+
+
 def test_stale_worker_performs_no_broker_calls_or_owner_changes(tmp_path):
     j=PcJournal(tmp_path/'j.sqlite3')
     reader=data.ReportData(SimpleNamespace(),j,CFG,clock=lambda:NOW)
