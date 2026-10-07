@@ -45,7 +45,7 @@ async function command(body) {
   } catch {
     current={...current,status:'SETUP_RESULT_UNKNOWN',reason:'Refresh the existing setup before any further action.',allowed_actions:['status']};
     $('#command-note').textContent='Connection interrupted. An order may have reached the broker. No automatic retry was sent.';
-  } finally {busy=false;render();}
+  } finally {busy=false;render();readRuntime();}
 }
 $('#plan-form').addEventListener('submit',event=>{
   event.preventDefault();const fields=new FormData(event.currentTarget);const value=key=>Number(fields.get(key));
@@ -55,8 +55,10 @@ $('#refresh-status').addEventListener('click',()=>command({action:'status'}));
 $('#confirm-action').addEventListener('change',render);
 for(const button of document.querySelectorAll('[data-read]'))button.addEventListener('click',()=>command({action:button.dataset.read}));
 for(const button of document.querySelectorAll('[data-write]'))button.addEventListener('click',()=>{if(!$('#confirm-action').checked)return;const action=button.dataset.write;command({action,confirm:action==='arm'?current.evidence_digest:current.plan_hash});});
-fetch('/api/dashboard',{cache:'no-store'}).then(r=>r.json()).then(data=>{
+function readRuntime(){return fetch('/api/dashboard',{cache:'no-store'}).then(r=>r.json()).then(data=>{
   const setup=data.live_setup;
-  $('#runtime-status').textContent = setup ? `${setup.mode==='live'?'Live mode':'Paper mode'} · ${data.control?.algo?.desired_enabled===true?'Algo On':'Algo Off'}` : 'Setup status unavailable';
-}).catch(()=>{$('#runtime-status').textContent='Oracle status unavailable';});
+  const on=data.control?.algo?.desired_enabled;
+  const mode=setup?.mode==='live'?'Live mode':setup?.mode==='paper'?'Paper mode':'Mode unknown';
+  $('#runtime-status').textContent = setup ? `${mode} · ${on===true?'Algo On':on===false?'Algo Off':'Algo state unknown'}` : 'Setup status unavailable';
+}).catch(()=>{$('#runtime-status').textContent='Oracle status unavailable';});}
 command({action:'status'});

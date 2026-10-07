@@ -285,3 +285,43 @@ def test_unknown_arm_cannot_claim_ready_from_only_complete_test_status(app):
     result=ctl.command({'action':'status'})
     assert result['status']=='LIVE_PREPARED_ALGO_OFF' and result['algo_enabled'] is False
     assert not result['requires_reconciliation'] and result['pending_action'] is None
+
+
+@pytest.mark.parametrize('state,extra',[
+    ('OWNER_PREVIEW_EXPIRED',{}),('OWNER_SETUP_BLOCKED',{'reason':'PREVIEW_PLAN_FIRST'})])
+def test_proven_unsubmitted_failure_exposes_new_preview_control_only_without_attempts(app,state,extra):
+    ctl,store,calls,cfg=app;preview(app)
+    ctl.run=lambda *a,**k:response(state,plan_hash=HASH,**extra)
+    result=ctl.command({'action':'status'})
+    assert 'preview' in result['allowed_actions']
+    assert 'preview' in ctl.public()['allowed_actions']
+    saved=store.meta(KEY);saved['attempted_writes']=['submit'];store.set_meta(KEY,saved)
+    assert 'preview' not in ctl.public()['allowed_actions']
+    saved['attempted_writes']=[];saved.update(pending_action='preview',uncertain=True);store.set_meta(KEY,saved)
+    assert 'preview' not in ctl.public()['allowed_actions']
+
+
+def test_invalid_empty_spec_preserves_correction_controls_without_changing_saved_plan(app):
+    ctl,store,calls,cfg=app
+    result=ctl.command({'action':'preview','spec':{}})
+    assert result['status']=='INVALID_OWNER_SETUP_COMMAND' and 'preview' in result['allowed_actions']
+    assert store.meta(KEY) is None and calls==[]
+    preview(app);before=store.meta(KEY)
+    result=ctl.command({'action':'preview','spec':{}})
+    assert result['plan_hash']==HASH and result['plan_spec']==spec() and 'preview' in result['allowed_actions']
+    assert store.meta(KEY)==before
+    saved=copy.deepcopy(before);saved.update(pending_action='submit',uncertain=True,attempted_writes=['submit'])
+    store.set_meta(KEY,saved)
+    result=ctl.command({'action':'preview','spec':{}})
+    assert result['requires_reconciliation'] and result['pending_action']=='submit'
+    assert result['allowed_actions']==['status','capture'] and store.meta(KEY)==saved
+
+
+def test_missing_private_connection_has_precise_reason_and_preserves_pending_plan(app):
+    ctl,store,calls,cfg=app;preview(app)
+    before=store.meta(KEY)
+    (ctl.root/'.agent-state/oracle-viewer.json').unlink()
+    result=ctl.command({'action':'status'})
+    assert result['status']=='ORACLE_CONNECTION_REQUIRED'
+    assert result['reason']=='PRIVATE_ORACLE_CONNECTION_CONFIG_REQUIRED'
+    assert result['plan_hash']==HASH and store.meta(KEY)==before and len(calls)==1

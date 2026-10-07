@@ -164,7 +164,10 @@ class OwnerSetupController:
             if not saved.get('uncertain') and not saved.get('pending_action'):
                 attempts=saved.get('attempted_writes',[])
                 recent=saved.get('writes_since_capture',[])
-                if value['status'] in TERMINAL or value['status']==PREVIEW and not attempts:
+                unsubmitted_rejected=(value['status']=='OWNER_PREVIEW_EXPIRED' or
+                    value['status']=='OWNER_SETUP_BLOCKED' and value.get('reason')=='PREVIEW_PLAN_FIRST')
+                if (value['status'] in TERMINAL or value['status']==PREVIEW and not attempts
+                        or unsubmitted_rejected and not attempts):
                     value['allowed_actions'].append('preview')
                 if value['status']==PREVIEW and saved.get('plan_hash') and 'submit' not in attempts:
                     value['allowed_actions'].append('submit')
@@ -193,7 +196,10 @@ class OwnerSetupController:
             action=body['action']
             expected={'action','spec'} if action=='preview' else {'action','confirm'} if action in WRITES else {'action'}
             if set(body)!=expected: raise ValueError()
-            cfg=self._config(); saved=self.store.meta(KEY,{})
+            try: cfg=self._config()
+            except OSError:
+                return self._view(status='ORACLE_CONNECTION_REQUIRED',reason='PRIVATE_ORACLE_CONNECTION_CONFIG_REQUIRED')
+            saved=self.store.meta(KEY,{})
             if saved and saved.get('config_hash') != identity(cfg):
                 return self._view(saved,status='OWNER_SETUP_BINDING_CHANGED',reason='REVIEW_EXISTING_PLAN_ON_ORACLE')
             if action=='preview':
@@ -239,7 +245,10 @@ class OwnerSetupController:
             self._accept(saved,action,remote)
             return self._view(saved)
         except Exception:
-            return {'status':'INVALID_OWNER_SETUP_COMMAND','allowed_actions':['status']}
+            try:
+                return self._view(status='INVALID_OWNER_SETUP_COMMAND',reason='CHECK_SETUP_COMMAND_FIELDS')
+            except Exception:
+                return {'status':'OWNER_SETUP_LOCAL_STATE_UNAVAILABLE','allowed_actions':['status']}
         finally:
             self.lock.release()
 
