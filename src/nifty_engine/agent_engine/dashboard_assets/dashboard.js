@@ -221,6 +221,7 @@ function renderControl() {
   $("algo-stop").disabled=data.demo||algoStartPending||!on;
   const last=algoStartResult||c?.latest_start_request;
   const labels={RETIRED_STRATEGY_NEW_ENTRY_DISABLED:"legacy entries retired",ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED:"Oracle executor is not connected",REPOSITORY_PAUSED:"trading is paused",LIVE_ENVIRONMENT_NOT_ACTIVATED:"live mode is not activated",REVIEWED_LIVE_ACTIVATION_REQUIRED:"broker execution and persistent protection need live verification",ORACLE_EXECUTOR_CONNECTION_REQUIRED:"waiting for Oracle broker connection",WAITING_FOR_COLLECTION_WINDOW:"waiting for the collection window",ALL_EXECUTABLE_STRATEGIES_OFF:"no execution strategy selected",FRESH_COMPLETE_BROKER_STATE_REQUIRED:"fresh complete broker state is required",FRESH_MARKET_DATA_REQUIRED:"current data is required",OUTSIDE_1400_1900_JST:"outside 14:00–19:00 JST",OFFLINE_VIEW:"offline view",MAXIMUM_LOTS_REQUIRED:"lot cap missing",PREMIUM_POLICY_REQUIRED:"strategy settings are missing",OWNER_ALGO_OFF:"owner setting is Off",VM_UNHEALTHY_OR_STALE:"VM heartbeat/data unavailable"};
+  labels.SELF_CLOSE_RECONCILIATION_REQUIRED="Self closure needs flat/protection confirmation";
   const blockers=[...new Set(algo?.blockers||[])].filter(k=>k!=='OWNER_ALGO_OFF').map(k=>labels[k]||k).join('; ');
   $("algo-start-result").textContent=algoStartPending?"Saving owner setting…":last?.status==='TRANSPORT_FAILED'?"Oracle did not confirm the setting. Read the On/Off state before retrying.":selection+(on?(writesPermitted?"Algo On. Oracle may place real orders for these strategies when their entry checks pass; one basket at a time.":`On is saved until you click Algo Off. Trading blocked: ${blockers||'readiness not confirmed'}.`):`Algo Off. Start saves On on Oracle; orders require live readiness.${blockers?` Currently blocked: ${blockers}.`:''}`);
   const execution=data.execution_controller;
@@ -240,6 +241,11 @@ function renderControl() {
     if(campaign?.started_at)$("execution-status").textContent+=` · Research ${campaign.elapsed_calendar_days}/38 days · ${campaign.status==='COLLECTING'?'collecting':'review required'}`;
   }
   const review=execution?.position_review;
+  const closed=execution?.external_close||execution?.last_external_close;
+  if(closed?.label){
+    $("execution-status").textContent+=` · ${closed.label}${closed.closed_at?' · '+clockSeconds(closed.closed_at):''}`;
+    if(closed.status&&closed.status!=='CLOSED')$("execution-status").textContent+=' · awaiting flat/protection confirmation';
+  }
   if(review?.action==='REVIEW_ROLL_SHORT')$("execution-status").textContent+=` · Existing spread: review short rollover (premium ≤ ${inr(review.rollover_threshold_rupees)})`;
   if(review?.action==='REVIEW_OWNED_EXIT'&&review?.reason!=='EXPIRY_1900_HANDOFF')$("execution-status").textContent+=' · Existing spread: review exit (basket stop/trail)';
   if(review?.reason==='EXPIRY_1900_HANDOFF')$("execution-status").textContent+=` · 19:00 expiry close review → ${review.successor.index} entry review after flat/session checks`;

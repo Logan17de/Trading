@@ -256,3 +256,33 @@ class PersistentProtection:
             raise
         except Exception: pass
         return self.reconcile(operation)
+
+    def cancel_flat(self, operation, observation):
+        """Cancel only our orphan parent after independently verified Self closure.
+
+        A manual symbol flag stays protected. No ordinary/manual order is
+        cancelled, modified or adopted. Off/pause/paper still prohibit this POST.
+        """
+        result = self.reconcile(operation); record = self.record(operation)
+        if result['status'] != 'VERIFIED_ACTIVE': return result
+        from .external_close import proof
+        state = self.journal.store.meta('premium-executor-v1', {})
+        checked = proof(self.journal, state, observation, self.gateway.clock())
+        symbol = record['request']['trading_symbol']
+        keys = {p['key'] for p in state.get('protections', {}).values()}
+        if state.get('protection_key'): keys.add(state['protection_key'])
+        if (record['slot'] != state['slot'] or operation not in keys or symbol not in checked['symbols']):
+            raise ValueError('EXACT_OWNED_ORPHAN_PARENT_REQUIRED')
+        rows = self.journal.store.read('SELECT side,filled FROM pc_orders WHERE slot=? AND symbol=? AND broker_hash IS NOT NULL',
+                                       (record['slot'], symbol))
+        if sum(r['filled'] * (1 if r['side'] == 'BUY' else -1) for r in rows) != -record['request']['quantity']:
+            raise ValueError('ORIGINAL_OWNED_SHORT_PROOF_REQUIRED')
+        self.gateway._gate(observation)
+        record['cancel_attempted'] = True; self._save(operation, record)
+        try:
+            self.transport.cancel_smart_order(segment='FNO', smart_order_type='GTT', smart_order_id=record['smart_id'], timeout=5)
+        except ExecutionDenied:
+            record['cancel_attempted'] = False; self._save(operation, record)
+            raise
+        except Exception: pass
+        return self.reconcile(operation)

@@ -703,6 +703,11 @@ class DashboardCollector:
             # quantities; an average/side alone cannot prove an owned position.
             result["execution_observation"] = dict(complete=complete,
                 received_at=probes["positions"]["received_at"],
+                orders_complete=orders_complete,
+                orders_received_at=min(p['received_at'] for k,p in probes.items() if k.startswith('orders_page_')),
+                orders=[{k:r.get(k) for k in ('groww_order_id','order_reference_id','trading_symbol',
+                    'segment','exchange','product','transaction_type','quantity','filled_quantity','order_status')}
+                    for r in orders if isinstance(r,dict)],
                 expiry_evidence=self.expiry_evidence,
                 positions=[dict(symbol=r.get("trading_symbol"),quantity=r.get("quantity"),
                     product=r.get("product"),ownership=ownership.get(r.get("trading_symbol"),"MANUAL_OR_UNKNOWN_PROTECTED"))

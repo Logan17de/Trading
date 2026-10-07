@@ -1,5 +1,13 @@
 # Trading workspace
 
+- External closure uses `external_close.py`: exact terminal Self offsets, an
+  ownership-safe baseline and two fresh complete flat reads. Self means outside
+  this engine, not verified personal/device origin. Keep manual flags and external
+  orders protected. Only the exact owned orphan GTT may be cleaned up under the
+  live gate; Off/pause/paper prohibit even that cancellation. Do not release the
+  slot with pending orders, active protection, unknown children or partial exits.
+  Read-only closure accounting is allowed while Off; never fabricate exit fills.
+
 - October 7 latest catalog: two owner choices, Normal theta spread and Research.
   Read NORMAL_THETA.md. Normal is a separate unbacktested, trend-aligned 14–45
   DTE hedged credit spread using positive net model theta; no historical-IV gate.

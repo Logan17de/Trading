@@ -72,6 +72,8 @@ class PremiumExecutor:
 
     def public(self,obs=None):
         state=self._state(); blockers=self.gate.blockers(obs,purpose='ENTRY')
+        external_pending=bool(state.get('external_close') and state['external_close'].get('status')!='CLOSED')
+        if external_pending: blockers.append('SELF_CLOSE_RECONCILIATION_REQUIRED')
         status=self.journal.store.meta('premium-executor-status',{})
         prepared = None
         router=self.basket_router(state)
@@ -105,8 +107,10 @@ class PremiumExecutor:
             reason=status.get('reason'),at=status.get('at'),execution_enabled=not blockers,
             protection=protection,loss_cap_guaranteed=False,
             provider_execution_verified=not bool('REVIEWED_LIVE_ACTIVATION_REQUIRED' in blockers),
-            management_enabled=not self.gate.blockers(obs,purpose='PROTECT'),
-            report_preparation=prepared,position_review=self.position_review(obs))
+            management_enabled=not external_pending and not self.gate.blockers(obs,purpose='PROTECT'),
+            report_preparation=prepared,position_review=self.position_review(obs),
+            external_close=state.get('external_close'),
+            last_external_close=self.journal.store.meta('premium-last-external-close',{}))
 
     def position_review(self,obs):
         """Read-only carried-basket review, even when entries/activation are blocked."""
@@ -276,6 +280,9 @@ class PremiumExecutor:
     def tick(self,obs,prepared):
         with self.lock:
             state = self._state()
+            from .external_close import reconcile
+            external = reconcile(self, state, obs)
+            if external is not None: return external
             router=self.basket_router(state)
             if router and (not state or state.get('phase')=='CLOSED' or state.get('catalog')=='report-v1'):
                 return router.tick(obs)

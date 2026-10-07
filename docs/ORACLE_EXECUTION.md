@@ -1,5 +1,40 @@
 # Oracle premium execution controller
 
+## Closing an algo basket outside the engine
+
+The observer now supplies bounded, private order evidence alongside complete
+positions. While positions still match exact ownership, the controller records
+an external-order baseline. A subsequent opposite set of terminal Self fills
+must offset every remaining journal-owned leg, with two fresh complete flat
+position reads at least five seconds apart. Missing baseline, partial exits,
+mixed quantities, open orders, duplicate IDs or stale/incomplete reads cannot
+release the slot or authorize a replacement. Old flat baskets are not relabelled.
+
+The dashboard and visual email retain **Closed outside algo (Self)** after
+confirmation. Self has the same meaning as the existing P&L split: submitted
+outside this executor. Groww's published order schema does not identify the
+person/device, so this is not proof of a human sender. External orders are never
+adopted into engine ownership; manual protection flags remain. The final strategy
+P&L is not invented from a flattened position.
+
+An active engine-owned GTT must be reconciled and cancelled before releasing an
+externally flattened basket. The orphan-parent cleanup validates the original
+short, exact slot/parent and durable two-read proof again. It cancels only that
+owned parent, never manual orders. Off/pause/paper deny the cancellation; the UI
+then shows Self closure with protection cleanup pending. If the owner cancels the
+parent, read-only verification can complete closure even while Algo is Off.
+An uncertain cancel is not repeated. A generated-child race requires another
+position reconciliation, preventing a duplicate close or premature slot release.
+Closure bookkeeping runs before write gates; no entry is attempted on its tick.
+
+Replay tests validate these paths, not actual Groww writes. The October 7 Oracle
+GET-only check authenticated with SDK 1.5.0 and read positions, money and NIFTY.
+Explicit 28-day ACTIVE/COMPLETED/CANCELLED GTT lists were complete and empty.
+There was no actual parent persistence or generated-child evidence to verify.
+No activation proof was created. Paper, pause and owner Off remained unchanged.
+Published provider contracts: [Smart Orders](https://groww.in/trade-api/docs/curl/smart-orders)
+and [Orders](https://groww.in/trade-api/docs/curl/orders).
+
 ## Desktop Start contract
 
 Select the strategy switches, then Algo Start saves durable owner On on Oracle.

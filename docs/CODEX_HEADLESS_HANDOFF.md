@@ -1,5 +1,33 @@
 # Current Trading handoff
 
+## October 7 protection and external-closure update
+
+Extended the existing persistent GTT adapter with exact owned orphan-parent
+cleanup after an external basket close. Added private terminal order evidence
+to collector observations and a read-only closure reconciler ahead of write
+gates. It records an ownership-safe baseline, exact external offsets and two
+fresh complete flat reads. Dashboard/email preserve Closed outside algo (Self).
+No manual order is adopted, cancelled or modified and manual flags remain.
+Partial exits/unknown children cannot reopen legs or release the basket. Off,
+pause and paper still prohibit orphan-GTT cancellation; externally cancelled
+protection can be verified and closure recorded while Off. Final strategy P&L
+stays UNKNOWN without reviewed accounting. Read ORACLE_EXECUTION.md.
+
+Actual GET-only Oracle check at 06:16 UTC: SDK1.5.0 authentication, positions,
+money and NIFTY available. Complete explicit28-day GTT lists returned zero
+ACTIVE/COMPLETED/CANCELLED records. No actual persistence/child linkage evidence
+exists in that checked scope; tests cannot certify it. Actual owner Off, paper,
+pause and absent activation proof verified. No broker order was placed/modified.
+Verification: full suite529 passed/four platform skips; after final reconciliation
+and UI changes, all59 focused external-closure/Normal tests passed. Replay covers
+NIFTY/SENSEX, partial exits, duplicate/stale/open/mismatched orders, restart,
+Off/pause/paper, uncertain cancellation and generated-child races/unlinked fills.
+Config/JS/diff checks and isolated synthetic offline demo passed. Consistent
+SQLite backup `pre-external-close-20261007T061914Z.sqlite3` passed full integrity;
+exact capital and owner-control hashes matched production. Observer resumed
+before the background backup verification; shared services remained active.
+Deployment receipt will follow after rollout.
+
 ## October 7 additional investment control
 
 Added Record investment beside Record withdrawal in the capital card. It accepts
