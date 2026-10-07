@@ -121,9 +121,10 @@ def evaluate(cfg, index, bundle, now, *, occupied=False):
     return result
 
 
-def update(store,cfg,now):
+def update(store,cfg,now,*,persist=True):
     occupied=bool(store.read("SELECT 1 FROM pc_orders WHERE state<>'CLOSED' LIMIT 1"))
     value=dict(at=now.isoformat(),policy=cfg,indices={i:evaluate(cfg,i,
         store.meta('normal-theta-evidence-'+i,{}),now,occupied=occupied) for i in cfg['indices']},
         execution_enabled=False,broker_writes=False)
-    store.set_meta(KEY,value);return value
+    if persist: store.set_meta(KEY,value)
+    return value

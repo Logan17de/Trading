@@ -16,6 +16,23 @@ from test_report_execution import ReportSession, LEGACY
 CFG=theta.load(Path(__file__).parents[1])
 
 
+def test_view_evaluation_rechecks_current_inputs_without_journal_writes(tmp_path):
+    journal = PcJournal(tmp_path/'view.sqlite3')
+    journal.store.set_meta(theta.KEY, {'at':'prior-worker-result'})
+    journal.store.set_meta('normal-theta-evidence-NIFTY', evidence())
+    class ReadOnly:
+        read = journal.store.read
+        meta = journal.store.meta
+        def set_meta(self, *args): raise AssertionError('view must not acquire a writer')
+    current = theta.update(ReadOnly(), CFG, NOW, persist=False)
+    assert current['indices']['NIFTY']['candidate'] is not None
+    later = theta.update(ReadOnly(), CFG, NOW+timedelta(seconds=11), persist=False)
+    assert later['indices']['NIFTY']['candidate'] is None
+    assert journal.store.meta(theta.KEY) == {'at':'prior-worker-result'}
+    theta.update(journal.store, CFG, NOW)
+    assert journal.store.meta(theta.KEY)['at'] == NOW.isoformat()
+
+
 def evidence(index='NIFTY',regime='BULLISH'):
     b=priced_bundle(index,regime)
     b['features']['spot']['value']=25100 if regime=='BULLISH' else 24700

@@ -150,7 +150,7 @@ class Runtime:
             if self.normal_catalog:
                 from . import normal_theta, strategy_groups
                 preferences=strategy_groups.read(evidence)
-                normal=normal_theta.update(evidence,self.normal_catalog,now)
+                normal=normal_theta.update(evidence,self.normal_catalog,now,persist=False)
                 indices={i:dict(research_status=r['status'],live_ready=False,blockers=list(dict.fromkeys(
                     r['reasons']+self.gate.blockers(obs,purpose='ENTRY',strategy=normal_theta.ID))))
                     for i,r in normal['indices'].items()}
@@ -309,6 +309,9 @@ class Runtime:
                         'status':'RESEARCH_INPUT_UNAVAILABLE','mode':'MONITOR_ONLY',
                         'broker_writes':False,'execution_enabled':False})
                 self.state.capital_ledger.accrue(now)
+                if self.normal_catalog:
+                    from .normal_theta import update as update_normal
+                    update_normal(self.state.pnl_lines.store,self.normal_catalog,now)
                 self.mail_state=self.mail.tick(self.read(),now)
                 from .pc_control import JST
                 local=now.astimezone(JST);day=local.date().isoformat()
