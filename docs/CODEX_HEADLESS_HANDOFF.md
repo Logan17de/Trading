@@ -65,6 +65,35 @@ account response or fabricating confirmation. Two concurrent-lock tests verify
 return while the research lock remains held;37 targeted regressions passed.
 Tick research and its archive remain monitor-only and independent of execution.
 
+Final rollout: immutable9d95eace2e7f87020c332a11c396e0149d9a8eb0 on Oracle;
+PC source pin/assets refreshed and background viewer restarted. Only observer
+restarted; allfive shared services active. Root/service checks confirmed paper,
+pause, global Off, both groups Off, zero active owned-order rows and no activation.
+Actual heartbeat advanced1→3→7; runtime error/worker fault null and phase IDLE.
+The prior worker latch is absent after restart, without pretending its old
+underlying cause was identified. Original campaign remains October7
+11:46:38.519787 JST through November14 11:46:38.519787 JST.
+
+Collection/viewer latency remains unresolved: the final PC snapshots alternate
+HEALTHY/RECONNECTING and correctly label stale market/funds values unknown;
+Normal remains WAIT for fresh snapshot/spot/funds. Neither lock isolation nor
+the five-second cash schedule is claimed to prove continuous five-second data.
+Do not weaken freshness to make it appear ready. Actual broker-write/persistent
+GTT/generated-child commissioning also remains absent. Start still saves intent
+and cannot bypass pause/paper/provider validation or stale data. Historical IV
+is not a Normal blocker; the original research dataset requirement is preserved.
+
+Private archive actual provider acknowledgments are SYNCED. Authenticated
+read-only Supabase retrieval confirmed a normal-theta evaluation uploaded at
+2026-10-07 05:31:11.027278 UTC. A first retrieval used the wrong category prefix
+and returned no rows; corrected algo_state prefix confirmed the record. The
+email preview contains both group names; no new email was sent or inbox delivery
+claimed. Scheduled email remains19:30 JST. Served JS contains the normal rules
+and two group labels. Owner Edge visual verification failed with the existing
+ERR_BLOCKED_BY_CLIENT localhost restriction; no permissions were changed.
+The noon heartbeat prompt was updated to the two groups and preserved campaign.
+User drafts trading_report_receiver.py and pc_maintenance.py remain untouched.
+
 ## October 7 Start button and selected strategies
 
 Verified the desktop HTTP Start/Stop and strategy-switch requests through the
