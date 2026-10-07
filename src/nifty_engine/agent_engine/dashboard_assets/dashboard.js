@@ -257,7 +257,8 @@ function renderCapital() {
   const through=month?new Intl.DateTimeFormat('en',{month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(month+'-01T00:00:00Z')):'—';
   const state=ledger?.status;
   $('capital-ledger-status').textContent=data.demo?'Sample capital · design preview':state==='AVAILABLE'?`Owner ledger · API ${inr(ledger.monthly_api_fee_inr)}/month · through ${through}`:state==='CACHED'?`Saved owner ledger · ${dateTime(ledger.updated_at)}`:state==='FEE_UPDATE_PENDING'?'Monthly fee update pending · waiting for Oracle':state==='INVALID_LEDGER'?'Capital ledger unavailable':'Capital ledger not configured';
-  for(const kind of ['withdrawal','investment']) $('record-'+kind).disabled=demo||capitalBusy()||state!=='AVAILABLE'||Boolean(data.vm&&data.vm.status!=='HEALTHY');
+  // Bookkeeping uses Oracle's transaction and receipt, independent of quote/heartbeat freshness.
+  for(const kind of ['withdrawal','investment']) $('record-'+kind).disabled=demo||capitalBusy()||!['AVAILABLE','CACHED'].includes(state);
 }
 function strategyReadinessHTML(s) {
   if(!s.readiness)return '';

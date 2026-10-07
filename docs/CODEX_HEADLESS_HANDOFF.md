@@ -15,7 +15,21 @@ cross-kind ID conflicts are tested. Unconfirmed submissions keep their exact
 request ID, amount/date; receipts must match and explicitly report no money moved
 or broker writes. Synthetic tests never book entries in the owner's real ledger.
 No amount was supplied for this request, so no actual investment was added.
-Rollout and verification receipts follow after deployment.
+Bookkeeping controls accept a current-month saved capital summary independently
+of market/heartbeat freshness. Broker data freshness gates are unchanged. Oracle
+still validates and acknowledges every record; connection failures keep the
+pending request for an exact retry.
+
+Verification: full513 tests passed509 with four platform skips before the small
+UI availability follow-up; all37 accounting tests, including the actual JS
+handlers with lost/wrong/duplicate receipts, passed after that follow-up. Config,
+JS syntax, diff checks and the synthetic offline demo passed. Consistent SQLite
+backup `pre-capital-investments-quiescent-20261007.sqlite3` passed full integrity
+checking; exact capital-body hash and owner controls matched production. Initial
+background backup checks timed out, so the paused observer was briefly stopped
+for a consistent copy and resumed. Shared services stayed active. The protected
+PC→Oracle investment route rejected a zero-amount validation probe; no record
+was created. Final release/visual verification receipts follow after rollout.
 
 ## October 7 normal theta and two owner groups
 

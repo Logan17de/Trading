@@ -263,3 +263,57 @@ def test_viewer_rejects_unconfirmed_investment_receipts(monkeypatch, changes):
     viewer.cache = {'capital_summary': {'status': 'CACHED'}}
     with pytest.raises(ConnectionError): viewer.record_investment({'id': 'request'})
     assert viewer.cache['capital_summary']['status'] == 'CACHED'
+
+
+def test_capital_ui_retry_receipts_and_independence_from_market_freshness():
+    import shutil
+    import subprocess
+    from pathlib import Path
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node required for dashboard accounting interaction check')
+    source = Path(__file__).parents[1] / 'src/nifty_engine/agent_engine/dashboard_assets/dashboard.js'
+    script = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const source=fs.readFileSync(process.argv[1],'utf8');
+const elements=new Map(),storage=new Map();
+function $(id){if(!elements.has(id))elements.set(id,{events:{},value:'',addEventListener(e,f){this.events[e]=f;},showModal(){this.open=true;},close(){this.open=false;},focus(){}});return elements.get(id);}
+let calls=0;
+const context=vm.createContext({$,data:{capital_summary:{status:'CACHED'},vm:{status:'RECONNECTING'}},demo:false,
+  setAmount(){},inr(){return '';},dateTime(){return '';},load:async()=>{},
+  localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
+  crypto:{randomUUID:()=> 'request-'+(++calls)},document:{querySelector:()=>({content:'local-token'})},
+  fetch:async()=>{throw new Error('lost reply');}});
+vm.runInContext(source.slice(source.indexOf('const capitalPending='),source.indexOf('function strategyReadinessHTML'))+
+  source.slice(source.indexOf("for(const kind of ['withdrawal','investment']) {"),source.indexOf('$("refresh").addEventListener')),context);
+(async()=>{
+  vm.runInContext('renderCapital()',context);
+  assert.equal($('record-investment').disabled,false);
+  $('record-investment').events.click();
+  assert.equal($('investment-dialog').open,true);
+  $('investment-amount').value='125.50';$('investment-date').value='2026-10-05';
+  const submit=()=> $('investment-form').events.submit({preventDefault(){}});
+  await submit();
+  const key='options-trader-pending-investment-v1',pending=storage.get(key);
+  assert.equal(JSON.parse(pending).amount_inr,'125.50');
+  assert.equal($('investment-amount').readOnly,true);
+  $('record-investment').events.click();
+  assert.equal($('investment-amount').value,'125.50');
+  context.fetch=async(url,args)=>{
+    assert.equal(url,'/api/capital/investments');assert.equal(args.headers['X-Local-Token'],'local-token');
+    assert.equal(args.body,pending);
+    return {ok:true,json:async()=>({status:'RECORDED',record_id:'wrong',money_moved:false,broker_writes:false})};
+  };
+  await submit();assert.equal(storage.get(key),pending);
+  context.fetch=async(url,args)=>({ok:true,json:async()=>({status:'ALREADY_RECORDED',record_id:JSON.parse(args.body).id,money_moved:false,broker_writes:false})});
+  await submit();assert.equal(storage.has(key),false);assert.equal(calls,1);
+  assert.match($('investment-result').textContent,/Already recorded/);
+  assert.equal($('investment-amount').readOnly,false);
+  context.data.capital_summary.status='INVALID_LEDGER';vm.runInContext('renderCapital()',context);
+  assert.equal($('record-investment').disabled,true);
+  context.data.capital_summary.status='AVAILABLE';context.demo=true;vm.runInContext('renderCapital()',context);
+  assert.equal($('record-investment').disabled,true);
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    result = subprocess.run([node, '-e', script, str(source)], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
