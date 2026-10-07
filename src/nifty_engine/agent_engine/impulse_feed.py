@@ -118,11 +118,27 @@ class StreamingImpulse:
         self._disconnect()
 
     def public(self):
-        with self.lock:
+        # An observation panel must not hold the account/dashboard response
+        # behind tick research or SQLite maintenance. Busy is UNKNOWN, not a
+        # stale confirmation redated as current or a stream authentication fault.
+        if not self.lock.acquire(timeout=.05):
+            return dict(indices={},event_driven=True,broker_writes=False,
+                transport_status='UNKNOWN_BUSY',failure='STREAM_STATUS_BUSY',
+                format='trading-impulse-v1',recent_confirmations=[],
+                research=dict(mode='MONITOR_ONLY',enabled=self.research.cfg['enabled'],
+                    active_events={},failure='RESEARCH_STATUS_BUSY'))
+        try:
             value=self.detector.public() if self.detector else dict(indices={},event_driven=True,broker_writes=False)
+            acquired=self.research.lock.acquire(timeout=.05)
+            try:
+                research=self.research.public() if acquired else dict(mode='MONITOR_ONLY',
+                    enabled=self.research.cfg['enabled'],active_events={},failure='RESEARCH_STATUS_BUSY')
+            finally:
+                if acquired:self.research.lock.release()
             return dict(value,transport_status=self.status,failure=self.failure,queue_dropped=self.dropped,
                 subscriptions=len(self.registry),connected_at=self.connected_at,
-                format='trading-impulse-v1',recent_confirmations=self.confirmations[-5:],research=self.research.public())
+                format='trading-impulse-v1',recent_confirmations=self.confirmations[-5:],research=research)
+        finally:self.lock.release()
 
     def next_view(self):
         with self.changed:

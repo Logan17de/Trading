@@ -135,6 +135,26 @@ def test_private_sdk_credentials_stay_out_of_package(tmp_path,monkeypatch):
     service._disconnect();assert not path.exists()
 
 
+@pytest.mark.parametrize('target',['stream','research'])
+def test_busy_research_never_blocks_dashboard_or_fabricates_confirmation(tmp_path,target):
+    import threading
+    from nifty_engine.agent_engine.impulse_feed import StreamingImpulse
+    from nifty_engine.agent_engine.store import Store
+    service=StreamingImpulse(tmp_path,Store(tmp_path/'j.sqlite3'))
+    ready=threading.Event();release=threading.Event()
+    lock=service.lock if target=='stream' else service.research.lock
+    def hold():
+        with lock:ready.set();release.wait(2)
+    thread=threading.Thread(target=hold);thread.start();assert ready.wait(1)
+    try:
+        value=service.public()
+        assert not release.is_set() and thread.is_alive()
+        assert value['research']['failure']=='RESEARCH_STATUS_BUSY'
+        assert not value['broker_writes'] and not value['recent_confirmations']
+        if target=='stream':assert value['transport_status']=='UNKNOWN_BUSY' and value['indices']=={}
+    finally:release.set();thread.join(1)
+
+
 def test_browser_sse_uses_cached_read_only_stream_and_rejects_foreign_host():
     import threading,json,urllib.request
     from http.server import ThreadingHTTPServer

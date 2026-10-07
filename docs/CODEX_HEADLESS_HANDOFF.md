@@ -59,6 +59,12 @@ specific coupling to the research lock, not a guarantee of five-second cadence.
 Follow-up35 startup/normal-runtime/stream regressions and JS validation passed.
 Final release/actual cadence receipts follow after rollout verification.
 
+Stream/research status publication now waits at most50ms per observation lock.
+Busy panels show UNKNOWN/RESEARCH_STATUS_BUSY rather than blocking the entire
+account response or fabricating confirmation. Two concurrent-lock tests verify
+return while the research lock remains held;37 targeted regressions passed.
+Tick research and its archive remain monitor-only and independent of execution.
+
 ## October 7 Start button and selected strategies
 
 Verified the desktop HTTP Start/Stop and strategy-switch requests through the
