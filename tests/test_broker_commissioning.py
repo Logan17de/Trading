@@ -24,6 +24,7 @@ class Broker:
         self.orders = {}; self.parents = {}; self.quantity = 0; self.writes = []
         self.timeout_gtt = False; self.timeout_close = False; self.hide_reference = False
         self.fill_close = True; self.change_request = False; self.cancel_race = False
+        self.timeout_cancel_order = False; self.ignore_cancel_order = False; self.cancel_order_race = False
 
     def get_user_profile(self, **args): return copy.deepcopy(self.profile)
     def get_order_list(self, **args): return dict(order_list=copy.deepcopy(list(self.orders.values())) if args['page'] == 0 else [])
@@ -78,6 +79,20 @@ class Broker:
         if self.cancel_race: self.trigger()
         else: self.parents[args['smart_order_id']]['status'] = 'CANCELLED'
         return dict(smart_order_id=args['smart_order_id'], status='CANCELLED')
+
+    def cancel_order(self, **args):
+        body = {k: v for k, v in args.items() if k != 'timeout'}
+        self._write('POST', '/v1/order/cancel', body)
+        row = self.orders[args['groww_order_id']]
+        if self.cancel_order_race:
+            remainder = row['quantity'] - row['filled_quantity']
+            self.quantity += remainder if row['transaction_type'] == 'BUY' else -remainder
+            row.update(order_status='EXECUTED', filled_quantity=row['quantity'], average_fill_price=row['price'])
+        elif not self.ignore_cancel_order:
+            row['order_status'] = 'CANCELLED'
+        if self.timeout_cancel_order:
+            raise TimeoutError('private cancellation message')
+        return dict(groww_order_id=args['groww_order_id'], order_status=row['order_status'])
 
     def trigger(self, *, linked=True, quantity=None):
         row = next(iter(self.parents.values()))
@@ -256,6 +271,145 @@ def test_pending_close_is_never_submitted_twice(tmp_path):
     s = Session(tmp_path); s.active(); s.broker.trigger(); s.broker.fill_close = False
     s.commission.close(s.plan['id'], s.plan_hash)
     with pytest.raises(ValueError): s.commission.close(s.plan['id'], s.plan_hash)
+    assert len(s.broker.writes) == 2
+
+
+@pytest.mark.parametrize('filled', [0, 1, 20])
+def test_cancel_exact_partial_child_and_close_only_acquired_long(tmp_path, filled):
+    s = Session(tmp_path); s.active(); s.broker.trigger(quantity=filled)
+    state = s.commission.capture(s.plan['id'])
+    assert state['allowed_actions'] == ['cancel']
+    child_id = next(iter(s.broker.orders))
+    result = s.commission.cancel(s.plan['id'], s.plan_hash)
+    assert result['broker_writes'] is True and result['command'] == 'cancel'
+    assert s.broker.writes[-1][1:] == ('/v1/order/cancel', dict(segment='FNO', groww_order_id=child_id))
+    if filled:
+        assert result['status'] == 'CHILD_TERMINAL_WITH_REMAINDER'
+        assert result['allowed_actions'] == ['close']
+        s.commission.close(s.plan['id'], s.plan_hash)
+        assert s.broker.writes[-1][2]['quantity'] == filled
+    s.now += timedelta(seconds=5)
+    assert s.commission.capture(s.plan['id'])['status'] == 'CANCELLED_FLAT'
+    assert s.broker.quantity == 0
+    with pytest.raises(ValueError): validated_evidence(s.store, s.plan['id'])
+    # A settled non-qualifying test no longer blocks a freshly reviewed plan.
+    new_plan = copy.deepcopy(s.plan); new_plan['id'] = 'next-reviewed-test'
+    preview = s.commission.preview(new_plan)
+    s.commission.submit(new_plan, preview['plan_hash'])
+    assert s.store.meta(PREFIX + 'latest-id') == new_plan['id']
+
+
+def test_cancel_partial_close_then_explicitly_close_remaining_quantity(tmp_path):
+    s = Session(tmp_path); s.active(); s.broker.trigger(); s.broker.fill_close = False
+    state = s.commission.close(s.plan['id'], s.plan_hash)
+    assert state['status'] == 'CLOSE_PENDING_OR_PARTIAL' and state['allowed_actions'] == ['cancel']
+    close_id = next(k for k in s.broker.orders if k.startswith('sell-'))
+    row = s.broker.orders[close_id]
+    row.update(filled_quantity=20, average_fill_price=row['price']); s.broker.quantity -= 20
+    result = s.commission.cancel(s.plan['id'], s.plan_hash)
+    assert result['allowed_actions'] == ['close']
+    assert s.broker.writes[-1][2] == dict(segment='FNO', groww_order_id=close_id)
+    s.broker.fill_close = True
+    s.commission.close(s.plan['id'], s.plan_hash)
+    assert s.broker.writes[-1][2]['quantity'] == s.plan['quantity'] - 20
+    s.now += timedelta(seconds=5)
+    assert s.commission.capture(s.plan['id'])['status'] == 'COMPLETE'
+    assert all(validated_evidence(s.store, s.plan['id'])['facts'].values())
+
+
+@pytest.mark.parametrize('target', ['child', 'close'])
+def test_uncertain_cancel_is_never_repeated_but_terminal_readback_allows_cleanup(tmp_path, target):
+    s = Session(tmp_path); s.active(); s.broker.trigger(quantity=0 if target == 'child' else None)
+    if target == 'close':
+        s.broker.fill_close = False; s.commission.close(s.plan['id'], s.plan_hash)
+    s.broker.ignore_cancel_order = True; s.broker.timeout_cancel_order = True
+    result = s.commission.cancel(s.plan['id'], s.plan_hash)
+    assert result['broker_writes'] is None and result['broker_write_outcome'] == 'UNCERTAIN'
+    assert result['allowed_actions'] == []
+    writes = len(s.broker.writes)
+    assert s.commission.cancel(s.plan['id'], s.plan_hash)['broker_write_attempted'] is False
+    assert len(s.broker.writes) == writes
+    row = next(r for r in s.broker.orders.values() if r['order_status'] == 'OPEN')
+    row['order_status'] = 'CANCELLED'
+    state = s.commission.capture(s.plan['id'])
+    assert state['allowed_actions'] == (['close'] if target == 'close' else [])
+    assert len(s.broker.writes) == writes  # readback itself does not retry a write
+
+
+@pytest.mark.parametrize('target', ['child', 'close'])
+def test_cancel_fill_race_uses_actual_fill_then_reconciles(tmp_path, target):
+    s = Session(tmp_path); s.active(); s.broker.trigger(quantity=1 if target == 'child' else None)
+    if target == 'close':
+        s.broker.fill_close = False; s.commission.close(s.plan['id'], s.plan_hash)
+    s.broker.cancel_order_race = True
+    result = s.commission.cancel(s.plan['id'], s.plan_hash)
+    if target == 'child':
+        assert result['allowed_actions'] == ['close']
+        s.commission.close(s.plan['id'], s.plan_hash)
+    else:
+        assert result['allowed_actions'] == [] and s.broker.quantity == 0
+    s.now += timedelta(seconds=5)
+    assert s.commission.capture(s.plan['id'])['status'] == 'COMPLETE'
+
+
+@pytest.mark.parametrize('fault', ['hash', 'unlinked', 'manual', 'changed_child'])
+def test_pending_cancellation_never_touches_unreviewed_or_manual_orders(tmp_path, fault):
+    s = Session(tmp_path); s.active(); s.broker.trigger(quantity=1, linked=fault != 'unlinked')
+    if fault == 'manual':
+        s.broker.orders['manual'] = dict(groww_order_id='manual', trading_symbol=s.plan['contract']['symbol'], order_status='OPEN')
+    elif fault == 'changed_child':
+        next(iter(s.broker.orders.values()))['transaction_type'] = 'SELL'
+    with pytest.raises(ValueError):
+        s.commission.cancel(s.plan['id'], 'wrong-hash' if fault == 'hash' else s.plan_hash)
+    assert len(s.broker.writes) == 1
+
+
+def test_close_gate_abort_does_not_invent_order_or_deadlock_explicit_cleanup(tmp_path, monkeypatch):
+    s = Session(tmp_path); s.active(); s.broker.trigger()
+    original = s.commission._write
+    def denied(*args, **kwargs): raise ExecutionDenied('synthetic gate denial')
+    monkeypatch.setattr(s.commission, '_write', denied)
+    result = s.commission.close(s.plan['id'], s.plan_hash)
+    assert result['broker_writes'] is False and result['allowed_actions'] == ['close']
+    record = s.store.meta(PREFIX + s.plan['id'])
+    assert not record['closes'] and len(record['aborted_closes']) == 1
+    assert not result['facts']['standard_order_write']
+    monkeypatch.setattr(s.commission, '_write', original)
+    s.commission.close(s.plan['id'], s.plan_hash)
+    s.now += timedelta(seconds=5)
+    assert s.commission.capture(s.plan['id'])['status'] == 'COMPLETE'
+    assert len(s.broker.writes) == 2
+
+
+def test_cancel_gate_abort_allows_a_new_explicit_cancel_but_never_automatic_retry(tmp_path, monkeypatch):
+    s = Session(tmp_path); s.active(); s.broker.trigger(quantity=0)
+    original = s.commission._write
+    def denied(*args, **kwargs): raise ExecutionDenied('synthetic gate denial')
+    monkeypatch.setattr(s.commission, '_write', denied)
+    result = s.commission.cancel(s.plan['id'], s.plan_hash)
+    assert result['broker_writes'] is False and result['allowed_actions'] == ['cancel']
+    s.commission.capture(s.plan['id']); assert len(s.broker.writes) == 1
+    monkeypatch.setattr(s.commission, '_write', original)
+    assert s.commission.cancel(s.plan['id'], s.plan_hash)['broker_writes'] is True
+    assert len(s.broker.writes) == 2
+
+
+def test_stale_status_never_advertises_pending_cleanup_action(tmp_path):
+    s = Session(tmp_path); s.active(); s.broker.trigger(quantity=1)
+    assert s.commission.capture(s.plan['id'])['allowed_actions'] == ['cancel']
+    s.now += timedelta(seconds=11)
+    assert s.commission.status(s.plan['id'])['allowed_actions'] == []
+
+
+def test_parent_cancel_gate_abort_can_only_retry_by_another_explicit_command(tmp_path, monkeypatch):
+    s = Session(tmp_path); s.active(); original = s.commission._write
+    def denied(*args, **kwargs): raise ExecutionDenied('synthetic gate denial')
+    monkeypatch.setattr(s.commission, '_write', denied)
+    result = s.commission.cancel(s.plan['id'], s.plan_hash)
+    assert result['broker_writes'] is False and result['allowed_actions'] == ['cancel']
+    s.commission.capture(s.plan['id']); assert len(s.broker.writes) == 1
+    monkeypatch.setattr(s.commission, '_write', original)
+    assert s.commission.cancel(s.plan['id'], s.plan_hash)['broker_writes'] is True
     assert len(s.broker.writes) == 2
 
 

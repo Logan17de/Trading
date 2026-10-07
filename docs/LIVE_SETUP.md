@@ -2,7 +2,7 @@
 
 The normal executor and desktop Start control are installed. One-time broker
 commissioning verifies the actual provider behavior before preparing live mode.
-These commands are for the owner to run. Deployment and background workers never
+These actions are for the owner to run. Deployment and background workers never
 invoke them. Keep Algo Off throughout setup. No commissioning trade has been run
 by maintenance, and a successful synthetic test is not provider evidence.
 
@@ -13,6 +13,29 @@ change the owner's prices to force a fill, or use a pre-existing manual position
 Only NIFTY/SENSEX FNO NRML, one current-master lot and a non-expiry-day contract
 are accepted. Keep the purchase amount and charges available. A test may remain
 pending if its trigger is not reached or its limit does not fill.
+
+## Use the desktop app
+
+Open **Real trading setup** from Options Trader, or visit
+`http://127.0.0.1:8765/live-setup` in Edge. No command prompt is required.
+
+1. Enter the exact current contract, one-lot quantity, tick size, your trigger and
+   limit prices, plan deadline and existing Oracle IPv4 approved in Groww.
+2. Click **Preview · no order**, then review the exact values displayed.
+3. Check the owner confirmation and click **Submit real BUY GTT** only when ready.
+4. Use **Read broker evidence** for the actual parent and fill observations. Each
+   observation is a separate request; the two persistence/flat reads must be at
+   least five seconds apart. The page never submits or retries orders by polling.
+5. When the test long is filled, confirm **Close test long**. If an instruction is
+   pending, use its exact cancel action, then read evidence again.
+6. After the test is COMPLETE, click **Check live readiness**, review its result,
+   then confirm **Prepare live · keep Algo Off**. This may take several minutes.
+
+The PC saves the pending plan before sending it and resumes it after restart.
+A lost response stays uncertain until the original plan is read back. Do not
+create another test to work around an unknown result. Test actions use the fixed
+protected SSH connection, never browser-held broker credentials or a public port.
+The following command-line workflow is an alternative for the owner.
 
 ## Private plan and preview
 

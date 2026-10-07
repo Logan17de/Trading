@@ -13,7 +13,7 @@ import ipaddress
 import json
 import re
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -462,6 +462,19 @@ class Commissioning:
                 request_hash=identity(item['request']), binding=self.binding, at=self.clock().isoformat(),
                 source='ORIGINAL_REFERENCE_READBACK')
 
+    def _archive_aborted_closes(self, record):
+        # Gate denial occurs before HTTP consumption. Keep its provenance, but
+        # never query a nonexistent reference or pretend it is a broker order.
+        active = []
+        for item in record['closes']:
+            if item.get('status') != 'ABORTED_BEFORE_WRITE':
+                active.append(item)
+                continue
+            if any(item.get(key) for key in ('receipt', 'broker_id', 'order', 'observed_filled')):
+                fail('COMMISSIONING_ABORTED_CLOSE_HAS_BROKER_EVIDENCE')
+            record.setdefault('aborted_closes', []).append(item)
+        record['closes'] = active
+
     def capture(self, plan_id):
         record = self._load(plan_id)
         # Completed evidence is immutable; viewing it never rewrites its digest.
@@ -472,6 +485,7 @@ class Commissioning:
         if record['phase'] == 'ABORTED_BEFORE_WRITE':
             return self.status(plan_id)
         try:
+            started = self.clock().isoformat()
             self._profile(); self._recover_parent(record)
             parent = self._read('get_smart_order', segment='FNO', smart_order_type='GTT', smart_order_id=record['smart_id'])
             parent = _parent_matches(parent, record)
@@ -501,9 +515,13 @@ class Commissioning:
                 record['phase'] = 'CHILD_FILLED' if row['order_status'] == 'EXECUTED' and row['filled_quantity'] == req['quantity'] else 'CHILD_PENDING_OR_PARTIAL'
             elif parent['status'] not in FINAL_PARENT:
                 fail('COMMISSIONING_PARENT_STATE_UNKNOWN')
+            self._archive_aborted_closes(record)
             for item in record['closes']:
                 self._capture_close(item)
             obs = self._observe(record['plan'], record=record)
+            obs['received_at'] = min(started, obs['received_at'], key=stamp)
+            if not fresh(obs['received_at'], self.clock(), 10):
+                fail('FRESH_COMMISSIONING_OBSERVATION_REQUIRED')
             record['last_observation'] = obs
             acquired = (record.get('child') or {}).get('order', {}).get('filled_quantity', 0)
             sold = sum(item['order']['filled_quantity'] for item in record['closes'])
@@ -511,6 +529,10 @@ class Commissioning:
                 fail('COMMISSIONING_POSITION_NOT_EXCLUSIVE')
             child_terminal = not triggered or (record.get('child') or {}).get('order', {}).get('order_status') in TERMINAL
             close_terminal = all(item['order']['order_status'] in TERMINAL for item in record['closes'])
+            if not close_terminal:
+                record['phase'] = 'CLOSE_PENDING_OR_PARTIAL'
+            elif child_terminal and obs['quantity'] and acquired < record['plan']['quantity']:
+                record['phase'] = 'CHILD_TERMINAL_WITH_REMAINDER'
             if not obs['quantity'] and parent['status'] in FINAL_PARENT and child_terminal and close_terminal:
                 if not record['flat'] or (stamp(obs['received_at']) - stamp(record['flat'][-1]['at'])).total_seconds() >= 5:
                     record['flat'].append(dict(at=obs['received_at'], session_id=self.session_id,
@@ -568,11 +590,11 @@ class Commissioning:
             item['status'] = 'ABORTED_BEFORE_WRITE'
         except Exception:
             item['status'] = 'RECONCILIATION_REQUIRED'
+        attempted = item['status'] != 'ABORTED_BEFORE_WRITE'
         self._save(record, previous)
         status = self.capture(plan_id)
-        current = self._load(plan_id)['closes'][-1]
-        return _command_result(status, 'close', attempted=current['status'] != 'ABORTED_BEFORE_WRITE',
-                               confirmed=bool(current.get('receipt')))
+        current = next((i for i in self._load(plan_id)['closes'] if i['reference'] == reference), {})
+        return _command_result(status, 'close', attempted=attempted, confirmed=bool(current.get('receipt')))
 
     def cancel(self, plan_id, expected_plan_hash):
         self.capture(plan_id); record = self._load(plan_id)
@@ -580,15 +602,27 @@ class Commissioning:
             fail('EXACT_OWNER_PLAN_HASH_REQUIRED')
         if record.get('reason'):
             fail('COMMISSIONING_RECONCILIATION_REQUIRED')
-        if record.get('cancel_attempted'):
-            return _command_result(self.status(plan_id), 'cancel', attempted=False, confirmed=False)
+        pending = [i['order'] for i in record['closes'] if i['order']['order_status'] not in TERMINAL]
+        child = (record.get('child') or {}).get('order', {})
+        if len(pending) > 1:
+            fail('COMMISSIONING_PENDING_ORDER_AMBIGUOUS')
+        if pending or child and child.get('order_status') not in TERMINAL:
+            return self._cancel_linked_order(record, pending[0] if pending else child,
+                                             'CLOSE' if pending else 'CHILD')
         parent = record['parent']
+        if (record.get('cancel_attempted') and not record.get('cancel_aborted_before_write')
+                or record.get('order_cancels') and parent['status'] in FINAL_PARENT):
+            return _command_result(self.status(plan_id), 'cancel', attempted=False, confirmed=False)
         if parent['status'] != 'ACTIVE' or parent.get('triggered_at') is not None:
             fail('COMMISSIONING_ONLY_EXACT_ACTIVE_PARENT_CANCEL')
         obs = self._observe(record['plan'], record=record)
         if obs['quantity']:
             fail('COMMISSIONING_CANCEL_REQUIRES_EMPTY_TEST_SYMBOL')
-        previous = copy.deepcopy(record); record['cancel_attempted'] = self.clock().isoformat()
+        previous = copy.deepcopy(record)
+        if record.get('cancel_aborted_before_write'):
+            record.setdefault('aborted_parent_cancels', []).append(dict(at=record['cancel_attempted'], status='ABORTED_BEFORE_WRITE'))
+            record.pop('cancel_aborted_before_write')
+        record['cancel_attempted'] = self.clock().isoformat()
         self._save(record, previous); previous = copy.deepcopy(record)
         try:
             receipt = self._write(record, obs, 'POST', '/v1/order-advance/cancel/FNO/GTT/' + record['smart_id'], None,
@@ -607,9 +641,42 @@ class Commissioning:
         return _command_result(status, 'cancel', attempted=not current.get('cancel_aborted_before_write', False),
                                confirmed=bool(current.get('cancel_receipt')))
 
+    def _cancel_linked_order(self, record, order, kind):
+        """One explicit cancel of the already linked test order, never a lookup by symbol."""
+        identifier = order['groww_order_id']
+        attempts = record.get('order_cancels', [])
+        if any(i['broker_id'] == identifier and i['status'] != 'ABORTED_BEFORE_WRITE' for i in attempts):
+            return _command_result(self.status(record['plan']['id']), 'cancel', attempted=False, confirmed=False)
+        obs = self._observe(record['plan'], record=record)
+        acquired = (record.get('child') or {}).get('order', {}).get('filled_quantity', 0)
+        sold = sum(i['order']['filled_quantity'] for i in record['closes'])
+        if obs['quantity'] != acquired - sold or sold > acquired:
+            fail('COMMISSIONING_POSITION_NOT_EXCLUSIVE')
+        request = dict(segment='FNO', groww_order_id=identifier)
+        item = dict(kind=kind, broker_id=identifier, reference=order['order_reference_id'],
+                    request=request, at=self.clock().isoformat(), status='SUBMITTING')
+        previous = copy.deepcopy(record)
+        record.setdefault('order_cancels', []).append(item)
+        self._save(record, previous); previous = copy.deepcopy(record)
+        try:
+            receipt = self._write(record, obs, 'POST', '/v1/order/cancel', request,
+                                 lambda: self.transport.cancel_order(timeout=5, **request))
+            if not isinstance(receipt, dict) or receipt.get('groww_order_id') != identifier:
+                fail('COMMISSIONING_CANCEL_RECEIPT_DIFFERS')
+            item.update(status='ACKNOWLEDGED', receipt=dict(groww_order_id=identifier,
+                request_hash=identity(request), binding=self.binding, at=self.clock().isoformat()))
+        except ExecutionDenied:
+            item['status'] = 'ABORTED_BEFORE_WRITE'
+        except Exception:
+            item['status'] = 'RECONCILIATION_REQUIRED'
+        self._save(record, previous)
+        status = self.capture(record['plan']['id'])
+        return _command_result(status, 'cancel', attempted=item['status'] != 'ABORTED_BEFORE_WRITE',
+                               confirmed=bool(item.get('receipt')))
+
     def status(self, plan_id):
         record = self._load(plan_id)
-        return _public(record)
+        return _public(record, self.clock())
 
     def verify_ready_to_arm(self, plan_id):
         """Fresh GET-only settlement check; historical evidence stays immutable."""
@@ -671,10 +738,40 @@ def _facts(record):
     return dict(facts, all_complete=all(facts.values()))
 
 
-def _public(record):
+def _allowed_actions(record, now):
+    """Display hints only; commands always capture and enforce their gates again."""
+    obs = record.get('last_observation') or {}
+    if (record.get('reason') or record['phase'] in ('COMPLETE', 'CANCELLED_FLAT', 'ABORTED_BEFORE_WRITE')
+            or obs.get('complete') is not True or not fresh(obs.get('received_at'), now, 10)
+            or not fresh(record.get('checked_at'), now, 10)):
+        return []
+    child = (record.get('child') or {}).get('order', {})
+    closes = record.get('closes', [])
+    acquired = child.get('filled_quantity', 0)
+    sold = sum(i['order']['filled_quantity'] for i in closes)
+    if obs.get('quantity') != acquired - sold or sold > acquired:
+        return []
+    pending = [i['order'] for i in closes if i['order']['order_status'] not in TERMINAL]
+    target = pending[0] if len(pending) == 1 else child if not pending and child.get('order_status') not in TERMINAL else None
+    if target:
+        if any(i['broker_id'] == target['groww_order_id'] and i['status'] != 'ABORTED_BEFORE_WRITE'
+               for i in record.get('order_cancels', [])):
+            return []
+        return ['cancel']
+    parent = record.get('parent', {})
+    if not pending and child.get('order_status') in TERMINAL and obs['quantity'] > 0 and parent.get('status') in FINAL_PARENT:
+        return ['close']
+    if (not child and not obs['quantity'] and parent.get('status') == 'ACTIVE' and not parent.get('triggered_at')
+            and (not record.get('cancel_attempted') or record.get('cancel_aborted_before_write'))):
+        return ['cancel']
+    return []
+
+
+def _public(record, now=None):
     facts = _facts(record)
     return dict(status=record['phase'], reason=record.get('reason'), checked_at=record.get('checked_at'),
                 completed_at=record.get('completed_at'), facts={k: v for k, v in facts.items() if k != 'all_complete'},
+                allowed_actions=_allowed_actions(record, now or datetime.now(timezone.utc)),
                 broker_writes=False, production_activation_changed=False)
 
 

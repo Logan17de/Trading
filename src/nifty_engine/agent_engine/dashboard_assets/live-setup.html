@@ -1,16 +1,31 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Real trading setup · Options Trader</title><link rel="stylesheet" href="/dashboard.css"></head>
-<body><main style="max-width:760px;margin:40px auto;padding:24px;background:white;border-radius:18px">
-<a href="/">← Dashboard</a><h1>Real trading setup</h1>
-<p>Algo Start controls real trading after the one-time Oracle broker check and live setup are complete. Setup keeps Algo Off.</p>
-<ol>
-<li><strong>Preview the exact test.</strong> Choose one option contract and one lot, with explicit trigger and buy/sell limit prices. The purchase debit must be within ₹1,000. Preview sends no orders.</li>
-<li><strong>Run the broker check yourself.</strong> Confirm the preview's plan hash before submitting the test GTT. The separate owner tool records the real parent, its generated order and its fill. Missing linkage stays unverified.</li>
-<li><strong>Close and confirm the test.</strong> Confirm the exact test's sell limit. The tool verifies the close, flat positions and inactive protection. It cannot adopt or close your other trades.</li>
-<li><strong>Prepare live mode.</strong> Review the evidence digest and run the owner arm command. It rechecks the installed release, reruns tests, backs up the journal and prepares the live runtime with Algo Off.</li>
-<li><strong>Choose Normal theta spread, then Algo Start.</strong> Oracle checks manual positions, margin, current data and a qualifying trend after 14:00 JST. It buys the hedge first, verifies its fill, then sells and verifies protection. Research does not trade.</li>
-</ol>
-<p>The broker check can create a real one-lot long option and incur charges. A limit order may remain unfilled. The tool never chooses a contract or changes your price to force a fill.</p>
-<p><a href="https://github.com/Logan17de/Trading/blob/main/docs/LIVE_SETUP.md" target="_blank" rel="noopener noreferrer">Owner setup commands and recovery guide</a></p>
-<p>After setup, use the desktop app normally. Algo Off prevents further engine orders; already armed broker instructions can still trigger.</p>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="local-token" content="__LOCAL_TOKEN__"><title>Real trading setup · Options Trader</title><link rel="stylesheet" href="/dashboard.css"><link rel="stylesheet" href="/live-setup.css"><script defer src="/live-setup.js"></script></head>
+<body><header class="masthead"><a class="brand" href="/"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span><strong>Options Trader</strong><small>REAL TRADING SETUP</small></span></a><a class="button" href="/">← Dashboard</a></header>
+<main class="setup-main">
+<div class="setup-heading"><div><h1>Connect real execution</h1><p>Verify one exact broker test. Prepare live mode. Then choose when to start.</p></div><span class="status-pill" id="runtime-status">Checking Oracle…</span></div>
+<ol class="setup-steps" aria-label="Setup stages"><li><b>1</b> Preview contract</li><li><b>2</b> Verify broker test</li><li><b>3</b> Close &amp; confirm</li><li><b>4</b> Prepare live · Algo Off</li></ol>
+<div class="setup-layout">
+<section class="card setup-panel"><h2>One-lot broker check</h2><p class="setup-muted">Use an exact Groww option contract. Preview checks the current instrument, account and Oracle connection without placing an order.</p>
+<form id="plan-form"><fieldset id="plan-fields"><legend class="visually-hidden">Broker test contract and prices</legend><div class="setup-fields">
+<label>Index<select name="index" required><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option></select></label>
+<label class="setup-wide">Exact trading symbol<input name="symbol" required autocomplete="off" maxlength="50" placeholder="Copy the listed option symbol"></label>
+<label>Expiry<input name="expiry" type="date" required></label>
+<label>Lot size / quantity<input name="lot_size" type="number" min="1" step="1" required></label>
+<label>Tick size ₹<input name="tick_size" type="number" min="0.01" step="0.01" required></label>
+<label>BUY trigger ₹<input name="trigger_price" type="number" min="0.01" step="0.01" required></label>
+<label>BUY limit ₹<input name="buy_limit_price" type="number" min="0.01" step="0.01" required></label>
+<label>Close SELL limit ₹<input name="sell_limit_price" type="number" min="0.01" step="0.01" required></label>
+<label class="setup-wide">Plan expires (your PC time)<input name="valid_until" type="datetime-local" required></label>
+<label class="setup-wide">Oracle IPv4 approved in Groww<input name="egress_ip" required autocomplete="off" inputmode="decimal" placeholder="Existing whitelisted IPv4"></label>
+</div></fieldset><p class="setup-muted">One lot only. Purchase debit ≤ ₹1,000 before fees. BUY trigger must be above the current ask; BUY limit must cover the trigger. Prices are never changed automatically to force a fill.</p><button class="button primary" type="submit" id="preview-button">Preview · no order</button></form></section>
+<section class="card setup-panel setup-progress"><div class="setup-title"><h2>Broker verification</h2><button class="button" id="refresh-status" type="button">Refresh status</button></div>
+<div id="setup-state" role="status" aria-live="polite">Loading saved setup…</div><p id="setup-reason" class="setup-muted"></p>
+<dl id="review-plan" class="setup-review" hidden></dl>
+<div id="test-effect" class="notice" hidden>This test creates a real one-lot long option when its BUY trigger fires. Fees and price risk apply. Closing uses only the quantity acquired by this test.</div>
+<div id="evidence" class="setup-evidence"></div>
+<div class="setup-buttons"><button class="button" type="button" data-read="capture">Read broker evidence</button><button class="button" type="button" data-read="arm-preview">Check live readiness</button></div>
+<div id="write-actions" class="setup-write" hidden><h3>Owner action</h3><label class="setup-consent"><input type="checkbox" id="confirm-action"><span id="confirm-label">I reviewed the exact contract, quantity and prices above.</span></label><div class="setup-buttons"><button class="button" type="button" data-write="submit">Submit real BUY GTT</button><button class="button" type="button" data-write="close">Close test long</button><button class="button" type="button" data-write="cancel">Cancel test instruction</button><button class="button primary" type="button" data-write="arm">Prepare live · keep Algo Off</button></div></div>
+<p class="setup-muted" id="command-note">Actions use your existing protected Oracle connection. Opening this page never places an order.</p>
+</section></div>
+<section class="card setup-panel setup-next"><h2>After setup</h2><p>On the dashboard, enable <strong>Normal theta spread</strong>, then click <strong>Algo Start</strong>. Oracle checks existing manual trades, margin, current prices and a qualifying trend before any new entry after 14:00 JST. Research remains monitoring only.</p><p class="setup-muted">Algo Off prevents new engine requests. An already armed broker instruction can still trigger. Orders you place yourself remain protected.</p><a href="https://github.com/Logan17de/Trading/blob/main/docs/LIVE_SETUP.md" target="_blank" rel="noopener noreferrer">Setup details &amp; recovery guide ↗</a></section>
 </main></body></html>

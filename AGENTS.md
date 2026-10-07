@@ -1,8 +1,9 @@
 # Trading workspace
 
 - Owner-operated commissioning is implemented in broker_commissioning.py and
-  owner_setup.py; read docs/LIVE_SETUP.md. The desktop/observer never calls its
-  submit/close/cancel/arm commands. Maintenance may test them with synthetic
+  owner_setup.py; read docs/LIVE_SETUP.md. Only the owner's explicit protected
+  desktop setup actions or owner CLI call submit/close/cancel/arm. Observer,
+  polling and Algo Start never commission. Maintenance tests use synthetic
   brokers only. Actual evidence is private and separate from strategy ownership.
   Production uses the v2 evidence-bound activation receipt, not hand-set flags.
   The owner arm command prepares live mode with Algo Off, clears only this

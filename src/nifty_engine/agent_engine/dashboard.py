@@ -871,6 +871,8 @@ class DashboardState:
         self.analysis_error = None
         from .oracle_link import RemoteViewer
         self.remote = RemoteViewer(self.root, self.pnl_lines.store) if (self.root/".agent-state/oracle-viewer.json").is_file() and not offline else None
+        from .desktop_setup import OwnerSetupController
+        self.owner_setup = OwnerSetupController(self.root, line_store) if self.remote else None
 
     def read(self):
         if self.remote:
@@ -936,6 +938,11 @@ class DashboardState:
         if self.remote:
             return self.remote.record_withdrawal(body)
         return self.capital_ledger.record_withdrawal(body,datetime.now(timezone.utc))
+
+    def setup_command(self, body):
+        if self.owner_setup is None:
+            return {"status":"OWNER_SETUP_BLOCKED", "reason":"ORACLE_CONNECTION_REQUIRED", "allowed_actions":[]}
+        return self.owner_setup.command(body)
 
     def record_investment(self, body):
         if self.remote:
@@ -1112,13 +1119,15 @@ def handler(state):
                 return self.respond(200,content.encode(),"text/html; charset=utf-8")
             assets = {"/": ("index.html", "text/html; charset=utf-8"),
                 "/live-setup": ("live-setup.html", "text/html; charset=utf-8"),
+                "/live-setup.js": ("live-setup.js", "text/javascript; charset=utf-8"),
+                "/live-setup.css": ("live-setup.css", "text/css; charset=utf-8"),
                 "/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
                 "/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
                 "/app-icon.svg":("app-icon.svg","image/svg+xml")}
             if self.path in assets:
                 name, kind = assets[self.path]
                 body = (ASSETS / name).read_bytes()
-                if name == "index.html":
+                if name in ("index.html", "live-setup.html"):
                     body = body.replace(b"__LOCAL_TOKEN__", state.token.encode())
                 return self.respond(200, body, kind)
             if self.path == "/api/dashboard":
@@ -1144,6 +1153,20 @@ def handler(state):
         def do_POST(self):
             if not self.local() or not secrets.compare_digest(self.headers.get("X-Local-Token", ""), state.token):
                 return self.respond(403, {"status": "LOCAL_ACCESS_ONLY"})
+            if self.path == '/api/live-setup':
+                try:
+                    length=int(self.headers.get('Content-Length','0'))
+                    if (not 0<length<=8192 or self.headers.get('Transfer-Encoding')
+                            or self.headers.get('Content-Type','').split(';')[0]!='application/json'):
+                        raise ValueError('INVALID_SETUP_REQUEST')
+                    raw=self.rfile.read(length);self.body_consumed=True
+                    return self.respond(200,state.setup_command(json.loads(raw)))
+                except (ValueError,TypeError,KeyError):
+                    return self.respond(400,{'status':'INVALID_SETUP_REQUEST','allowed_actions':[]})
+                except Exception:
+                    # A transport error after a write does not prove rejection.
+                    return self.respond(503,{'status':'SETUP_RESULT_UNKNOWN',
+                        'reason':'REFRESH_EXISTING_SETUP_BEFORE_ANY_FURTHER_ACTION','allowed_actions':['status']})
             if self.path == '/api/strategies/switch':
                 try:
                     length=int(self.headers.get('Content-Length','0'))

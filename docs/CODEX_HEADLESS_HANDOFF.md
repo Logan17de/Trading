@@ -6,7 +6,8 @@ Fixed the missing commissioning path. Previously every production write required
 live broker evidence, but no production tool could collect it. Start only saved
 intent, and deployment reset mode to paper on each run. Read LIVE_SETUP.md.
 
-The separate owner-operated `Invoke-OracleLiveSetup.ps1`/`owner_setup.py` workflow
+The separate owner-operated desktop `/live-setup` and
+`Invoke-OracleLiveSetup.ps1`/`owner_setup.py` workflow
 previews an exact one-lot test, requires the precise plan hash for each test write,
 captures actual GTT persistence and exact generated-child fills, closes only its
 acquired test long, and verifies terminal/flat state. Its private evidence is never
@@ -17,6 +18,12 @@ tests, backs up the journal, rechecks broker state and prepares live mode with
 Algo Off. It clears only the runtime pause link and preserves the original shared
 pause. Start then controls the selected Normal strategy; Research cannot trade.
 Maintenance has not run test orders or the arm command and has not created proof.
+
+The protected desktop setup POST uses a fixed pinned SSH command and private
+durable plan state. Preview identities survive lost responses; each broker write
+requires the exact reviewed plan hash, and arming requires the evidence digest.
+Opening the page never submits orders. Deployment installs pytest8.4.2 only into
+the release's isolated venv so the owner arm check can actually run on Oracle.
 
 Deployment now preserves existing mode/pause and refuses owner On, open owned
 orders or a running live unpaused observer. It shares setup's root lock and checks

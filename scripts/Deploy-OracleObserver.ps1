@@ -53,6 +53,10 @@ venv=release/'venv'
 if not venv.exists():subprocess.run(['/usr/bin/python3','-m','venv',str(venv)],check=True)
 site=venv/'lib/python3.12/site-packages'
 (site/'trading-runtime.pth').write_text(str(release/'src')+'\n/opt/growing-trader/.venv/lib/python3.12/site-packages\n')
+# Owner arming runs the installed replay checks. Keep their runner in this
+# immutable release's venv, never install into the shared Qwen/trader environment.
+subprocess.run([str(venv/'bin/python'),'-I','-m','pip','install','--disable-pip-version-check','pytest==8.4.2'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+subprocess.run([str(venv/'bin/python'),'-I','-c','import pytest; assert pytest.__version__=="8.4.2"'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 subprocess.run([str(venv/'bin/python'),'-I','-c','import nifty_engine.agent_engine.oracle_runtime,importlib.metadata;assert importlib.metadata.version("growwapi")=="1.5.0"'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 unit=(release/'deploy/trading-observer.service.example').read_text().replace('RELEASE',sys.argv[1])
 pathlib.Path('/etc/systemd/system/trading-observer.service').write_text(unit)

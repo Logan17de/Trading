@@ -97,12 +97,95 @@ def binding(root, market):
         egress_ip=observed_ip(), host='ORACLE')
 
 
-def assemble_plan(spec, current):
+def preview_id(value):
+    if not isinstance(value,str) or not re.fullmatch('[a-f0-9]{32}',value):
+        raise SetupError('EXACT_PREVIEW_PLAN_ID_REQUIRED')
+    return value
+
+
+def assemble_plan(spec, current, plan_id=None):
     required={'contract','quantity','trigger_price','buy_limit_price','sell_limit_price','valid_until','egress_ip'}
     if not isinstance(spec,dict) or set(spec)!=required: raise SetupError('EXACT_PRIVATE_PLAN_SPEC_REQUIRED')
     if spec['egress_ip'] != current['egress_ip']: raise SetupError('DECLARED_WHITELIST_IP_DIFFERS')
-    return dict(spec, format='trading-broker-commissioning-plan-v1', id=uuid.uuid4().hex,
+    return dict(spec, format='trading-broker-commissioning-plan-v1',
+                id=uuid.uuid4().hex if plan_id is None else preview_id(plan_id),
                 **{k:current[k] for k in ('release','policy_hash','sdk_version','account_fingerprint')})
+
+
+def plan_status(store, tool, current, plan_id):
+    """Recover a lost preview/submit response without ever submitting an order."""
+    from .broker_commissioning import PREFIX, CommissioningError, validate_plan
+    plan_id=preview_id(plan_id)
+    saved=store.meta(PLAN_KEY+plan_id)
+    if not isinstance(saved,dict):raise SetupError('PREVIEW_PLAN_FIRST')
+    record=store.meta(PREFIX+plan_id)
+    try:
+        plan=validate_plan(saved,current,tool.clock(),expired=True)
+    except CommissioningError as exc:
+        reason=str(exc)
+        return dict(status='OWNER_PREVIEW_BINDING_CHANGED' if reason=='COMMISSIONING_BINDING_CHANGED' else
+                    'OWNER_PREVIEW_INVALID',reason=reason,plan_id=plan_id,plan_hash=identity(saved),broker_writes=False)
+    if plan['id']!=plan_id:raise SetupError('PREVIEW_PLAN_ID_CONFLICT')
+    plan_hash=identity(plan)
+    if record is not None:
+        if not isinstance(record,dict) or record.get('plan_hash')!=plan_hash:
+            raise SetupError('PREVIEW_SUBMITTED_PLAN_CONFLICT')
+        return dict(tool.status(plan_id),plan_id=plan_id,plan_hash=plan_hash)
+    try:
+        validate_plan(plan,current,tool.clock())
+    except CommissioningError as exc:
+        if str(exc)!='COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG':raise
+        return dict(status='OWNER_PREVIEW_EXPIRED',reason=str(exc),plan_id=plan_id,
+                    plan_hash=plan_hash,broker_writes=False)
+    result=tool.preview(plan)
+    if result.get('plan_hash')!=plan_hash:raise SetupError('PREVIEW_NORMALIZED_HASH_DIFFERS')
+    # The worker lock serializes owner actions. Recheck for a record before
+    # returning a ready preview in case another trusted process wrote meanwhile.
+    if store.meta(PREFIX+plan_id) is not None:return plan_status(store,tool,current,plan_id)
+    return dict(result,plan_id=plan_id,plan_hash=plan_hash)
+
+
+def preview_plan(store, tool, spec, current, plan_id=None):
+    """Persist one immutable normalized preview; the supplied ID is retry-safe."""
+    from .broker_commissioning import PREFIX, validate_plan
+    plan=validate_plan(assemble_plan(spec,current,plan_id),current,tool.clock(),expired=True)
+    plan_id=plan['id'];key=PLAN_KEY+plan_id
+    saved=store.meta(key)
+    if saved is not None:
+        if identity(validate_plan(saved,current,tool.clock(),expired=True))!=identity(plan):
+            raise SetupError('PREVIEW_PLAN_ID_CONFLICT')
+        return plan_status(store,tool,current,plan_id)
+    if store.meta(PREFIX+plan_id) is not None:raise SetupError('PREVIEW_SUBMITTED_PLAN_RECORD_MISSING')
+    result=tool.preview(plan)
+    if result.get('plan_hash')!=identity(plan):raise SetupError('PREVIEW_NORMALIZED_HASH_DIFFERS')
+    with store.transaction() as db:
+        previous=db.execute('SELECT body FROM meta WHERE key=?',(key,)).fetchone()
+        submitted=db.execute('SELECT 1 FROM meta WHERE key=?',(PREFIX+plan_id,)).fetchone()
+        if submitted:raise SetupError('PREVIEW_PLAN_CHANGED_DURING_READ')
+        if previous:
+            if identity(validate_plan(json.loads(previous[0]),current,tool.clock(),expired=True))!=identity(plan):
+                raise SetupError('PREVIEW_PLAN_ID_CONFLICT')
+        else:db.execute('INSERT INTO meta VALUES(?,?)',(key,dumps(plan)))
+    return dict(result,plan_id=plan_id,plan_hash=identity(plan))
+
+
+def arm_recovery_status(store, tool, current, plan_id, status):
+    """Confirm a lost arm reply from present facts; never retry the arm action."""
+    from .live_setup import activation
+    from .premium_strategy import intent
+    if tool.mode!='live' or tool.pause_file.exists() or tool.pause_file.is_symlink():return status
+    try:
+        proof=activation(store,current['release'],current['policy_hash'],current['account_fingerprint'])
+        if not proof or proof.get('plan_id')!=plan_id or proof.get('binding')!=current:return status
+        release=Path(__file__).resolve().parents[3]
+        if release.name!=current['release']:return status
+        validate_deployed_release(release,ROOT)
+        if intent(store)['enabled'] or tool.pause_file.exists() or tool.pause_file.is_symlink():return status
+    except (KeyError,ValueError,TypeError,OSError):
+        return status
+    return dict(status,status='LIVE_PREPARED_ALGO_OFF',plan_id=plan_id,algo_enabled=False,
+                broker_writes=False,production_activation_changed=False,
+                next_step='SELECT_NORMAL_THETA_THEN_OWNER_ALGO_START')
 
 
 def quiet_error(exc):
@@ -141,16 +224,15 @@ def worker(payload):
                                clock=lambda:datetime.now(timezone.utc))
             action=payload['action'];plan_id=payload.get('id')
             if action=='preview':
-                plan=assemble_plan(payload['spec'],current)
-                result=tool.preview(plan)
-                store.set_meta(PLAN_KEY+plan['id'],plan)
-                return dict(result,plan_id=plan['id'])
+                return preview_plan(store,tool,payload['spec'],current,plan_id)
+            plan_id=preview_id(plan_id)
             plan=store.meta(PLAN_KEY+plan_id)
             if not plan: raise SetupError('PREVIEW_PLAN_FIRST')
             if action=='submit':return tool.submit(plan,payload['confirm'])
             if action in ('close','cancel'):return getattr(tool,action)(plan_id,payload['confirm'])
             if action=='capture':return tool.capture(plan_id)
-            if action=='status':return tool.status(plan_id)
+            if action=='status':
+                return arm_recovery_status(store,tool,current,plan_id,plan_status(store,tool,current,plan_id))
             if action in ('arm-preview','install-receipt'):
                 proof=tool.verify_ready_to_arm(plan_id)
                 digest=identity(proof)
@@ -253,6 +335,7 @@ def root_action(args):
         if os.fstat(lock.fileno()).st_uid!=0:raise SetupError('ROOT_SETUP_LOCK_REQUIRED')
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         values=environment(ENV)
+        if args.action in ('preview','preview-stdin') and args.id is not None:preview_id(args.id)
         if args.action=='preview-stdin':
             raw=sys.stdin.read(8193)
             if len(raw)>8192:raise SetupError('BOUNDED_PRIVATE_PLAN_REQUIRED')
@@ -273,7 +356,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action',choices=('preview','preview-stdin','submit','capture','status','close','cancel','arm-preview','arm','_worker'))
     parser.add_argument('--spec',type=Path,help='Private Oracle JSON file; never a credential file')
-    parser.add_argument('--id',help='Plan ID returned by preview')
+    parser.add_argument('--id',help='Optional 32-hex preview ID for safe retries; required for subsequent actions')
     parser.add_argument('--confirm',default='',help='Exact plan hash for a test write, or evidence digest for arm')
     args=parser.parse_args()
     if os.name!='posix':raise SetupError('RUN_SETUP_ON_ORACLE')

@@ -99,6 +99,64 @@ def test_setup_projection_exposes_only_status_without_private_provider_identifie
     assert live_setup.public(s.store,gate)['next_step']=='OWNER_START'
 
 
+@pytest.fixture
+def arm_recovery(commissioned,tmp_path,monkeypatch):
+    s,evidence=commissioned
+    s.commission.mode='live';s.pause.unlink()
+    release=tmp_path/s.binding['release']
+    monkeypatch.setattr(owner_setup,'__file__',str(release/'src/nifty_engine/agent_engine/owner_setup.py'))
+    deployed=Mock(return_value=None)
+    monkeypatch.setattr(owner_setup,'validate_deployed_release',deployed)
+    status=dict(s.commission.status(s.plan['id']),plan_id=s.plan['id'],plan_hash=identity(s.plan))
+    return SimpleNamespace(session=s,evidence=evidence,status=status,deployed=deployed,release=release)
+
+
+def test_lost_arm_reply_is_confirmed_from_actual_live_off_receipt_without_retry(arm_recovery):
+    f=arm_recovery;s=f.session
+    before=s.store.read('SELECT * FROM meta ORDER BY key');writes=deepcopy(s.broker.writes)
+    result=owner_setup.arm_recovery_status(s.store,s.commission,s.binding,s.plan['id'],f.status)
+    assert result['status']=='LIVE_PREPARED_ALGO_OFF' and result['plan_id']==s.plan['id']
+    assert result['plan_hash']==f.status['plan_hash'] and result['algo_enabled'] is False
+    assert result['broker_writes'] is False and result['production_activation_changed'] is False
+    f.deployed.assert_called_once_with(f.release,owner_setup.ROOT)
+    assert s.store.read('SELECT * FROM meta ORDER BY key')==before and s.broker.writes==writes
+    assert not s.pause.exists() and s.commission.mode=='live' and s.store.meta('premium-algo-intent') is None
+
+
+@pytest.mark.parametrize('fault',['paper','pause','owner_on','receipt_absent','wrong_plan','release','policy',
+    'account','ip','service','foreign_code'])
+def test_uncertain_arm_never_promoted_without_every_current_fact(arm_recovery,monkeypatch,fault):
+    from nifty_engine.agent_engine.premium_strategy import set_intent
+    f=arm_recovery;s=f.session;current=deepcopy(s.binding);plan_id=s.plan['id']
+    if fault=='paper':s.commission.mode='paper'
+    if fault=='pause':s.pause.touch()
+    if fault=='owner_on':set_intent(s.store,True,s.now)
+    if fault=='receipt_absent':s.store.set_meta(live_setup.KEY,{})
+    if fault=='wrong_plan':plan_id='e'*32
+    if fault=='release':current['release']='e'*40
+    if fault=='policy':current['policy_hash']='f'*64
+    if fault=='account':current['account_fingerprint']='f'*64
+    if fault=='ip':current['egress_ip']='1.1.1.1'
+    if fault=='service':f.deployed.side_effect=owner_setup.SetupError('CURRENT_SERVICE_RELEASE_REQUIRED')
+    if fault=='foreign_code':monkeypatch.setattr(owner_setup,'__file__',str(f.release.parent/'wrong/src/nifty_engine/agent_engine/owner_setup.py'))
+    before=s.store.read('SELECT * FROM meta ORDER BY key');writes=deepcopy(s.broker.writes)
+    result=owner_setup.arm_recovery_status(s.store,s.commission,current,plan_id,f.status)
+    assert result is f.status and result['status']!='LIVE_PREPARED_ALGO_OFF'
+    assert s.store.read('SELECT * FROM meta ORDER BY key')==before and s.broker.writes==writes
+
+
+@pytest.mark.parametrize('fault',['pause','owner_on'])
+def test_arm_recovery_rechecks_owner_and_pause_after_deployment_read(arm_recovery,fault):
+    from nifty_engine.agent_engine.premium_strategy import set_intent
+    f=arm_recovery;s=f.session;writes=deepcopy(s.broker.writes)
+    def changed(*args):
+        if fault=='pause':s.pause.touch()
+        else:set_intent(s.store,True,s.now)
+    f.deployed.side_effect=changed
+    assert owner_setup.arm_recovery_status(s.store,s.commission,s.binding,s.plan['id'],f.status) is f.status
+    assert s.broker.writes==writes
+
+
 def test_mode_edit_preserves_every_other_environment_byte():
     raw=b'# saved\r\nGROWW_OBSERVER_API_KEY="PRIVATE_FIXTURE"\r\nEXECUTION_MODE="paper"\r\nOTHER="keep"\r\n'
     updated=owner_setup.live_environment(raw)
@@ -145,6 +203,126 @@ def test_assemble_plan_rejects_extra_fields_and_ip_changes():
     assert plan['release']==current['release'] and plan['account_fingerprint']==current['account_fingerprint']
     assert len(plan['id'])==32 and plan['format']=='trading-broker-commissioning-plan-v1'
     assert 'api_key' not in plan
+
+
+@pytest.fixture
+def preview_session(tmp_path):
+    from test_broker_commissioning import Session
+    s=Session(tmp_path);s.plan['id']='d'*32
+    fields={'contract','quantity','trigger_price','buy_limit_price','sell_limit_price','valid_until','egress_ip'}
+    s.spec={key:deepcopy(s.plan[key]) for key in fields}
+    return s
+
+
+def test_preview_id_is_stable_and_hash_matches_normalized_submission(preview_session):
+    from nifty_engine.agent_engine.broker_commissioning import validate_plan
+    s=preview_session
+    s.spec.update(trigger_price=9,buy_limit_price=10,sell_limit_price=9.5)
+    first=owner_setup.preview_plan(s.store,s.commission,s.spec,s.binding,s.plan['id'])
+    saved=s.store.meta(owner_setup.PLAN_KEY+s.plan['id'])
+    assert first['plan_id']==s.plan['id'] and first['plan_hash']==identity(saved)
+    assert saved==validate_plan(saved,s.binding,s.now)
+    assert isinstance(saved['buy_limit_price'],str)
+    second=owner_setup.preview_plan(s.store,s.commission,deepcopy(s.spec),s.binding,s.plan['id'])
+    assert second==first and s.broker.writes==[]
+    s.commission.submit(saved,first['plan_hash'])
+    assert len(s.broker.writes)==1
+    status=owner_setup.plan_status(s.store,s.commission,s.binding,s.plan['id'])
+    assert status['plan_id']==first['plan_id'] and status['plan_hash']==first['plan_hash']
+    assert status['status']!='OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT'
+    assert len(s.broker.writes)==1
+
+
+def test_lost_preview_response_recovers_exact_ready_hash_without_mutation(preview_session):
+    s=preview_session
+    first=owner_setup.preview_plan(s.store,s.commission,s.spec,s.binding,s.plan['id'])
+    before=s.store.read('SELECT * FROM meta ORDER BY key')
+    status=owner_setup.plan_status(s.store,s.commission,s.binding,s.plan['id'])
+    assert status==first and status['status']=='OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT'
+    assert s.store.read('SELECT * FROM meta ORDER BY key')==before and s.broker.writes==[]
+
+
+@pytest.mark.parametrize('fault',['spec','release','account','ip'])
+def test_retry_never_replaces_existing_preview_with_different_input(preview_session,fault):
+    s=preview_session
+    owner_setup.preview_plan(s.store,s.commission,s.spec,s.binding,s.plan['id'])
+    before=s.store.read('SELECT * FROM meta ORDER BY key')
+    spec=deepcopy(s.spec);current=deepcopy(s.binding)
+    if fault=='spec':spec['buy_limit_price']='10.05'
+    if fault=='release':current['release']='e'*40
+    if fault=='account':current['account_fingerprint']='f'*64
+    if fault=='ip':current['egress_ip']=spec['egress_ip']='1.1.1.1'
+    with pytest.raises(ValueError):owner_setup.preview_plan(s.store,s.commission,spec,current,s.plan['id'])
+    assert s.store.read('SELECT * FROM meta ORDER BY key')==before and s.broker.writes==[]
+
+
+def test_expired_preview_has_explicit_nonready_status_and_cannot_be_reused(preview_session,monkeypatch):
+    from datetime import timedelta
+    s=preview_session
+    ready=owner_setup.preview_plan(s.store,s.commission,s.spec,s.binding,s.plan['id'])
+    before=s.store.read('SELECT * FROM meta ORDER BY key');s.now+=timedelta(days=1)
+    monkeypatch.setattr(s.commission,'preview',Mock(side_effect=AssertionError('expired preview made broker reads')))
+    status=owner_setup.plan_status(s.store,s.commission,s.binding,s.plan['id'])
+    assert status['status']=='OWNER_PREVIEW_EXPIRED' and status['plan_hash']==ready['plan_hash']
+    assert status['plan_id']==ready['plan_id'] and not status['broker_writes']
+    assert owner_setup.preview_plan(s.store,s.commission,s.spec,s.binding,s.plan['id'])==status
+    assert s.store.read('SELECT * FROM meta ORDER BY key')==before and s.broker.writes==[]
+
+
+def test_status_detects_changed_binding_without_relabeling_preview(preview_session,monkeypatch):
+    s=preview_session
+    ready=owner_setup.preview_plan(s.store,s.commission,s.spec,s.binding,s.plan['id'])
+    current=dict(s.binding,account_fingerprint='f'*64)
+    monkeypatch.setattr(s.commission,'preview',Mock(side_effect=AssertionError('wrong account preview read')))
+    status=owner_setup.plan_status(s.store,s.commission,current,s.plan['id'])
+    assert status['status']=='OWNER_PREVIEW_BINDING_CHANGED' and status['plan_hash']==ready['plan_hash']
+    assert not status['broker_writes'] and s.broker.writes==[]
+
+
+def test_submitted_preview_retry_or_status_cannot_repeat_write_even_after_deadline(preview_session,monkeypatch):
+    from datetime import timedelta
+    s=preview_session
+    ready=owner_setup.preview_plan(s.store,s.commission,s.spec,s.binding,s.plan['id'])
+    saved=s.store.meta(owner_setup.PLAN_KEY+s.plan['id'])
+    s.commission.submit(saved,ready['plan_hash']);before=s.store.read('SELECT * FROM meta ORDER BY key')
+    s.now+=timedelta(days=1)
+    monkeypatch.setattr(s.commission,'preview',Mock(side_effect=AssertionError('submitted plan re-previewed')))
+    status=owner_setup.plan_status(s.store,s.commission,s.binding,s.plan['id'])
+    assert owner_setup.preview_plan(s.store,s.commission,s.spec,s.binding,s.plan['id'])==status
+    assert status['plan_hash']==ready['plan_hash'] and status['status']!='OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT'
+    assert len(s.broker.writes)==1 and s.store.read('SELECT * FROM meta ORDER BY key')==before
+
+
+def test_existing_submitted_record_without_preview_cannot_be_recreated(preview_session):
+    s=preview_session
+    s.commission.submit(s.plan,s.commission.preview(s.plan)['plan_hash'])
+    before=s.store.read('SELECT * FROM meta ORDER BY key')
+    with pytest.raises(owner_setup.SetupError,match='PREVIEW_SUBMITTED_PLAN_RECORD_MISSING'):
+        owner_setup.preview_plan(s.store,s.commission,s.spec,s.binding,s.plan['id'])
+    assert s.store.read('SELECT * FROM meta ORDER BY key')==before and len(s.broker.writes)==1
+
+
+def test_concurrent_submission_during_preview_never_overwrites_record(preview_session,monkeypatch):
+    from nifty_engine.agent_engine.broker_commissioning import PREFIX
+    s=preview_session;real=s.commission.preview
+    unknown={'phase':'GTT_CREATE_UNCERTAIN','private_receipt':'fixture'}
+    def interrupted(plan):
+        result=real(plan)
+        s.store.set_meta(PREFIX+s.plan['id'],unknown)
+        return result
+    monkeypatch.setattr(s.commission,'preview',interrupted)
+    with pytest.raises(owner_setup.SetupError,match='PREVIEW_PLAN_CHANGED_DURING_READ'):
+        owner_setup.preview_plan(s.store,s.commission,s.spec,s.binding,s.plan['id'])
+    assert s.store.meta(PREFIX+s.plan['id'])==unknown
+    assert s.store.meta(owner_setup.PLAN_KEY+s.plan['id']) is None and s.broker.writes==[]
+
+
+@pytest.mark.parametrize('plan_id',['',False,'../other','A'*32,'f'*31,'f'*33])
+def test_supplied_preview_id_requires_exact_lowercase_hex(preview_session,plan_id):
+    s=preview_session
+    with pytest.raises(owner_setup.SetupError,match='EXACT_PREVIEW_PLAN_ID_REQUIRED'):
+        owner_setup.assemble_plan(s.spec,s.binding,plan_id)
+    assert s.broker.writes==[]
 
 
 @pytest.mark.parametrize('address',['127.0.0.1','10.0.0.1','::1','2606:4700:4700::1111'])
@@ -264,7 +442,7 @@ def test_owner_arm_preflight_does_not_stop_or_change_runtime(mocked_arm,fault):
     assert s.original.read_bytes()==b'preserve shared services\n'
 
 
-@pytest.mark.parametrize('fault',['plan_id','confirm'])
+@pytest.mark.parametrize('fault',['plan_id','confirm','preview_id'])
 def test_owner_root_command_rejects_unconfirmed_plan_before_worker(tmp_path,monkeypatch,fault):
     import sys
     lock_calls=[]
@@ -284,6 +462,7 @@ def test_owner_root_command_rejects_unconfirmed_plan_before_worker(tmp_path,monk
     args=SimpleNamespace(action='submit',id='a'*32,confirm='b'*64,spec=None)
     if fault=='plan_id':args.id='../foreign-plan'
     if fault=='confirm':args.confirm='yes'
+    if fault=='preview_id':args.action='preview-stdin';args.id='invalid'
     with pytest.raises(owner_setup.SetupError,match='EXACT_PREVIEW_PLAN_ID_REQUIRED|OWNER_EXACT_CONFIRMATION_REQUIRED'):
         owner_setup.root_action(args)
     assert lock_calls and worker.call_count==0
