@@ -129,6 +129,7 @@ def _contract(row,index,now):
         'bid','ask','bid_quantity','ask_quantity','received_at')}
     leg(normalized)
     if row['index']!=index or not fresh(row['received_at'],now):raise ValueError('CURRENT_INDEX_BOOK_REQUIRED')
+    if not fresh(row.get('greeks_received_at',row['received_at']),now):raise ValueError('CURRENT_SIGNED_GREEKS_REQUIRED')
     delta=number(row['delta'])
     kind=row['symbol'][-2:]
     if not (0<delta<1 if kind=='CE' else -1<delta<0):raise ValueError('SIGNED_DELTA_REQUIRED')
@@ -164,6 +165,7 @@ def evaluate(cfg,index,bundle,now,*,occupied=False):
         broker_writes=False,mode='MONITOR_ONLY',performance_status='NOT_BACKTESTED') for r in cfg['strategies']]
     result=dict(index=index,at=now.isoformat(),config_sha256=identity(cfg),mode='MONITOR_ONLY',
         broker_writes=False,execution_enabled=False,regime='UNKNOWN',strategies=rows,selected=None)
+    result['input_connection']=bundle.get('input_connection',{})
     reasons=[]
     local=now.astimezone(JST)
     if not(local.weekday()<5 and (14,0)<=(local.hour,local.minute)<(19,0)):reasons.append('OUTSIDE_RESEARCH_ENTRY_WINDOW')
@@ -295,6 +297,7 @@ def update(store,root,now):
     value=dict(format=cfg['format'],at=now.isoformat(),config_sha256=identity(cfg),catalog=cfg,
         indices={i:evaluate(cfg,i,store.meta('report-strategy-evidence-'+i,{}),now,occupied=occupied) for i in cfg['indices']},
         mode='MONITOR_ONLY',broker_writes=False,execution_enabled=False)
+    value['data_connections']={i:store.meta('report-data-status-'+i,{'status':'WAIT','reason':'RESEARCH_READER_NOT_STARTED'}) for i in cfg['indices']}
     proposals=[v['selected'] for v in value['indices'].values() if v['selected']]
     value['selected']=max(proposals,key=lambda c:c['net_max_expiry_profit_inr']/c['worst_case_loss_inr']) if proposals else None
     store.set_meta(KEY,value)

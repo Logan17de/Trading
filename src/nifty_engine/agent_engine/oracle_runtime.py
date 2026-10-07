@@ -45,6 +45,7 @@ class Runtime:
         self.mail_state={"status":"SCHEDULED_BY_1930_JST","provider_accepted":False,"inbox_verified":False}
         self.output=self.state.directory/"market-check-oracle-live.json"
         self.preparer=None
+        self.report_data=None
         self.executor=None
         self.execution_error=None
         from .execution_gate import ExecutionGate
@@ -140,6 +141,8 @@ class Runtime:
         from .execution_data import GrowwPreparation
         self.preparer=GrowwPreparation(market,self.state.monitor.journal)
         self.preparer.entries_retired=bool(self.research_catalog)
+        from .report_data import ReportData
+        self.report_data=ReportData(market,self.state.monitor.journal,self.research_catalog)
         from . import premium_strategy
         from .contracts import identity
         from .oracle_orders import GrowwOrderTransport, OracleOrderGateway
@@ -163,6 +166,14 @@ class Runtime:
         from .dashboard import load_json
         while not self.stop.wait(60):
             preparer=self.preparer
+            research_reader=self.report_data
+            if research_reader:
+                try:research_reader.check(load_json(self.output,8_000_000))
+                except Exception:
+                    for index in self.research_catalog['indices']:
+                        self.state.pnl_lines.store.set_meta('report-data-status-'+index,{
+                            'status':'WAIT','reason':'RESEARCH_READER_UNAVAILABLE',
+                            'at':datetime.now(timezone.utc).isoformat(),'broker_writes':False})
             if preparer:
                 try:
                     preparer.safe_check(load_json(self.output,8_000_000),premium_strategy.load(self.root))
@@ -229,6 +240,13 @@ class Runtime:
                                 self.executor.reconcile_before_collection()
                                 value=self.collector.sample()
                             write_snapshot(self.output,value)
+                            from .report_data import connect_snapshot
+                            try:connect_snapshot(self.state.pnl_lines.store,value,self.research_catalog,datetime.now(timezone.utc))
+                            except Exception:
+                                for index in self.research_catalog['indices']:
+                                    self.state.pnl_lines.store.set_meta('report-data-status-'+index,{
+                                        'status':'WAIT','reason':'RESEARCH_SNAPSHOT_UNAVAILABLE',
+                                        'at':datetime.now(timezone.utc).isoformat(),'broker_writes':False})
                             self.impulse.attach(self.collector.market)
                             if value.get("status")=="BLOCKED" or any(r.get("code")=="403" for r in value.get("probes",{}).values()):
                                 raise ConnectionError("read unavailable")
@@ -245,6 +263,7 @@ class Runtime:
                         if self.collector:self.collector.close()
                         self.collector=None
                         self.preparer=None
+                        self.report_data=None
                         self.executor=None
                         self.impulse.detach()
                         write_snapshot(self.output,{"finished_at":now.isoformat(),"status":"BLOCKED","failure":self.error,"order_capability":False})

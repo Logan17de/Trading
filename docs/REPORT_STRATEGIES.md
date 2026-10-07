@@ -99,6 +99,34 @@ exists; old strategy results are not copied to the new strategies.
 
 ## Private replay / evidence import
 
+### Automatic Oracle connections
+
+The existing five-second collector now connects actual index spot, complete
+position/order evidence, manual protection, dated funds and expiry evidence to
+the studies. Receipt times are preserved; failed or stale reads never become
+fresh. A separate minute worker shares the rate limiter and fetches completed
+Groww daily OHLC for MA/ADX/realized volatility, exact API/master intersections
+up to90 DTE, option-chain signed Greeks/percentage IV and current contract books.
+It samples at most eight contracts per expiry and six hypothetical basket
+comparisons per index. Margin/charge calculations are broker analytical requests,
+never order submissions. Greek receipts expire independently of newer book reads.
+Daily history is fetched once per day, with hourly retry after failure. A research
+fault is isolated from the collector, owner intent and report delivery.
+
+Current-IV30/252-session matched IV history and dated event-calendar evidence
+still need a verified source; no substitute or presumed clear calendar is made.
+The worker does not certify a global optimal hedge or always-ready snapshot.
+Minute research reads can expire under the15-second evidence policy; this leaves
+WAIT. Five-second account collection remains independent. Status/counts and
+specific missing inputs are visible in the dashboard and private evaluations.
+
+Owner intent remains Off until the protected Start action is explicitly invoked.
+Restart, reconnection, research and email never set it On. A Start click saves
+intent; these monitor-only studies and pending live validation still prevent
+trading. No click or local endpoint bypasses paper/pause/activation/manual gates.
+
+### Supplied evidence
+
 Pure replay from a supplied private structured evidence file:
 
 ```powershell
