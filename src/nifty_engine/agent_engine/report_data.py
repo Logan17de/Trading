@@ -98,7 +98,7 @@ class ReportData:
         if now.timestamp()<self.next_history.get(index,0):return
         self.next_history[index]=now.timestamp()+3600
         raw=self.call(self.market.groww.get_historical_candles,exchange=EXCHANGES[index],segment='CASH',
-            groww_symbol=EXCHANGES[index]+'-'+index,start_time=f'{day-timedelta(days=400)} 00:00:00',
+            groww_symbol=EXCHANGES[index]+'-'+index,start_time=f'{day-timedelta(days=120)} 00:00:00',
             end_time=f'{day-timedelta(days=1)} 23:59:59',candle_interval='1day')
         at=self.clock();rows=daily_rows(raw,at)
         features=policy.historical_features(rows,None,at,source='GROWW_DAILY_OHLC')

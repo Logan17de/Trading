@@ -111,6 +111,8 @@ It samples at most eight contracts per expiry and six hypothetical basket
 comparisons per index. Margin/charge calculations are broker analytical requests,
 never order submissions. Greek receipts expire independently of newer book reads.
 Daily history is fetched once per day, with hourly retry after failure. A research
+request covers120 calendar days, within the actual daily-candle180-day limit.
+This supplies price indicators only, not252-session IV history. A research
 fault is isolated from the collector, owner intent and report delivery.
 
 Current-IV30/252-session matched IV history and dated event-calendar evidence

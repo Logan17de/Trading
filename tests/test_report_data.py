@@ -82,6 +82,22 @@ def test_expiry_intersection_never_certifies_unlisted_contracts(tmp_path):
     assert calls[0]['timeout']==5
 
 
+def test_daily_fetch_respects_real_provider_window_and_never_fabricates_iv(tmp_path):
+    j=PcJournal(tmp_path/'j.sqlite3');requests=[]
+    def candles(**kw):
+        requests.append(kw)
+        return dict(candle_interval='1day',candles=[[(NOW-timedelta(days=60-i)).date().isoformat()+'T09:15:00',100+i,102+i,99+i,101+i,0] for i in range(60)])
+    market=SimpleNamespace(groww=SimpleNamespace(get_historical_candles=candles),limiter=SimpleNamespace(wait=lambda:None))
+    reader=data.ReportData(market,j,CFG,clock=lambda:NOW)
+    reader.history('NIFTY',NOW);reader.history('NIFTY',NOW)
+    assert len(requests)==1
+    start=Path(requests[0]['start_time'].split()[0]).name
+    from datetime import date
+    assert (date.fromisoformat(requests[0]['end_time'].split()[0])-date.fromisoformat(start)).days<=180
+    features=j.store.meta('report-daily-features-NIFTY')
+    assert set(features)=={'ma20','ma50','adx14','rv30'} and features['ma50']['sessions']==50
+
+
 def test_stale_worker_performs_no_broker_calls_or_owner_changes(tmp_path):
     j=PcJournal(tmp_path/'j.sqlite3')
     reader=data.ReportData(SimpleNamespace(),j,CFG,clock=lambda:NOW)
