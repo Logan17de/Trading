@@ -214,6 +214,9 @@ class Runtime:
         self.executor=PremiumExecutor(self.state.monitor.journal,gateway,protection,gate,cfg,clock=gate.clock,
             report_cfg=self.research_catalog,normal_cfg=self.normal_catalog)
         self.collector.before_ownership=self.executor.reconcile_before_collection
+        # Attach once per authenticated client. Re-acquiring the stream/research
+        # lock after every REST sample couples account cadence to tick research.
+        self.impulse.attach(market)
         self.token_day=now.date()
 
     def preparation_loop(self):
@@ -330,7 +333,6 @@ class Runtime:
                                     self.state.pnl_lines.store.set_meta('report-data-status-'+index,{
                                         'status':'WAIT','reason':'RESEARCH_SNAPSHOT_UNAVAILABLE',
                                         'at':datetime.now(timezone.utc).isoformat(),'broker_writes':False})
-                            self.impulse.attach(self.collector.market)
                             if value.get("status")=="BLOCKED" or any(r.get("code")=="403" for r in value.get("probes",{}).values()):
                                 raise ConnectionError("read unavailable")
                         # Collection already persists observations. Building full

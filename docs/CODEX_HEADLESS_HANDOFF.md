@@ -49,6 +49,16 @@ pre-observer-startup-fix-20261007.sqlite3. The earlier
 pre-live-commissioning copy was used for diagnostic replay and is not a pristine
 deployment backup. Rollout receipts will follow this section after verification.
 
+Initial normal release9a12391 deployed with two Off groups, IDLE, null worker
+fault and original campaign dates preserved. Allfive services active; archive
+SYNCED. Verified the pristine backup's exact hash off-host,475250688bytes.
+Actual REST cycle observed5.621seconds, but heartbeat publication followed
+collection by over20seconds. Removed repeated stream attachment from each REST
+cycle; attachment is now once per authenticated market client. This removes a
+specific coupling to the research lock, not a guarantee of five-second cadence.
+Follow-up35 startup/normal-runtime/stream regressions and JS validation passed.
+Final release/actual cadence receipts follow after rollout verification.
+
 ## October 7 Start button and selected strategies
 
 Verified the desktop HTTP Start/Stop and strategy-switch requests through the
