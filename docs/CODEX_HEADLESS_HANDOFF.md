@@ -41,7 +41,10 @@ checks retain the60s budget. They no longer hold the collector heartbeat after
 snapshot publication. Stale timestamps are preserved, unavailable research is
 UNKNOWN. All67 Normal/runtime/diagnostic tests passed; the final scheduling test
 replacement also passed all four diagnostic/scheduling tests. Final rollout
-receipt follows below.
+receipt follows below. A busy journal during failure-status recording cannot kill
+the snapshot research retry worker; all five diagnostic/scheduling/recovery tests
+passed after that hardening. Generic refresh failure wording no longer implies
+an API approval problem without authentication evidence.
 
 ## October 7 additional investment control
 

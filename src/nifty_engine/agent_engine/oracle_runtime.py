@@ -270,9 +270,11 @@ class Runtime:
                              datetime.now(timezone.utc), self.normal_catalog)
         except Exception:
             for index in self.research_catalog['indices']:
-                self.state.pnl_lines.store.set_meta('report-data-status-' + index, {
-                    'status':'WAIT', 'reason':'RESEARCH_SNAPSHOT_UNAVAILABLE',
-                    'at':datetime.now(timezone.utc).isoformat(), 'broker_writes':False})
+                try:
+                    self.state.pnl_lines.store.set_meta('report-data-status-' + index, {
+                        'status':'WAIT', 'reason':'RESEARCH_SNAPSHOT_UNAVAILABLE',
+                        'at':datetime.now(timezone.utc).isoformat(), 'broker_writes':False})
+                except Exception: pass  # Retry next cycle; old timestamps stay stale.
 
     def execution_loop(self):
         while not self.stop.wait(5):self.execution_step()

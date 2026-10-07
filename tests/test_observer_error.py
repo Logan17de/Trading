@@ -66,3 +66,19 @@ def test_preparation_keeps_five_second_connections_and_sixty_second_network_budg
     monkeypatch.setattr(oracle_runtime.time, 'monotonic', lambda:0)
     runtime.preparation_loop()
     assert waits == [5,5,5] and len(connected) == 2 and len(network) == 1
+
+
+def test_busy_journal_during_failure_status_does_not_kill_research_retry(tmp_path, monkeypatch):
+    from nifty_engine.agent_engine import report_data
+    runtime = Runtime.__new__(Runtime)
+    runtime.output = tmp_path/'snapshot.json'
+    runtime.output.write_text(json.dumps({'execution_observation':{'complete':True}}))
+    runtime.research_catalog = {'indices':['NIFTY','SENSEX']}; runtime.normal_catalog = None
+    def busy(*args): raise sqlite3.OperationalError('private busy journal')
+    runtime.state = SimpleNamespace(pnl_lines=SimpleNamespace(store=SimpleNamespace(set_meta=busy)))
+    monkeypatch.setattr(report_data, 'connect_snapshot', busy)
+    runtime.connect_research_snapshot()
+    restored = []
+    monkeypatch.setattr(report_data, 'connect_snapshot', lambda *args: restored.append(True))
+    runtime.connect_research_snapshot()
+    assert restored == [True]
