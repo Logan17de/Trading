@@ -177,7 +177,9 @@ An explicit `--database <private-journal-path>` imports the evidence into that
 journal and records the evaluations; it does not touch broker state, capital,
 owner intent or activation. Use isolated replay journals for synthetic fixtures.
 Production snapshots must be real, dated, independently sourced and never a
-test fixture. The runtime reevaluates stored evidence every 30 seconds; freshness
+test fixture. Production IV features additionally require the reviewed
+matched history/current adapter described in MATCHED_IV_IMPORT.md; importing a
+feature-only replay bundle cannot clear that production requirement. The runtime reevaluates stored evidence every 30 seconds; freshness
 expires normally. Existing private archive exports versioned evaluations under
 `algo_state` / `report-strategy-evaluations`, through the same idempotent outbox.
 This category includes research state, not proof of executed trades. No table,

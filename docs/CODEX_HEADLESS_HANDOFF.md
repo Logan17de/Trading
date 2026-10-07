@@ -29,7 +29,31 @@ access,252-session/SENSEX coverage and matching30-day series construction remain
 unverified. No subscription was purchased and no provider credential invented.
 Strict38-day event-risk policy and original study horizon remain unchanged.
 The three credit adapters are software implemented, not declared live-ready.
-Rollout and final verification are recorded below after completion.
+Rollout: immutable source dc38ead5cc51d415e88bbe272427a40aeb6b2337 deployed;
+PC pin/assets refreshed. Only observer restarted; five shared services active.
+Actual PC response verified advancing healthy VM, null runtime error, Algo Off,
+four switches Off, no execution, matched-IV reviewed sessions0/current missing
+for both indexes, three BLOCKED installed routes and Calendar RESEARCH_ONLY.
+The original study start/end survived unchanged. This is a premarket check:
+collection window has not started, so no intraday/current-source cadence claim.
+New JS assets were served; owner Edge's actual visual rendering remains unverified.
+
+Full suite436 passed/four platform skips. Final24 matched-IV checks passed after
+adding exact per-session close times, including exceptional sessions, and a
+prepared/current IV fingerprint check. Config, JS, diff checks and offline demo
+passed. Synthetic replay is not actual broker-write/protection verification.
+
+Post-source-update SQLite integrity/off-host hash verified:
+post-matched-iv-protection-20261007.sqlite3,114733056 bytes,
+SHA25694c63ccb8c5365cfec63d9c4e5fecc801afdff926d851e7fe4057a4f7afcfa41.
+Actual deployed-source GTT audit completed12:12:40 JST with all three lists
+AVAILABLE and zero records in the explicit28-day range. The viewer received that
+actual scope/time; private archive status is SYNCED. These are read/diagnostic
+results, not GTT/child or order-write proof.
+
+Zero owned-order rows, activation absent and original pause present were checked.
+No real orders, key rotation, broker permissions, LIVE or owner intent changes.
+
 
 ## October 7 readiness evidence and requested 38-day research
 
