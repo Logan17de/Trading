@@ -389,6 +389,7 @@ def mocked_arm(tmp_path,monkeypatch):
                 raise subprocess.CalledProcessError(1,command,stderr='SECRET_PROVIDER_DIAGNOSTIC')
         else:
             assert '-m' in command and 'pytest' in command
+            assert kwargs['timeout']==600
             assert 'GROWW_OBSERVER_API_KEY' not in kwargs['env']
             assert 'GROWW_OBSERVER_API_SECRET' not in kwargs['env']
             calls.append('replay')

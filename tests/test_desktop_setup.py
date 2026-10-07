@@ -162,6 +162,7 @@ def test_arm_requires_prior_exact_evidence_digest_and_never_defaults_to_plan_has
     assert ctl.command({'action':'arm-preview'})['evidence_digest']==DIGEST
     def arm(args,**kw):
         assert args[-1].endswith(' --confirm '+DIGEST)
+        assert kw['timeout']==1600
         return response('LIVE_PREPARED_ALGO_OFF',broker_writes=False,algo_enabled=False)
     ctl.run=arm
     result=ctl.command({'action':'arm','confirm':DIGEST})

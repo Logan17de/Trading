@@ -136,7 +136,7 @@ class OwnerSetupController:
             '-o','ClearAllForwardings=yes','-o','ConnectTimeout=8','-o','LogLevel=ERROR',
             cfg['user']+'@'+cfg['host'],command]
         response = self.run(args,input=dumps(saved['spec']) if action == 'preview' else '',
-            capture_output=True,text=True,encoding='utf-8',timeout=1000 if action == 'arm' else 210,
+            capture_output=True,text=True,encoding='utf-8',timeout=1600 if action == 'arm' else 210,
             **({'creationflags':subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
         if not isinstance(response.stdout,str) or len(response.stdout.encode('utf-8')) > 32768:
             raise ValueError()

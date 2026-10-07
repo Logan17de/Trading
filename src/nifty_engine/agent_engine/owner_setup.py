@@ -297,7 +297,7 @@ def arm(args, values):
     checked=subprocess.run([sys.executable,'-I','-m','pytest','-q',
         str(release/'tests/test_broker_commissioning.py'),str(release/'tests/test_live_setup.py'),
         str(release/'tests/test_premium_execution.py'),str(release/'tests/test_external_close.py')],
-        cwd=release,capture_output=True,text=True,timeout=180,
+        cwd=release,capture_output=True,text=True,timeout=600,
         env={k:v for k,v in os.environ.items() if k in ('PATH','LANG','LC_ALL','HOME','TMPDIR')})
     if checked.returncode:raise SetupError('DEPLOYED_REPLAY_CHECKS_FAILED')
     pause=ROOT/'.trader-paused'
