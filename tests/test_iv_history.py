@@ -22,7 +22,8 @@ def dataset(index='NIFTY'):
         series=dict(provider='SYNTHETIC_TEST_ONLY',methodology='TEST_30D_V1',index=index,
                     tenor_days=30,unit='annualized_percent'),
         calendar=dict(exchange='NSE' if index=='NIFTY' else 'BSE',source='SYNTHETIC_TEST_CALENDAR',
-            coverage_start=days[0],coverage_end=NOW.date().isoformat(),sessions=days+[NOW.date().isoformat()]),
+            coverage_start=days[0],coverage_end=NOW.date().isoformat(),sessions=days+[NOW.date().isoformat()],
+            session_closes={d:d+'T15:30:00+05:30' for d in days+[NOW.date().isoformat()]}),
         observations=[dict(day=d,value=10+i/10,observed_at=d+'T15:30:00+05:30',source_sha256='a'*64)
                       for i,d in enumerate(days)])
 
@@ -134,3 +135,11 @@ def test_readiness_distinguishes_three_installed_routes_and_calendar(tmp_path):
     assert statuses['calendar']['status']=='RESEARCH_ONLY' and not statuses['calendar']['code_implemented']
     assert all('REVIEWED_MATCHED_IV_HISTORY_AND_CURRENT_REQUIRED' in r['blockers']
                for s in statuses.values() for r in s['indices'].values())
+
+
+def test_exceptional_session_uses_reviewed_actual_close_not_regular_hours(tmp_path):
+    store=Store(tmp_path/'j.sqlite3');data=dataset();day=data['observations'][0]['day']
+    data['calendar']['session_closes'][day]=day+'T19:30:00+05:30'
+    with pytest.raises(ValueError,match='DATED_CLOSE_IV'):install(store,data)
+    data['observations'][0]['observed_at']=day+'T19:28:00+05:30'
+    assert install(store,data)['status']=='REVIEWED_IMPORT'

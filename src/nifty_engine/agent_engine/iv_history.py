@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from .contracts import EXCHANGES, IST, identity, keys, number, stamp
@@ -36,7 +36,7 @@ def validate(data, now):
     sid = series(data['series'])
     if data['format'] != FORMAT: raise ValueError('MATCHED_IV_FORMAT_REQUIRED')
     calendar = data['calendar']
-    keys(calendar, {'exchange', 'source', 'coverage_start', 'coverage_end', 'sessions'})
+    keys(calendar, {'exchange', 'source', 'coverage_start', 'coverage_end', 'sessions', 'session_closes'})
     if (calendar['exchange'] != EXCHANGES[data['series']['index']]
             or not isinstance(calendar['source'], str) or not 1 <= len(calendar['source']) <= 200):
         raise ValueError('INDEPENDENT_EXCHANGE_CALENDAR_REQUIRED')
@@ -47,6 +47,10 @@ def validate(data, now):
             or days != sorted(set(days)) or start > end or end != today
             or any(not start <= date.fromisoformat(d) <= end for d in days)):
         raise ValueError('COMPLETE_DATED_SESSION_CALENDAR_REQUIRED')
+    closes=calendar['session_closes']
+    if (not isinstance(closes,dict) or set(closes)!=set(days)
+            or any(stamp(closes[d]).astimezone(IST).date().isoformat()!=d for d in days)):
+        raise ValueError('ACTUAL_EXCHANGE_SESSION_CLOSES_REQUIRED')
     prior = [d for d in days if date.fromisoformat(d) < today][-252:]
     rows = data['observations']
     if (len(prior) != 252 or not isinstance(rows, list) or len(rows) != 252
@@ -55,7 +59,8 @@ def validate(data, now):
     for row in rows:
         keys(row, {'day', 'value', 'observed_at', 'source_sha256'})
         at = stamp(row['observed_at']).astimezone(IST)
-        if (at.date().isoformat() != row['day'] or not (15, 25) <= (at.hour, at.minute) < (15, 31)
+        close=stamp(closes[row['day']]).astimezone(IST)
+        if (at.date().isoformat() != row['day'] or not close-timedelta(minutes=5) <= at <= close
                 or not 0 < number(row['value']) < 500
                 or not isinstance(row['source_sha256'], str)
                 or not re.fullmatch('[a-f0-9]{64}', row['source_sha256'])):

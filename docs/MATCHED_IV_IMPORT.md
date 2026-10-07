@@ -16,12 +16,14 @@ these top-level fields:
 | --- | --- |
 | format | `trading-matched-iv-history-v1` |
 | series | provider and methodology identifiers, index `NIFTY`/`SENSEX`, tenor_days30, unit `annualized_percent` |
-| calendar | exchange `NSE`/`BSE`, independently reviewed source, coverage_start/end dates, sorted unique actual session dates through today |
+| calendar | exchange `NSE`/`BSE`, independently reviewed source, coverage_start/end dates, sorted unique actual session dates through today, `session_closes` mapping each date to its actual timezone-aware close |
 | observations | exactly the latest252 completed sessions before today, in calendar order |
 
 Each observation contains `day`, `value`, timezone-aware `observed_at`, and
 `source_sha256` of the retained original provider payload. The timestamp must
-belong to that exchange day and the15:25–15:30 IST close window. Missing,
+belong to that exchange day and the final five minutes up to its independently
+reviewed actual close. Exceptional sessions use their actual close rather than
+the regular15:30 IST time. Missing,
 duplicate, future, stale or intraday substitutes are rejected. Values are
 annualized percentage volatility, not decimal fractions or price candles.
 History must end within72 hours; the session calendar is not generated from
