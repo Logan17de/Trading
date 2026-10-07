@@ -56,7 +56,11 @@ class SimulatedBroker:
         return value
 
     def get_smart_order(self,**args): return self.smart[args['smart_order_id']]
-    def get_smart_order_list(self,**args): return {'orders':list(self.smart.values()) if args.get('page',0)==0 else []}
+    def get_smart_order_list(self,**args):
+        rows=list(self.smart.values()) if args.get('page',0)==0 else []
+        status=args.get('status')
+        if status:rows=[r for r in rows if r['status']==status or status=='COMPLETED' and r['status'] in ('TRIGGERED','EXECUTED')]
+        return {'orders':rows}
     def modify_smart_order(self,**args):
         self.writes.append(('MODIFY',copy.deepcopy(args)))
         if self.timeout_modify: raise TimeoutError('private provider data')
@@ -214,6 +218,37 @@ def test_gtt_cancel_trigger_race_closes_hedge_only_after_child_and_no_double_buy
     standard=[v for k,v in s.broker.writes if k=='ORDER']
     assert [r['transaction_type'] for r in standard]==['BUY','SELL','SELL']
     assert standard[-1]['trading_symbol']==s.hedge['symbol']
+
+
+@pytest.mark.parametrize('status',['ACTIVE','COMPLETED','CANCELLED'])
+def test_trigger_evidence_overrides_parent_status_and_never_double_closes(tmp_path,status):
+    s=Session(tmp_path);s.monitoring();row=next(iter(s.broker.smart.values()))
+    s.broker.trigger(row);row['status']=status
+    result=s.protection.reconcile(s.executor._state()['protection_key'])
+    assert result['status']=='CHILD_FILLED'
+    assert sum(k=='ORDER' for k,_ in s.broker.writes)==2
+    assert s.journal.store.read('SELECT filled FROM pc_orders WHERE reference=?',(row['reference_id'],))[0]['filled']==65
+
+
+def test_unknown_create_recovers_original_day_all_states_without_retry_or_manual_adoption(tmp_path):
+    s=Session(tmp_path);s.monitoring();key=s.executor._state()['protection_key']
+    record=s.protection.record(key);record.pop('smart_id');s.protection._save(key,record)
+    row=next(iter(s.broker.smart.values()));s.broker.trigger(row)
+    s.now+=timedelta(days=1);calls=[]
+    original=s.broker.get_smart_order_list
+    def read(**kw):calls.append(kw);return original(**kw)
+    s.broker.get_smart_order_list=read
+    writes=len(s.broker.writes)
+    assert s.protection.reconcile(key)['status']=='CHILD_FILLED'
+    assert {r['status'] for r in calls}=={'ACTIVE','COMPLETED','CANCELLED'}
+    assert all(r['start_date_time']=='2026-10-05T00:00:00' and r['end_date_time']=='2026-10-06T00:00:00' for r in calls)
+    assert len(s.broker.writes)==writes
+
+
+def test_parent_reference_mismatch_never_certifies_protection(tmp_path):
+    s=Session(tmp_path);s.monitoring();row=next(iter(s.broker.smart.values()))
+    row['reference_id']='manual-reference'
+    assert s.protection.reconcile(s.executor._state()['protection_key'])['status']=='PROTECTION_RECONCILIATION_REQUIRED'
 
 
 def test_trail_tightens_broker_stop_once_and_never_claims_guaranteed_cap(tmp_path):

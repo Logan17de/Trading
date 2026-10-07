@@ -17,12 +17,23 @@ class ReportSession(Session):
         super().__init__(path); self.now = NOW
         self.gate.strategy_switches_required = True
         self.data = priced_bundle(index, regime)
+        if index=='SENSEX' and regime=='BEARISH':
+            hedge=self.data['contracts'][1]
+            hedge.update(strike=25100,symbol='SENSEX26N1025100CE',delta=.1)
+            self.data['margins']={}
+            for lots in (1,2):
+                key=identity({'legs':[(hedge['symbol'],'BUY'),(self.data['contracts'][0]['symbol'],'SELL')],'quantity':20*lots})
+                self.data['margins'][key]=dict(received_at=NOW.isoformat(),basket_requirement_inr=20000*lots,round_trip_charges_inr=10)
         if regime == 'RANGE':
             self.data = bundle(index, regime)
             legs = [option(index,24850,'PE',5,-.1), option(index,24900,'PE',25,-.2),
                     option(index,25150,'CE',5,.1), option(index,25100,'CE',25,.2)]
             self.data['contracts'] = legs
-            key=identity({'legs':[(r['symbol'],'BUY' if i%2==0 else 'SELL') for i,r in enumerate(legs)],'quantity':65})
+            if index=='SENSEX':
+                legs=[option(index,24800,'PE',5,-.1),option(index,24900,'PE',35,-.2),
+                      option(index,25200,'CE',5,.1),option(index,25100,'CE',35,.2)]
+                self.data['contracts']=legs
+            key=identity({'legs':[(r['symbol'],'BUY' if i%2==0 else 'SELL') for i,r in enumerate(legs)],'quantity':legs[0]['lot_size']})
             self.data['margins'][key]=dict(received_at=NOW.isoformat(),basket_requirement_inr=20000,round_trip_charges_inr=10)
         for m in self.data['margins'].values(): m['hedge_requirement_inr']=1000
         self.executor=PremiumExecutor(self.journal,self.gateway,self.protection,self.gate,LEGACY,
@@ -59,7 +70,8 @@ class ReportSession(Session):
         pytest.fail(str(self.journal.store.meta('premium-executor-status')))
 
 
-@pytest.mark.parametrize('index,regime,sid',[('NIFTY','BULLISH','bull_put'),('NIFTY','BEARISH','bear_call'),('SENSEX','BULLISH','bull_put'),('NIFTY','RANGE','iron_condor')])
+@pytest.mark.parametrize('index',['NIFTY','SENSEX'])
+@pytest.mark.parametrize('regime,sid',[('BULLISH','bull_put'),('BEARISH','bear_call'),('RANGE','iron_condor')])
 def test_entry_hedges_protection_restart_and_profit_exit(tmp_path,index,regime,sid):
     s=ReportSession(tmp_path,index,regime);s.monitoring()
     state=s.executor._state();assert state['strategy']==sid

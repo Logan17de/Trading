@@ -68,7 +68,11 @@ def connect_snapshot(store, snapshot, cfg, now):
         history=store.meta('report-daily-features-'+index,{})
         for name in ('ma20','ma50','adx14','rv30'):
             if name in history:features[name]=copy.deepcopy(history[name])
-        # Preserve explicitly supplied IV/event evidence without synthesizing it.
+        # Only reviewed, method-matched provider history/current observations
+        # supply production IV features. Research proxy points stay separate.
+        from .iv_history import features as matched_iv
+        features.pop('iv30',None);features.pop('iv_percentile',None)
+        features.update(matched_iv(store,index,now))
         b.setdefault('event_calendar',{'status':'UNKNOWN'})
         official=store.meta('report-official-event-calendar',None)
         if official is not None:

@@ -18,6 +18,9 @@
   activates trading or replaces 252 prior IV sessions. Official scheduled-event
   sources and versioned ATM IV30 proxy collection are research evidence; the
   proxy is not an execution feature. Do not shorten the strict event horizon.
+  Read MATCHED_IV_IMPORT.md for the private reviewed history/current adapter.
+  Production rejects unreviewed feature-only IV bundles; synthetic imports never
+  belong in the real journal. No provider dataset/stream is supplied by that code.
   New Everyday/Late-session entries and rolls are retired even if intent is On.
   Keep original records/ownership/exits/protection; never relabel legacy positions
   or migrate fictional SPX win rates. New research requires point-in-time IV/RV,

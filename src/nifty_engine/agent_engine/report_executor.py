@@ -10,7 +10,7 @@ import copy
 import uuid
 from datetime import date
 
-from .contracts import number, stamp
+from .contracts import identity, number, stamp
 from .execution import fresh
 from .pc_control import JST
 from .premium_executor import cash_stop, FILLED
@@ -49,7 +49,14 @@ class ReportExecution:
         enabled = controls.read(self.e.journal.store)['enabled']
         candidates, reasons = [], []
         for index in self.cfg['indices']:
-            bundle = self.e.journal.store.meta('report-strategy-evidence-' + index, {})
+            bundle = copy.deepcopy(self.e.journal.store.meta('report-strategy-evidence-' + index, {}))
+            if self.e.gate.matched_iv_required:
+                from .iv_history import features
+                values=features(self.e.journal.store,index,self.e.clock())
+                if not values:
+                    reasons.append(index+'_REVIEWED_MATCHED_IV_HISTORY_AND_CURRENT_REQUIRED')
+                    continue
+                bundle.setdefault('features',{}).update(values)
             value = research.evaluate(self.cfg, index, bundle, self.e.clock(), occupied=False)
             for row in value['strategies']:
                 if not enabled[row['id']]: continue
@@ -57,6 +64,7 @@ class ReportExecution:
                     reasons.append('CALENDAR_SETTLEMENT_PAYOFF_AND_MARGIN_MODEL_REQUIRED'); continue
                 if row['status'] == 'RESEARCH_CANDIDATE':
                     c = copy.deepcopy(row['candidate'])
+                    if self.e.gate.matched_iv_required:c['matched_iv_sha256']=identity(values)
                     c['prepared_at'] = value['at']
                     c['hedge_requirement_inr'] = bundle['margins'][c['key']].get('hedge_requirement_inr')
                     if state and signature(c) != signature(state['candidate']): continue
@@ -95,6 +103,13 @@ class ReportExecution:
         dte = (date.fromisoformat(c['expiry']) - now.astimezone(JST).date()).days
         if not self.cfg['short_dte'][0] <= dte <= self.cfg['short_dte'][1]: raise ValueError('REPORT_DTE_REQUIRED')
         bundle = e.journal.store.meta('report-strategy-evidence-' + c['index'], {})
+        if e.gate.matched_iv_required:
+            from .iv_history import features
+            values=features(e.journal.store,c['index'],now)
+            if not values:
+                raise ValueError('REVIEWED_MATCHED_IV_HISTORY_AND_CURRENT_REQUIRED')
+            if c.get('matched_iv_sha256')!=identity(values):
+                raise ValueError('REPREPARE_CHANGED_MATCHED_IV')
         exp = bundle.get('expiry_evidence', {})
         if (exp.get('status') != 'CONFIRMED_CURRENT_MASTER' or exp.get('day_jst') != now.astimezone(JST).date().isoformat()
                 or c['expiry'] not in exp.get('expiries', [])):

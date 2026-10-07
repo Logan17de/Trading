@@ -32,7 +32,9 @@ is activated by beginning or finishing this study.
   not filled forward. Counts mean observed days, not a certified session calendar.
   The original matched 252-prior-session IV requirement is unchanged.
 - A bounded GET-only GTT diagnostic checks ACTIVE/COMPLETED/CANCELLED list pages.
-  Counts apply to the provider's default date range. An empty successful response
+  Current counts apply to an explicit28-day IST date range. Earlier October7
+  premarket checks used the default range, so their zero counts were today-only.
+  An empty successful response
   proves read access only. It does not certify parent persistence, generated-child
   linkage, fills, cancellation races or order-write access.
 
@@ -64,6 +66,8 @@ are excluded. Source receipts, unknowns and methodology survive restart.
 1. Obtain or validate a matching dated 252-session Indian IV benchmark for both
    indexes; preserve methodology, units, independent observation dates and actual
    exchange-session coverage. Thirty-eight calendar days cannot create that history.
+   MATCHED_IV_IMPORT.md documents the installed private evidence-import path;
+   it does not claim a supplied dataset or configured provider stream.
 2. Review whether the strict event-free holding-horizon policy is useful after
    collecting evidence. Changing the blackout policy requires the owner's decision.
 3. Verify actual broker order acknowledgment and persistent FNO NRML GTT readback

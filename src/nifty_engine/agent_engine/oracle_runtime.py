@@ -59,7 +59,7 @@ class Runtime:
             release=Path(__file__).resolve().parents[3].name,host='ORACLE',
             clock=lambda:datetime.now(timezone.utc),policy_hash=identity({
                 'legacy_management':premium_strategy.load(self.root),'research':self.research_catalog}),
-            entries_retired=False,strategy_switches_required=True)
+            entries_retired=False,strategy_switches_required=True,matched_iv_required=True)
         from .impulse_feed import StreamingImpulse
         self.impulse=StreamingImpulse(self.root,self.state.pnl_lines.store)
         from .research_sync import SupabaseArchive
@@ -116,15 +116,19 @@ class Runtime:
             view['control']['everyday']=None
             if isinstance(algo,dict):algo['policy_version']=cfg['format']
             view['retired_strategies']=cfg['retired_entries']
-            from . import iv_observations, broker_readiness, research_campaign
+            from . import iv_observations, iv_history, broker_readiness, research_campaign
             from .event_calendar import assessment, KEY as calendar_key
             evidence=self.state.pnl_lines.store
             now=datetime.now(timezone.utc)
             view['readiness_evidence']=dict(
                 iv={index:iv_observations.public(evidence,index,now) for index in cfg['indices']},
+                matched_iv={index:iv_history.public(evidence,index,now) for index in cfg['indices']},
                 event_calendar=assessment(evidence.meta(calendar_key,{}).get('sources',{}),now),
                 broker_protection=broker_readiness.summary(evidence,now),
                 research_campaign=research_campaign.public(evidence,now),broker_writes=False)
+            from .strategy_readiness import assess
+            statuses=assess(evidence,cfg,self.gate,obs,now)
+            for row in view['strategies']:row['readiness']=statuses[row['id']]
         return view
 
     def command(self,value):

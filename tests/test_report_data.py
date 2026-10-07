@@ -45,14 +45,14 @@ def test_failed_reads_clear_spot_and_incomplete_protection_blocks(tmp_path):
     assert 'spot' not in b['features'] and not b['positions_complete']
 
 
-def test_worker_cache_keeps_external_iv_calendar_and_separate_greek_time(tmp_path):
+def test_worker_cache_rejects_unreviewed_iv_keeps_calendar_and_separate_greek_time(tmp_path):
     j=PcJournal(tmp_path/'j.sqlite3');b=priced_bundle()
     j.store.set_meta('report-strategy-evidence-NIFTY',b)
     c=copy.deepcopy(b['contracts']);c[0]['greeks_received_at']=(NOW-timedelta(seconds=16)).isoformat()
     j.store.set_meta('report-contracts-NIFTY',dict(contracts=c,margins=b['margins']))
     data.connect_snapshot(j.store,snapshot(),CFG,NOW)
     merged=j.store.meta('report-strategy-evidence-NIFTY')
-    assert merged['features']['iv_percentile']==b['features']['iv_percentile']
+    assert 'iv_percentile' not in merged['features'] and 'iv30' not in merged['features']
     assert merged['event_calendar']==b['event_calendar']
     with pytest.raises(ValueError,match='CURRENT_SIGNED_GREEKS'):
         strategy._contract(merged['contracts'][0],'NIFTY',NOW)

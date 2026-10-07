@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
-from .contracts import dumps, identity, number
+from .contracts import IST, dumps, identity, number, stamp
 from .execution import TERMINAL
 from .execution_gate import ExecutionDenied
 
@@ -64,7 +64,8 @@ class PersistentProtection:
             db.execute('INSERT INTO pc_orders(reference,slot,symbol,side,quantity) VALUES(?,?,?,?,?)',
                        (reference,slot,symbol,'BUY',quantity))
             record = dict(status='SUBMITTING', reference=reference, slot=slot, request=request,
-                          initial_fingerprint=identity(request), expiry=short['expiry'], child_key='gtt-child-'+reference)
+                          initial_fingerprint=identity(request), expiry=short['expiry'], child_key='gtt-child-'+reference,
+                          created_at=self.gateway.clock().isoformat())
             db.execute('INSERT INTO meta VALUES(?,?)', (self.key(operation),dumps(record)))
         try:
             self.gateway._gate(observation)
@@ -93,6 +94,7 @@ class PersistentProtection:
                                             smart_order_id=record['smart_id'], timeout=5)
         request = record['request']
         if (full.get('smart_order_id')!=record['smart_id'] or full.get('smart_order_type')!='GTT'
+                or ('reference_id' in full and full['reference_id']!=record['reference'])
                 or any(full.get(k)!=request[k] for k in ('trading_symbol','quantity','product_type','exchange','duration','trigger_direction'))
                 or full.get('segment','FNO')!='FNO'
                 or broker_price(full.get('trigger_price'))!=broker_price(request['trigger_price'])
@@ -111,13 +113,25 @@ class PersistentProtection:
             # original reference in list + full detail can recover the parent.
             try:
                 found=[]
-                for page in range(4):
-                    body=self.transport.get_smart_order_list(segment='FNO',smart_order_type='GTT',page=page,page_size=50,timeout=5)
-                    rows=body['orders']
-                    if not isinstance(rows,list) or len(rows)>50: raise ValueError('SMART_LIST_INCOMPLETE')
-                    found.extend(r for r in rows if r.get('reference_id')==record['reference'])
-                    if len(rows)<50: break
-                else: raise ValueError('SMART_LIST_INCOMPLETE')
+                # Default lists only cover today. An uncertain carry parent
+                # must be looked up in its original creation day, not guessed
+                # from matching contract fields or resent after a restart.
+                created=stamp(record['created_at']).astimezone(IST)
+                if created>self.gateway.clock().astimezone(IST):raise ValueError('FUTURE_PARENT_CREATION')
+                start=created.replace(hour=0,minute=0,second=0,microsecond=0,tzinfo=None)
+                window=dict(start_date_time=start.isoformat(),end_date_time=(start+timedelta(days=1)).isoformat())
+                # Collect all states before accepting uniqueness. Default
+                # ACTIVE misses a parent triggered during uncertain creation.
+                for state in ('ACTIVE','COMPLETED','CANCELLED'):
+                    for page in range(4):
+                        body=self.transport.get_smart_order_list(segment='FNO',smart_order_type='GTT',status=state,
+                            page=page,page_size=50,timeout=5,**window)
+                        rows=body['orders']
+                        if not isinstance(rows,list) or len(rows)>50 or any(not isinstance(r,dict) for r in rows):
+                            raise ValueError('SMART_LIST_INCOMPLETE')
+                        found.extend(r for r in rows if r.get('reference_id')==record['reference'])
+                        if len(rows)<50: break
+                    else: raise ValueError('SMART_LIST_INCOMPLETE')
                 if len(found)!=1: raise ValueError('ORIGINAL_SMART_REFERENCE_NOT_RETURNED')
                 identifier=found[0]['smart_order_id']
                 if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',identifier): raise ValueError('SMART_ID_INVALID')
@@ -127,21 +141,20 @@ class PersistentProtection:
             except Exception: return {'status':'CREATE_RECONCILIATION_REQUIRED'}
         try:
             full=self._full(record); status=full.get('status')
-            if status=='ACTIVE':
+            if status in ('TRIGGERED','EXECUTED','COMPLETED') or full.get('triggered_at') is not None:
+                # A trigger can race an ACTIVE/cancel read. Never mark the
+                # reserved BUY closed or submit a second close while unknown.
+                record['status']='CHILD_RECONCILIATION_REQUIRED'
+            elif status=='ACTIVE':
                 # Even a naive date is sufficient when expiry is *after* the
                 # contract's last day. No timezone is guessed for a near expiry.
                 expires=date.fromisoformat(str(full.get('expire_at',''))[:10])
                 if expires<=date.fromisoformat(record['expiry']): raise ValueError('PERSISTENT_VALIDITY_REQUIRED')
                 record['status']='CANCEL_RECONCILIATION_REQUIRED' if record.get('cancel_attempted') else 'VERIFIED_ACTIVE'
             elif status in ('CANCELLED','EXPIRED','REJECTED'):
-                if full.get('triggered_at') is not None:
-                    record['status']='CHILD_RECONCILIATION_REQUIRED'
-                else:
-                    record['status']='VERIFIED_INACTIVE'
-                    with self.journal.store.transaction() as db:
-                        db.execute("UPDATE pc_orders SET state='CLOSED' WHERE reference=? AND filled=0",(record['reference'],))
-            elif status in ('TRIGGERED','EXECUTED') or full.get('triggered_at'):
-                record['status']='CHILD_RECONCILIATION_REQUIRED'
+                record['status']='VERIFIED_INACTIVE'
+                with self.journal.store.transaction() as db:
+                    db.execute("UPDATE pc_orders SET state='CLOSED' WHERE reference=? AND filled=0",(record['reference'],))
             else: raise ValueError('UNKNOWN_SMART_STATUS')
             record['checked_at']=self.gateway.clock().isoformat()
             self._save(operation,record)

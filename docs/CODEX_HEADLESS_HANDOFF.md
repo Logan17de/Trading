@@ -1,5 +1,36 @@
 # Current Trading handoff
 
+## October 7 matched-IV import and protection recovery
+
+Added a private reviewed dataset/current-IV adapter and production revalidation
+for NIFTY/SENSEX. Read MATCHED_IV_IMPORT.md. It verifies252 actual prior session
+rows against an independently reviewed calendar, exact dataset/calendar hashes,
+close-time/units, current provider/method/index identity and15-second freshness.
+Production cannot use arbitrary feature-only IV bundles. No real dataset or
+provider stream has been installed; the research proxy remains excluded.
+Per-strategy/index code readiness and current live blockers are now explicit in
+the existing viewer. Calendar still has no execution route.
+
+Fixed uncertain GTT creation recovery to search its recorded original creation
+day in all provider states. Trigger evidence overrides ACTIVE/cancel status;
+COMPLETED requires child reconciliation. Exact returned parent references must
+match. Unknown child identity still prevents another close. Old uncertain rows
+without a creation timestamp remain unknown; they are not assigned guessed dates.
+
+Actual Oracle read-only authentication and explicit28-day ACTIVE/COMPLETED/
+CANCELLED GTT scans succeeded with zero returned parents. There is no real GTT
+carry/child proof to validate, and no test order was created. Allfive shared
+services remain active. Pre-change SQLite integrity/off-host hash verified:
+pre-matched-iv-protection-20261007.sqlite3,114733056 bytes,
+SHA256855722d4f02fe98d359b40c01d2a905e7265b4b9d0bff4a24858a7b0acb22b63.
+
+Source investigation found Global Datafeeds' documented GetHistoryGreeks endpoint;
+access,252-session/SENSEX coverage and matching30-day series construction remain
+unverified. No subscription was purchased and no provider credential invented.
+Strict38-day event-risk policy and original study horizon remain unchanged.
+The three credit adapters are software implemented, not declared live-ready.
+Rollout and final verification are recorded below after completion.
+
 ## October 7 readiness evidence and requested 38-day research
 
 Read docs/READINESS_RESEARCH.md. Owner chose 38 calendar days of research instead

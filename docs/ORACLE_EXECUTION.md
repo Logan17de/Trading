@@ -1,5 +1,27 @@
 # Oracle premium execution controller
 
+## October 7 recovery and matched-data update
+
+Unknown GTT creation now searches all three provider list states in the original
+recorded creation day in IST. The provider's default list only covers today and
+cannot reconcile an uncertain carry parent. Missing creation timestamps in old
+uncertain records stay blocked; no date, reference or order is invented. Exact
+parent reference, when returned, must match the reservation. Trigger evidence
+overrides ACTIVE/CANCELLED status; COMPLETED also requires child reconciliation.
+This prevents a status/trigger race from discarding the child reservation or
+authorizing a second close. Unknown linkage still freezes further writes.
+
+The GET-only broker audit now requests an explicit28-day window, not a default
+today window. Successful reads and counts never become broker-write, GTT carry
+or generated-child proof. No test order or activation record is created.
+
+The production report adapter requires privately reviewed, method-matched IV
+history/current observations at preparation and validation. Read
+MATCHED_IV_IMPORT.md. Structural checks and synthetic imports are not evidence
+the missing real dataset exists. Per-strategy/index readiness is exposed by the
+existing dashboard; three installed credit executors remain distinct from
+Calendar's absent settlement/payoff model and from actual live readiness.
+
 ## October 7 report basket adapter and strategy switches
 
 The existing PremiumExecutor now dispatches bull put, bear call and iron condor

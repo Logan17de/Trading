@@ -26,12 +26,13 @@ class ExecutionDenied(PermissionError):
 
 class ExecutionGate:
     def __init__(self, journal, pause_file, *, mode, release, host, clock, policy_hash, entries_retired=False,
-                 strategy_switches_required=False):
+                 strategy_switches_required=False, matched_iv_required=False):
         self.journal, self.pause_file = journal, Path(pause_file)
         self.mode, self.release, self.host = mode, release, host
         self.clock, self.policy_hash = clock, policy_hash
         self.entries_retired=entries_retired
         self.strategy_switches_required = strategy_switches_required
+        self.matched_iv_required = matched_iv_required
 
     @contextlib.contextmanager
     def strategy_scope(self, strategy):

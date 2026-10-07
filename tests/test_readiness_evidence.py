@@ -136,6 +136,8 @@ def test_empty_gtt_readback_does_not_prove_protection_or_child(tmp_path):
     def read(**kw):calls.append(kw);return {'orders':[]}
     result=broker.inspect_gtt(read,NOW)
     assert result['gtt_read_api']=='AVAILABLE' and len(calls)==3
+    assert all(r['start_date_time'] and r['end_date_time'] for r in calls)
+    assert result['list_scope']=='EXPLICIT_28_DAYS_IST'
     assert result['reason']=='NO_RETURNED_GTT_OR_CHILD_EVIDENCE'
     assert not result['broker_writes'] and not result['generated_child_verified'] and not result['persistent_owned_gtt_verified']
     store=Store(tmp_path/'j.sqlite3');store.set_meta(broker.KEY,result)
