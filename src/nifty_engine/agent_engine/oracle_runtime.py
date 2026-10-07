@@ -25,6 +25,18 @@ from .operations import backup_database
 from .visual_report import DailyMail
 
 
+def observer_error(exc):
+    """Bounded code locations/SQLite codes; never messages or source text."""
+    import re
+    result = safe_error(exc)
+    code = getattr(exc, 'sqlite_errorname', None)
+    if isinstance(code, str) and re.fullmatch(r'SQLITE_[A-Z_]{1,40}', code):
+        result['sqlite_code'] = code
+    result['frames'] = [dict(file=Path(f.filename).name[:128], function=f.name[:64], line=f.lineno)
+                        for f in traceback.extract_tb(exc.__traceback__)[-6:]]
+    return result
+
+
 def disconnected_execution(gate, obs, now, error):
     """Distinguish scheduled authentication from a failed broker connection."""
     reason=('ORACLE_BROKER_CONNECTION_RETRY' if error else
@@ -344,7 +356,7 @@ class Runtime:
                                 load_json(self.root/"config/owner_strategies.json",16384),datetime.now(timezone.utc))
                         self.error=None
                     except Exception as exc:
-                        self.error=safe_error(exc)
+                        self.error=observer_error(exc)
                         self.next_auth=now.timestamp()+60
                         if self.collector:self.collector.close()
                         self.collector=None
