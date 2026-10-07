@@ -928,6 +928,11 @@ class DashboardState:
             return self.remote.record_withdrawal(body)
         return self.capital_ledger.record_withdrawal(body,datetime.now(timezone.utc))
 
+    def record_investment(self, body):
+        if self.remote:
+            return self.remote.record_investment(body)
+        return self.capital_ledger.record_investment(body,datetime.now(timezone.utc))
+
     def start_background(self):
         if self.background and self.background_thread is None:
             if self.remote:
@@ -1142,7 +1147,8 @@ def handler(state):
                     return self.respond(400,{'status':'INVALID_STRATEGY_SWITCH','broker_writes':False})
                 except Exception:
                     return self.respond(503,{'status':'STRATEGY_CONTROL_UNAVAILABLE','broker_writes':False})
-            if self.path == "/api/capital/withdrawals":
+            if self.path in ("/api/capital/withdrawals", "/api/capital/investments"):
+                kind = "investment" if self.path.endswith("investments") else "withdrawal"
                 try:
                     length=int(self.headers.get("Content-Length","0"))
                     if not 0 < length <= 1024 or self.headers.get("Transfer-Encoding") or self.headers.get("Content-Type","").split(";")[0] != "application/json":
@@ -1150,11 +1156,11 @@ def handler(state):
                     raw=self.rfile.read(length)
                     self.body_consumed=True
                     body=json.loads(raw)
-                    return self.respond(200,state.record_withdrawal(body))
+                    return self.respond(200,getattr(state, "record_" + kind)(body))
                 except (ValueError,TypeError) as exc:
-                    reasons={"INVALID_AMOUNT","POSITIVE_AMOUNT_REQUIRED","INVALID_RECORD_ID","INVALID_WITHDRAWAL_DATE","FUTURE_WITHDRAWAL_DATE","CAPITAL_NOT_CONFIGURED","WITHDRAWAL_ID_CONFLICT","WITHDRAWAL_LIMIT"}
+                    reasons={"INVALID_AMOUNT","POSITIVE_AMOUNT_REQUIRED","INVALID_RECORD_ID","INVALID_WITHDRAWAL_DATE","FUTURE_WITHDRAWAL_DATE","CAPITAL_NOT_CONFIGURED","WITHDRAWAL_ID_CONFLICT","WITHDRAWAL_LIMIT","INVALID_INVESTMENT_DATE","FUTURE_INVESTMENT_DATE","INVESTMENT_ID_CONFLICT","INVESTMENT_LIMIT","CAPITAL_RECORD_ID_CONFLICT"}
                     reason=str(exc) if str(exc) in reasons else "INVALID_REQUEST"
-                    return self.respond(409 if reason=="WITHDRAWAL_ID_CONFLICT" else 400,{"status":"INVALID_WITHDRAWAL","reason":reason,"money_moved":False})
+                    return self.respond(409 if reason.endswith("_ID_CONFLICT") else 400,{"status":"INVALID_"+kind.upper(),"reason":reason,"money_moved":False,"broker_writes":False})
                 except Exception:
                     return self.respond(503,{"status":"ACCOUNTING_UNAVAILABLE","money_moved":False})
             if self.path not in ("/api/refresh","/api/algo/start","/api/algo/stop") or self.headers.get("Content-Length", "0") != "0":

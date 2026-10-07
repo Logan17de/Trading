@@ -26,11 +26,12 @@ def settings(value):
 
 def request(config, command, *, run=subprocess.run):
     settings(config)
-    accounting = isinstance(command,dict) and set(command)=={"action","withdrawal"} and command["action"]=="record_withdrawal"
+    accounting = next((kind for kind in ("withdrawal", "investment") if isinstance(command,dict)
+        and set(command)=={"action",kind} and command["action"]=="record_"+kind), None)
     strategy_switch = isinstance(command,dict) and set(command)=={'action','switch'} and command['action']=='strategy_switch'
     if accounting:
-        from .capital import withdrawal
-        withdrawal(command["withdrawal"],datetime.now(timezone.utc))
+        from .capital import cashflow
+        cashflow(command[accounting],datetime.now(timezone.utc),accounting)
     elif strategy_switch:
         from .strategy_controls import validate_command
         validate_command(command['switch'])
@@ -242,10 +243,16 @@ class RemoteViewer:
         return result
 
     def record_withdrawal(self,body):
-        result=request(self.config,{"action":"record_withdrawal","withdrawal":body})
-        if result.get("status")=="INVALID_WITHDRAWAL":
-            raise ValueError(result.get("reason","INVALID_WITHDRAWAL"))
-        if result.get("status") not in ("RECORDED","ALREADY_RECORDED") or result.get("money_moved") is not False or result.get("broker_writes") is not False:
+        return self._record_capital(body,"withdrawal")
+
+    def record_investment(self,body):
+        return self._record_capital(body,"investment")
+
+    def _record_capital(self,body,kind):
+        result=request(self.config,{"action":"record_"+kind,kind:body})
+        if result.get("status")=="INVALID_"+kind.upper():
+            raise ValueError(result.get("reason","INVALID_"+kind.upper()))
+        if result.get("record_id") != body["id"] or not isinstance(result.get("capital_summary"),dict) or result.get("status") not in ("RECORDED","ALREADY_RECORDED") or result.get("money_moved") is not False or result.get("broker_writes") is not False:
             raise ConnectionError("Accounting response unavailable")
         with self.lock:
             if self.cache is not None:self.cache["capital_summary"]=result["capital_summary"]

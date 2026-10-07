@@ -81,7 +81,9 @@
   `capital-ledger-v1`: investment minus recorded withdrawals minus monthly API
   fees. Fee months accrue once on the first JST day, with downtime catch-up.
   Never infer withdrawals from broker balances or count API fees again in P&L.
-  The protected Record withdrawal action is bookkeeping, never a money transfer.
+  Protected Record investment and Record withdrawal actions are bookkeeping,
+  never money transfers. Dated additions append to the original investment;
+  retries cannot duplicate records or reset the initial capital, withdrawals/fees.
   Keep owner capital amounts and ledger exports out of Git.
 - Owner retired news on October 5. No active news collection, news entries or
   news entry gate for premium v3. Preserve historical evidence for provenance.

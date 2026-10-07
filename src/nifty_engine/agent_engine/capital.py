@@ -43,18 +43,26 @@ def month_number(value):
     return day.year * 12 + day.month - 1
 
 
-def withdrawal(value, now):
+def cashflow(value, now, kind):
     keys(value, {"id", "amount_inr", "effective_date"})
     if not isinstance(value["id"], str) or not re.fullmatch(r"[A-Za-z0-9-]{1,64}", value["id"]):
         raise ValueError("INVALID_RECORD_ID")
     try:
         day = date.fromisoformat(value["effective_date"])
     except (TypeError, ValueError):
-        raise ValueError("INVALID_WITHDRAWAL_DATE") from None
+        raise ValueError(f"INVALID_{kind.upper()}_DATE") from None
     if day.isoformat() != value["effective_date"] or day > now.astimezone(JST).date():
-        raise ValueError("FUTURE_WITHDRAWAL_DATE")
+        raise ValueError(f"FUTURE_{kind.upper()}_DATE")
     return {"id": value["id"], "amount_paise": paise(value["amount_inr"], positive=True),
             "effective_date": day.isoformat()}
+
+
+def withdrawal(value, now):
+    return cashflow(value, now, "withdrawal")
+
+
+def investment(value, now):
+    return cashflow(value, now, "investment")
 
 
 def empty(status="NOT_CONFIGURED"):
@@ -81,30 +89,32 @@ class CapitalLedger:
                 if any(value.get(k) != v for k, v in config.items()):
                     raise ValueError("CAPITAL_ALREADY_CONFIGURED")
             else:
-                value = dict(config, seeded_at=now.isoformat(), withdrawals=[], api_fees={})
+                value = dict(config, seeded_at=now.isoformat(), withdrawals=[], investments=[], api_fees={})
                 db.execute("INSERT INTO meta(key,body) VALUES(?,?)", (KEY, dumps(value)))
         return self.summary(now)
 
     @staticmethod
     def _validate(value):
         keys(value, {"format", "invested_paise", "monthly_fee_paise", "first_fee_month",
-                     "seeded_at", "withdrawals", "api_fees"})
+                     "seeded_at", "withdrawals", "api_fees"}, {"investments"})
         if value["format"] != KEY:
             raise ValueError("INVALID_CAPITAL_LEDGER")
         for k in ("invested_paise", "monthly_fee_paise"):
             if type(value[k]) is not int or not 0 < value[k] <= MAX_PAISE:
                 raise ValueError("INVALID_CAPITAL_LEDGER")
         month_number(value["first_fee_month"])
-        if not isinstance(value["withdrawals"], list) or len(value["withdrawals"]) > 10000:
-            raise ValueError("INVALID_CAPITAL_LEDGER")
         ids = set()
-        for row in value["withdrawals"]:
-            keys(row, {"id", "amount_paise", "effective_date", "recorded_at"})
-            if (not isinstance(row["id"], str) or row["id"] in ids or
-                type(row["amount_paise"]) is not int or not 0 < row["amount_paise"] <= MAX_PAISE):
+        for name in ("withdrawals", "investments"):
+            rows = value.get(name, [])
+            if not isinstance(rows, list) or len(rows) > 10000:
                 raise ValueError("INVALID_CAPITAL_LEDGER")
-            date.fromisoformat(row["effective_date"])
-            ids.add(row["id"])
+            for row in rows:
+                keys(row, {"id", "amount_paise", "effective_date", "recorded_at"})
+                if (not isinstance(row["id"], str) or row["id"] in ids or
+                    type(row["amount_paise"]) is not int or not 0 < row["amount_paise"] <= MAX_PAISE):
+                    raise ValueError("INVALID_CAPITAL_LEDGER")
+                date.fromisoformat(row["effective_date"])
+                ids.add(row["id"])
         if not isinstance(value["api_fees"], dict) or len(value["api_fees"]) > 3600:
             raise ValueError("INVALID_CAPITAL_LEDGER")
         for month, amount in value["api_fees"].items():
@@ -140,7 +150,8 @@ class CapitalLedger:
                 return empty()
             today = now.astimezone(JST).date().isoformat()
             current = today[:7]
-            invested = value["invested_paise"]
+            invested = value["invested_paise"] + sum(
+                r["amount_paise"] for r in value.get("investments", []) if r["effective_date"] <= today)
             withdrawn = sum(r["amount_paise"] for r in value["withdrawals"] if r["effective_date"] <= today)
             fees = sum(v for m, v in value["api_fees"].items() if m <= current)
             return {"status": "AVAILABLE", "source": "OWNER_DECLARED", "invested_inr": invested / 100,
@@ -154,22 +165,33 @@ class CapitalLedger:
             return empty("INVALID_LEDGER")
 
     def record_withdrawal(self, body, now):
-        record = withdrawal(body, now)
+        return self._record(body, now, "withdrawal")
+
+    def record_investment(self, body, now):
+        return self._record(body, now, "investment")
+
+    def _record(self, body, now, kind):
+        record = cashflow(body, now, kind)
+        name = kind + "s"
         with self.store.transaction() as db:
             old = db.execute("SELECT body FROM meta WHERE key=?", (KEY,)).fetchone()
             if old is None:
                 raise ValueError("CAPITAL_NOT_CONFIGURED")
             value = json.loads(old[0])
             self._validate(value)
-            existing = next((r for r in value["withdrawals"] if r["id"] == record["id"]), None)
+            rows = value.setdefault(name, [])
+            other = "withdrawals" if kind == "investment" else "investments"
+            if any(r["id"] == record["id"] for r in value.get(other, [])):
+                raise ValueError("CAPITAL_RECORD_ID_CONFLICT")
+            existing = next((r for r in rows if r["id"] == record["id"]), None)
             if existing:
                 if any(existing[k] != v for k, v in record.items()):
-                    raise ValueError("WITHDRAWAL_ID_CONFLICT")
+                    raise ValueError(f"{kind.upper()}_ID_CONFLICT")
                 status = "ALREADY_RECORDED"
             else:
-                if len(value["withdrawals"]) >= 10000:
-                    raise ValueError("WITHDRAWAL_LIMIT")
-                value["withdrawals"].append(dict(record, recorded_at=now.isoformat()))
+                if len(rows) >= 10000:
+                    raise ValueError(f"{kind.upper()}_LIMIT")
+                rows.append(dict(record, recorded_at=now.isoformat()))
                 db.execute("UPDATE meta SET body=? WHERE key=?", (dumps(value), KEY))
                 status = "RECORDED"
         return {"status": status, "record_id": record["id"], "capital_summary": self.summary(now),

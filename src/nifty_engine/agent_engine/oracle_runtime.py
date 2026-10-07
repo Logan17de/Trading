@@ -173,11 +173,12 @@ class Runtime:
             current=self.read().get('control',{}).get('algo')
             if current: result.update(current)
             return result
-        if isinstance(value,dict) and set(value)=={"action","withdrawal"} and value["action"]=="record_withdrawal":
-            try:
-                return self.state.record_withdrawal(value["withdrawal"])
-            except ValueError as exc:
-                return {"status":"INVALID_WITHDRAWAL","reason":str(exc),"money_moved":False,"broker_writes":False}
+        for kind in ("withdrawal", "investment"):
+            if isinstance(value,dict) and set(value)=={"action",kind} and value["action"]=="record_"+kind:
+                try:
+                    return getattr(self.state,"record_"+kind)(value[kind])
+                except ValueError as exc:
+                    return {"status":"INVALID_"+kind.upper(),"reason":str(exc),"money_moved":False,"broker_writes":False}
         raise ValueError("fixed read, owner intent or accounting command only")
 
     def connect(self,now):

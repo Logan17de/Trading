@@ -29,7 +29,9 @@ online. Oracle collection and scheduled reporting run independently.
   Unassigned before charges. Net strategy results need the reviewed private
   ledger. Completed trades without losses show 100% green; no results stays unknown.
 - Capital separately shows owner-recorded investment minus withdrawals minus
-  monthly API fees. Recording a withdrawal is bookkeeping, not a money transfer.
+  monthly API fees. Use **Record investment** for money already added and
+  **Record withdrawal** for money already withdrawn, with amount and JST date.
+  Both are bookkeeping; neither transfers money or changes Groww cash/P&L.
 - Oracle observation targets 12:40–19:45 JST weekdays. The visual daily email
   targets 19:30 JST every calendar day; configured timing and inbox delivery are
   reported separately.

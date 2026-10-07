@@ -1,5 +1,22 @@
 # Current Trading handoff
 
+## October 7 additional investment control
+
+Added Record investment beside Record withdrawal in the capital card. It accepts
+an amount and past/current JST date through the existing protected loopback POST,
+fixed SSH command and Oracle socket. Investment additions append privately to
+`capital-ledger-v1`; its original seed, withdrawals and fee history are preserved.
+Old ledgers without an additions list remain readable. The existing summary now
+includes due additions in invested/remaining capital, shared by dashboard, email
+preview and the daily email. Groww cash, trading P&L and broker state stay separate.
+
+Integer-paise validation, duplicate/restart/concurrent retry protection and
+cross-kind ID conflicts are tested. Unconfirmed submissions keep their exact
+request ID, amount/date; receipts must match and explicitly report no money moved
+or broker writes. Synthetic tests never book entries in the owner's real ledger.
+No amount was supplied for this request, so no actual investment was added.
+Rollout and verification receipts follow after deployment.
+
 ## October 7 normal theta and two owner groups
 
 Latest owner requested a normal selling strategy derived from research, rather

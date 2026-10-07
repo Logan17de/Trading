@@ -244,8 +244,8 @@ function renderControl() {
   if(review?.action==='REVIEW_OWNED_EXIT'&&review?.reason!=='EXPIRY_1900_HANDOFF')$("execution-status").textContent+=' · Existing spread: review exit (basket stop/trail)';
   if(review?.reason==='EXPIRY_1900_HANDOFF')$("execution-status").textContent+=` · 19:00 expiry close review → ${review.successor.index} entry review after flat/session checks`;
 }
-let withdrawalPending=false;
-const pendingWithdrawalKey='options-trader-pending-withdrawal-v1';
+const capitalPending={withdrawal:false,investment:false};
+function capitalBusy(){return Object.values(capitalPending).some(Boolean);}
 function jstDay() {return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function renderCapital() {
   const ledger=data.capital_summary;
@@ -257,7 +257,7 @@ function renderCapital() {
   const through=month?new Intl.DateTimeFormat('en',{month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(month+'-01T00:00:00Z')):'—';
   const state=ledger?.status;
   $('capital-ledger-status').textContent=data.demo?'Sample capital · design preview':state==='AVAILABLE'?`Owner ledger · API ${inr(ledger.monthly_api_fee_inr)}/month · through ${through}`:state==='CACHED'?`Saved owner ledger · ${dateTime(ledger.updated_at)}`:state==='FEE_UPDATE_PENDING'?'Monthly fee update pending · waiting for Oracle':state==='INVALID_LEDGER'?'Capital ledger unavailable':'Capital ledger not configured';
-  $('record-withdrawal').disabled=demo||withdrawalPending||state!=='AVAILABLE'||Boolean(data.vm&&data.vm.status!=='HEALTHY');
+  for(const kind of ['withdrawal','investment']) $('record-'+kind).disabled=demo||capitalBusy()||state!=='AVAILABLE'||Boolean(data.vm&&data.vm.status!=='HEALTHY');
 }
 function strategyReadinessHTML(s) {
   if(!s.readiness)return '';
@@ -370,48 +370,52 @@ $("strategy-rows").addEventListener('click',async event=>{
 });
 $("algo-start").addEventListener("click",()=>setAlgo(true));
 $("algo-stop").addEventListener("click",()=>setAlgo(false));
-function pendingWithdrawal() {try{return JSON.parse(localStorage.getItem(pendingWithdrawalKey));}catch{return null;}}
-$('record-withdrawal').addEventListener('click',()=>{
-  const pending=pendingWithdrawal();
-  $('withdrawal-date').max=jstDay();
-  $('withdrawal-date').value=pending?.effective_date||jstDay();
-  $('withdrawal-amount').value=pending?.amount_inr||'';
-  $('withdrawal-amount').readOnly=Boolean(pending);$('withdrawal-date').readOnly=Boolean(pending);
-  $('withdrawal-save').textContent=pending?'Retry record':'Save record';
-  $('withdrawal-result').textContent=pending?'Retry the pending record with the same amount and date.':'';
-  $('withdrawal-dialog').showModal();
-  $('withdrawal-amount').focus();
-});
-$('withdrawal-close').addEventListener('click',()=>{if(!withdrawalPending)$('withdrawal-dialog').close();});
-$('withdrawal-dialog').addEventListener('cancel',event=>{if(withdrawalPending)event.preventDefault();});
-$('withdrawal-form').addEventListener('submit',async event=>{
-  event.preventDefault();if(withdrawalPending||demo)return;
-  const amount=$('withdrawal-amount').value, day=$('withdrawal-date').value;
-  const pending=pendingWithdrawal();
-  const body=pending||{id:crypto.randomUUID(),amount_inr:amount,effective_date:day};
-  try {localStorage.setItem(pendingWithdrawalKey,JSON.stringify(body));}
-  catch {$('withdrawal-result').textContent='Browser storage unavailable. Reopen the app before recording.';return;}
-  withdrawalPending=true;$('withdrawal-save').disabled=true;$('withdrawal-close').disabled=true;
-  $('withdrawal-amount').readOnly=true;$('withdrawal-date').readOnly=true;
-  $('withdrawal-result').textContent='Saving…';renderCapital();
-  try {
-    const response=await fetch('/api/capital/withdrawals',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':document.querySelector('meta[name="local-token"]').content},body:JSON.stringify(body),cache:'no-store'});
-    const result=await response.json();
-    if(!response.ok||!['RECORDED','ALREADY_RECORDED'].includes(result.status)) {
-      const messages={INVALID_AMOUNT:'Enter an INR amount with at most two decimals.',POSITIVE_AMOUNT_REQUIRED:'Enter an amount above zero.',FUTURE_WITHDRAWAL_DATE:'Choose today or an earlier JST date.',INVALID_WITHDRAWAL_DATE:'Choose a valid date.',WITHDRAWAL_ID_CONFLICT:'This record ID already has different details. Keep the pending record for review.',CAPITAL_NOT_CONFIGURED:'The capital ledger is not configured.'};
-      $('withdrawal-result').textContent=messages[result.reason]||'Oracle did not confirm the record. Retry with the same amount and date.';
-      // A definitive validation rejection has no ledger effect. An uncertain
-      // connection/5xx/conflict keeps its durable ID and locked original values.
-      if(response.status===400){localStorage.removeItem(pendingWithdrawalKey);$('withdrawal-amount').readOnly=false;$('withdrawal-date').readOnly=false;}
-      return;
-    }
-    localStorage.removeItem(pendingWithdrawalKey);
-    $('withdrawal-amount').readOnly=false;$('withdrawal-date').readOnly=false;
-    $('withdrawal-result').textContent=result.status==='ALREADY_RECORDED'?'Already recorded · no duplicate':'Withdrawal recorded';
-    $('withdrawal-amount').value='';await load();
-  } catch {$('withdrawal-result').textContent='Connection interrupted. Retry with the same amount and date.';}
-  finally {withdrawalPending=false;$('withdrawal-save').disabled=false;$('withdrawal-close').disabled=false;$('withdrawal-save').textContent=pendingWithdrawal()?'Retry record':'Save record';renderCapital();}
-});
+for(const kind of ['withdrawal','investment']) {
+  const pendingKey='options-trader-pending-'+kind+'-v1';
+  const field=id=>$(kind+'-'+id);
+  function pendingRecord() {try{return JSON.parse(localStorage.getItem(pendingKey));}catch{return null;}}
+  $('record-'+kind).addEventListener('click',()=>{
+    const pending=pendingRecord();
+    field('date').max=jstDay();
+    field('date').value=pending?.effective_date||jstDay();
+    field('amount').value=pending?.amount_inr||'';
+    field('amount').readOnly=Boolean(pending);field('date').readOnly=Boolean(pending);
+    field('save').textContent=pending?'Retry record':'Save record';
+    field('result').textContent=pending?'Retry the pending record with the same amount and date.':'';
+    field('dialog').showModal();
+    field('amount').focus();
+  });
+  field('close').addEventListener('click',()=>{if(!capitalPending[kind])field('dialog').close();});
+  field('dialog').addEventListener('cancel',event=>{if(capitalPending[kind])event.preventDefault();});
+  field('form').addEventListener('submit',async event=>{
+    event.preventDefault();if(capitalBusy()||demo)return;
+    const amount=field('amount').value, day=field('date').value;
+    const pending=pendingRecord();
+    const body=pending||{id:crypto.randomUUID(),amount_inr:amount,effective_date:day};
+    try {localStorage.setItem(pendingKey,JSON.stringify(body));}
+    catch {field('result').textContent='Browser storage unavailable. Reopen the app before recording.';return;}
+    capitalPending[kind]=true;field('save').disabled=true;field('close').disabled=true;
+    field('amount').readOnly=true;field('date').readOnly=true;
+    field('result').textContent='Saving…';renderCapital();
+    try {
+      const response=await fetch('/api/capital/'+kind+'s',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':document.querySelector('meta[name="local-token"]').content},body:JSON.stringify(body),cache:'no-store'});
+      const result=await response.json();
+      if(!response.ok||!['RECORDED','ALREADY_RECORDED'].includes(result.status)||result.record_id!==body.id||result.money_moved!==false||result.broker_writes!==false) {
+        const messages={INVALID_AMOUNT:'Enter an INR amount with at most two decimals.',POSITIVE_AMOUNT_REQUIRED:'Enter an amount above zero.',['FUTURE_'+kind.toUpperCase()+'_DATE']:'Choose today or an earlier JST date.',['INVALID_'+kind.toUpperCase()+'_DATE']:'Choose a valid date.',[kind.toUpperCase()+'_ID_CONFLICT']:'This record ID already has different details. Keep the pending record for review.',CAPITAL_RECORD_ID_CONFLICT:'This ID belongs to another capital record. Keep it for review.',CAPITAL_NOT_CONFIGURED:'The capital ledger is not configured.'};
+        field('result').textContent=messages[result.reason]||'Oracle did not confirm the record. Retry with the same amount and date.';
+        // A definitive validation rejection has no ledger effect. An uncertain
+        // connection/5xx/conflict keeps its durable ID and locked original values.
+        if(response.status===400&&result.money_moved===false&&result.broker_writes===false){localStorage.removeItem(pendingKey);field('amount').readOnly=false;field('date').readOnly=false;}
+        return;
+      }
+      localStorage.removeItem(pendingKey);
+      field('amount').readOnly=false;field('date').readOnly=false;
+      field('result').textContent=result.status==='ALREADY_RECORDED'?'Already recorded · no duplicate':kind==='investment'?'Investment recorded':'Withdrawal recorded';
+      field('amount').value='';await load();
+    } catch {field('result').textContent='Connection interrupted. Retry with the same amount and date.';}
+    finally {capitalPending[kind]=false;field('save').disabled=false;field('close').disabled=false;field('save').textContent=pendingRecord()?'Retry record':'Save record';renderCapital();}
+  });
+}
 $("refresh").addEventListener("click",refresh);
 $("settings").addEventListener("click",()=>$("settings-dialog").showModal());
 $("settings-dialog").addEventListener("click",event=>{if(event.target===$("settings-dialog")) {const r=$("settings-dialog").getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) $("settings-dialog").close();}});
