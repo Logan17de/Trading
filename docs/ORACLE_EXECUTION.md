@@ -1,5 +1,20 @@
 # Oracle premium execution controller
 
+## Desktop Start contract
+
+Select the strategy switches, then Algo Start saves durable owner On on Oracle.
+Only selected executable strategies may create entries. Calendar remains a
+monitoring selection. The app confirms the exact requested On/Off acknowledgment;
+an unavailable or mismatched response is displayed as unconfirmed. It waits for
+pending strategy settings before allowing Start and lists the selected routes.
+
+Start does not install missing inputs, remove pause, change paper to LIVE or
+create provider-validation evidence. When all activation and entry checks pass,
+the existing Oracle executor may submit real orders for a selected strategy;
+it waits for a qualifying setup instead of forcing an immediate order. Until
+those checks pass, On persists but execution is blocked. Algo Off denies all
+subsequent engine writes; already armed broker orders can still trigger or fill.
+
 ## October 7 recovery and matched-data update
 
 Unknown GTT creation now searches all three provider list states in the original

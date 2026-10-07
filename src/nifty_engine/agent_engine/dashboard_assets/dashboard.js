@@ -171,7 +171,12 @@ function drawOption(side, option) {
 function renderControl() {
   const c=data.control, policy=c?.strategy_rules, algo=c?.algo;
   const on=algo?.desired_enabled===true;
-  $("monitor-status").textContent=data.demo?"Sample preview":on?"On · trading blocked":"Algo Off";
+  const writesPermitted=algo?.execution_enabled===true&&data.execution_controller?.execution_enabled===true;
+  const selected=(data.strategies||[]).filter(s=>s.desired_enabled&&s.execution_route_implemented);
+  const selectedNames=selected.map(s=>s.name).join(', ');
+  const monitorNames=(data.strategies||[]).filter(s=>s.desired_enabled&&s.mode==='MONITOR_ONLY').map(s=>s.name).join(', ');
+  const selection=policy?.format==='trading-report-research-v1'?`Selected for entries: ${selectedNames||'none'}.${monitorNames?` Monitoring only: ${monitorNames}.`:''} `:'';
+  $("monitor-status").textContent=data.demo?"Sample preview":on?(writesPermitted?'On · execution permitted':'On · trading blocked'):"Algo Off";
   $("engine-heading").textContent=data.runtime?.host==='ORACLE'?"Oracle engine":"Trading engine";
   $("vm-status").textContent=data.vm?`VM: ${data.vm.status} · independent PC monitor${data.vm.alert_status?` · alert ${data.vm.alert_status}`:''}`:"";
   $("email-status").textContent=data.daily_email?`Daily visual email · 19:30 JST · ${data.daily_email.status} · inbox ${data.daily_email.inbox_verified?'verified':'not verified'}`:"Daily visual email · 19:30 JST";
@@ -201,12 +206,13 @@ function renderControl() {
     $("preparation-status").textContent=studies?`Research data: ${Object.entries(studies.data_connections||{}).map(([index,r])=>`${index} ${r.status}${r.reasons?.length?': '+r.reasons.join(', '):r.reason?': '+r.reason:''}`).join(' · ')||'waiting for collection window'} · ${data.execution_controller?.report_preparation?.status||'waiting for executor connection'}`:"Waiting for research reader";
     $("control-note").textContent="Switches select new entries; disabling a strategy keeps existing owned protection and exits while Algo is On. Three credit baskets have guarded execution routes. Calendar is monitoring only. Start requires live validation and complete data. ₹1,000 is an exit trigger, not a guaranteed loss cap."+(strategySwitchMessage?' '+strategySwitchMessage:'');
   }
-  $("algo-start").disabled=data.demo||algoStartPending||on;
+  $("algo-start").disabled=data.demo||algoStartPending||strategySwitchPending||on||data.vm?.status!=='HEALTHY';
   $("algo-start").textContent=on?"Algo On":"Algo Start";
   $("algo-stop").disabled=data.demo||algoStartPending||!on;
   const last=algoStartResult||c?.latest_start_request;
-  const labels={RETIRED_STRATEGY_NEW_ENTRY_DISABLED:"legacy entries retired; new strategies are monitor only",ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED:"Oracle executor is not connected",REPOSITORY_PAUSED:"trading is paused",LIVE_ENVIRONMENT_NOT_ACTIVATED:"live mode is not activated",REVIEWED_LIVE_ACTIVATION_REQUIRED:"broker execution and persistent protection need live verification",ORACLE_EXECUTOR_CONNECTION_REQUIRED:"waiting for Oracle broker connection",FRESH_COMPLETE_BROKER_STATE_REQUIRED:"fresh complete broker state is required",FRESH_MARKET_DATA_REQUIRED:"current data is required",OUTSIDE_1400_1900_JST:"outside 14:00–19:00 JST",OFFLINE_VIEW:"offline view",MAXIMUM_LOTS_REQUIRED:"lot cap missing",PREMIUM_POLICY_REQUIRED:"strategy settings are missing",OWNER_ALGO_OFF:"owner setting is Off",VM_UNHEALTHY_OR_STALE:"VM heartbeat/data unavailable"};
-  $("algo-start-result").textContent=algoStartPending?"Saving owner setting…":on?(algo.execution_enabled?"Algo On. Oracle monitors the approved rules; current margin and quotes determine entries.":`On is saved until you click Algo Off. Trading blocked: ${[...new Set(algo.blockers||[])].map(k=>labels[k]||k).join('; ')}.`):last?.status==='TRANSPORT_FAILED'?"Could not save the setting on Oracle. No change confirmed.":"Algo Off. Start saves your On preference across restarts; it does not bypass blocked trading readiness.";
+  const labels={RETIRED_STRATEGY_NEW_ENTRY_DISABLED:"legacy entries retired",ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED:"Oracle executor is not connected",REPOSITORY_PAUSED:"trading is paused",LIVE_ENVIRONMENT_NOT_ACTIVATED:"live mode is not activated",REVIEWED_LIVE_ACTIVATION_REQUIRED:"broker execution and persistent protection need live verification",ORACLE_EXECUTOR_CONNECTION_REQUIRED:"waiting for Oracle broker connection",WAITING_FOR_COLLECTION_WINDOW:"waiting for the collection window",ALL_EXECUTABLE_STRATEGIES_OFF:"no execution strategy selected",FRESH_COMPLETE_BROKER_STATE_REQUIRED:"fresh complete broker state is required",FRESH_MARKET_DATA_REQUIRED:"current data is required",OUTSIDE_1400_1900_JST:"outside 14:00–19:00 JST",OFFLINE_VIEW:"offline view",MAXIMUM_LOTS_REQUIRED:"lot cap missing",PREMIUM_POLICY_REQUIRED:"strategy settings are missing",OWNER_ALGO_OFF:"owner setting is Off",VM_UNHEALTHY_OR_STALE:"VM heartbeat/data unavailable"};
+  const blockers=[...new Set(algo?.blockers||[])].filter(k=>k!=='OWNER_ALGO_OFF').map(k=>labels[k]||k).join('; ');
+  $("algo-start-result").textContent=algoStartPending?"Saving owner setting…":last?.status==='TRANSPORT_FAILED'?"Oracle did not confirm the setting. Read the On/Off state before retrying.":selection+(on?(writesPermitted?"Algo On. Oracle may place real orders for these strategies when their entry checks pass; one basket at a time.":`On is saved until you click Algo Off. Trading blocked: ${blockers||'readiness not confirmed'}.`):`Algo Off. Start saves On on Oracle; orders require live readiness.${blockers?` Currently blocked: ${blockers}.`:''}`);
   const execution=data.execution_controller;
   const impulse=data.premium_impulse;
   $("impulse-status").textContent=impulse?`Stream: ${impulse.transport_status||impulse.status} · ${Object.entries(impulse.indices||{}).map(([index,r])=>`${index}: ${r.score??'—'}/100 (${r.status}, ${r.known_points}/100 evidence)`).join(' · ')||'waiting for current events and history'} · ${impulse.processing_ms??'—'} ms local processing · read-only`:'Streaming breakout detector: waiting for Oracle evidence';
@@ -334,6 +340,7 @@ async function setAlgo(enabled){
   try {
     const response=await fetch(enabled?'/api/algo/start':'/api/algo/stop',{method:'POST',headers:{'X-Local-Token':document.querySelector('meta[name="local-token"]').content},cache:'no-store'});
     algoStartResult=await response.json();
+    if(!response.ok)algoStartResult={status:'TRANSPORT_FAILED'};
     await refresh();
   } catch {algoStartResult={status:'TRANSPORT_FAILED',blockers:['LOCAL_ENGINE_UNAVAILABLE']};}
   finally {algoStartPending=false;renderControl();}

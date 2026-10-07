@@ -1,5 +1,37 @@
 # Current Trading handoff
 
+## October 7 Start button and selected strategies
+
+Verified the desktop HTTP Start/Stop and strategy-switch requests through the
+fixed SSH command and Oracle command handler into the existing executor using
+an isolated simulated broker. Only the selected executable strategy enters;
+owner On and strategy switches persist across journal reopening. Repeated Start
+only saves intent, and Off denies subsequent writes. These tests use synthetic
+provider receipts; they are not actual broker activation or protection evidence.
+
+The PC now rejects mismatched/missing Oracle intent acknowledgments. Start/Stop
+transport failures return a sanitized503 response and appear as unconfirmed in
+the app. Start waits while a strategy switch is being saved or the VM is unhealthy.
+The dashboard lists selected entry strategies separately from selected monitoring
+strategies and displays execution permission independently from owner On. Off also
+shows current activation blockers before Start is clicked. Calendar never enters.
+
+Local background viewer restarted and updated assets verified served. Actual
+Oracle heartbeat advances, error is null, owner Algo and all four switches stay
+Off. Oracle remains on immutable dc38ead5cc51d415e88bbe272427a40aeb6b2337;
+this update changes desktop control confirmation/display, not deployed broker code.
+The pause, paper mode, private activation requirements and original38-day campaign
+remain unchanged. Real matched IV history/current provider inputs and actual
+broker-write/GTT/child proof are still absent; strict scheduled event risk still
+blocks entries. Clicking Start currently saves On and reports blocked readiness,
+not live activation. No real orders or intent changes were sent during verification.
+
+Verification: full suite448 passed/four platform skips, config and JavaScript
+checks passed, and the offline synthetic demo completed with no broker connection
+or email send. New desktop assets were verified served; owner Edge visual
+rendering was not reverified in this update.
+
+
 ## October 7 matched-IV import and protection recovery
 
 Added a private reviewed dataset/current-IV adapter and production revalidation

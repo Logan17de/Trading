@@ -1159,10 +1159,11 @@ def handler(state):
                     return self.respond(503,{"status":"ACCOUNTING_UNAVAILABLE","money_moved":False})
             if self.path not in ("/api/refresh","/api/algo/start","/api/algo/stop") or self.headers.get("Content-Length", "0") != "0":
                 return self.respond(400, {"status": "UNSUPPORTED_REQUEST"})
-            if self.path == "/api/algo/start":
-                return self.respond(200, state.algo_set(True))
-            if self.path == "/api/algo/stop":
-                return self.respond(200, state.algo_set(False))
+            if self.path in ("/api/algo/start", "/api/algo/stop"):
+                try:
+                    return self.respond(200, state.algo_set(self.path == "/api/algo/start"))
+                except Exception:
+                    return self.respond(503, {"status":"TRANSPORT_FAILED","broker_writes":False})
             self.respond(202, {"status": state.refresh(), "order_capability": False})
     return Handler
 

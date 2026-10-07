@@ -227,3 +227,37 @@ def test_heartbeat_clock_is_checked_after_ssh_response_not_before(tmp_path,monke
         current[0]=NOW+timedelta(seconds=5)
         return {'runtime':{'boot_id':'boot','heartbeat_sequence':2,'heartbeat_at':(NOW+timedelta(seconds=3)).isoformat()}}
     assert remote.poll(fetch=fetch,alert=lambda *args:pytest.fail('false alert'))=='HEALTHY'
+
+
+@pytest.mark.parametrize('reply',[None, {}, {'status':'ON_READY','desired_enabled':True},
+    {'status':'ON_READY','desired_enabled':True,'owner_intent':None},
+    {'status':'OFF','desired_enabled':True,'owner_intent':{'enabled':True}},
+    {'status':'ON_READY','desired_enabled':True,'owner_intent':{'enabled':False}},
+    {'status':'OFF','desired_enabled':False,'owner_intent':{'enabled':False}}])
+def test_remote_start_requires_matching_oracle_intent_acknowledgment(monkeypatch,reply):
+    import nifty_engine.agent_engine.oracle_link as link
+    remote=object.__new__(RemoteViewer);remote.config={}
+    remote.poll=lambda:pytest.fail('unconfirmed response must not become a saved setting')
+    monkeypatch.setattr(link,'request',lambda config,command:reply)
+    with pytest.raises(ConnectionError,match='did not confirm'):remote.set_intent(True)
+
+
+def test_local_start_connection_failure_is_explicit_503():
+    import threading
+    from http.server import ThreadingHTTPServer
+    from urllib.request import Request,urlopen
+    from urllib.error import HTTPError
+    from nifty_engine.agent_engine.dashboard import handler
+    def fail(enabled):raise ConnectionError('private transport detail')
+    state=SimpleNamespace(token='fixture-token',algo_set=fail)
+    server=ThreadingHTTPServer(('127.0.0.1',0),handler(state))
+    thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+    try:
+        for action in ('start','stop'):
+            req=Request(f'http://127.0.0.1:{server.server_port}/api/algo/{action}',
+                data=b'',headers={'X-Local-Token':state.token})
+            with pytest.raises(HTTPError) as exc:urlopen(req)
+            assert exc.value.code==503
+            body=json.load(exc.value)
+            assert body=={'status':'TRANSPORT_FAILED','broker_writes':False}
+    finally:server.shutdown();server.server_close();thread.join(timeout=2)

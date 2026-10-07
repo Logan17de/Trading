@@ -226,6 +226,11 @@ class RemoteViewer:
     def set_intent(self,enabled):
         if type(enabled) is not bool:raise ValueError("explicit owner boolean required")
         result=request(self.config,{"action":"intent","enabled":enabled})
+        intent=result.get('owner_intent') if isinstance(result,dict) else None
+        if (not isinstance(result,dict) or result.get('desired_enabled') is not enabled
+                or not isinstance(intent,dict) or intent.get('enabled') is not enabled
+                or result.get('status') not in (('ON_BLOCKED','ON_READY') if enabled else ('OFF',))):
+            raise ConnectionError('Oracle did not confirm the owner setting')
         self.poll()
         return result
 

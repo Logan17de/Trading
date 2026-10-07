@@ -239,6 +239,70 @@ def test_local_switch_endpoint_requires_owner_token_and_rejects_order_payloads(t
     finally:server.shutdown();server.server_close();thread.join(timeout=2)
 
 
+@pytest.mark.parametrize('regime,sid',[('BULLISH','bull_put'),('BEARISH','bear_call'),('RANGE','iron_condor')])
+def test_start_button_through_desktop_rpc_selects_only_enabled_replay_strategy(tmp_path,monkeypatch,regime,sid):
+    """Full control path, isolated simulated broker; no real activation receipt."""
+    import json,threading
+    from types import SimpleNamespace
+    from http.server import ThreadingHTTPServer
+    from urllib.request import Request,urlopen
+    from nifty_engine.agent_engine.dashboard import handler
+    from nifty_engine.agent_engine.oracle_runtime import Runtime
+    from nifty_engine.agent_engine import oracle_link as link
+    s=ReportSession(tmp_path,regime=regime)
+    for strategy in controls.IDS:
+        controls.set_switch(s.journal.store,dict(id=strategy,enabled=False,
+            revision=controls.read(s.journal.store)['revision']),s.now)
+    policy.set_intent(s.journal.store,False,s.now)
+    runtime=object.__new__(Runtime)
+    def save(enabled):
+        intent=policy.set_intent(s.journal.store,enabled,s.now)
+        return dict(owner_intent=intent,broker_writes=False)
+    runtime.state=SimpleNamespace(algo_set=save,pnl_lines=SimpleNamespace(store=s.journal.store))
+    def read():
+        enabled=policy.intent(s.journal.store)['enabled']
+        blocked=s.gate.blockers(s.observation())
+        return {'control':{'algo':dict(desired_enabled=enabled,execution_enabled=not blocked,
+            status='OFF' if not enabled else 'ON_BLOCKED' if blocked else 'ON_READY',blockers=blocked)}}
+    runtime.read=read
+    remote=object.__new__(link.RemoteViewer)
+    remote.config=dict(format='trading-oracle-viewer-v1',host='example.test',user='ubuntu',
+        identity_file=str((tmp_path/'unused-key').resolve()),
+        python='/opt/growing-trader/releases/'+'a'*40+'/venv/bin/python',root='/var/lib/trading-observer')
+    remote.poll=lambda:None
+    original_request=link.request
+    def relay(config,command):
+        def run(args,**kwargs):
+            return SimpleNamespace(returncode=0,stdout=json.dumps(runtime.command(json.loads(kwargs['input']))))
+        return original_request(config,command,run=run)
+    monkeypatch.setattr(link,'request',relay)
+    state=SimpleNamespace(token='fixture-token',algo_set=remote.set_intent,strategy_switch=remote.strategy_switch)
+    server=ThreadingHTTPServer(('127.0.0.1',0),handler(state))
+    thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+    def post(path,body=None):
+        headers={'X-Local-Token':state.token}
+        if body is not None:headers['Content-Type']='application/json'
+        req=Request(f'http://127.0.0.1:{server.server_port}'+path,
+            data=json.dumps(body).encode() if body is not None else b'',headers=headers)
+        with urlopen(req) as response:return json.load(response)
+    try:
+        post('/api/strategies/switch',dict(id=sid,enabled=True,revision=controls.read(s.journal.store)['revision']))
+        s.tick();assert not s.broker.writes
+        for _ in range(2):
+            result=post('/api/algo/start')
+            assert result['desired_enabled'] and result['owner_intent']['enabled']
+            assert not result['broker_writes'] and not s.broker.writes
+        reopened=PcJournal(tmp_path/'journal.sqlite3')
+        assert policy.intent(reopened.store)['enabled']
+        assert [i for i,v in controls.read(reopened.store)['enabled'].items() if v]==[sid]
+        s.monitoring();assert s.executor._state()['strategy']==sid
+        before=len(s.broker.writes)
+        result=post('/api/algo/stop');assert result['status']=='OFF'
+        s.tick();assert len(s.broker.writes)==before
+        assert not policy.intent(reopened.store)['enabled']
+    finally:server.shutdown();server.server_close();thread.join(timeout=2)
+
+
 def test_email_distinguishes_selection_readiness_and_permitted_writes():
     from nifty_engine.agent_engine.visual_report import build
     from nifty_engine.agent_engine.dashboard import view_model
