@@ -29,7 +29,17 @@ checking; exact capital-body hash and owner controls matched production. Initial
 background backup checks timed out, so the paused observer was briefly stopped
 for a consistent copy and resumed. Shared services stayed active. The protected
 PC→Oracle investment route rejected a zero-amount validation probe; no record
-was created. Final release/visual verification receipts follow after rollout.
+was created. Final deployed code release: `a1c09d286d8da84a5a801cfb2a675b5e454d2c54`.
+Observer and all four shared services are active. Paper/pause, default owner Off
+and both strategy groups Off are unchanged; exact capital-body hash still matches
+the backup and there are zero addition records. PC assets and private fixed SSH
+release binding were refreshed. Owner Edge showed both enabled capital controls,
+all four amounts, and the investment amount/JST-date form. Its actual email
+preview displayed the shared four totals. No email was sent for verification.
+Final protected-route invalid-amount probe was rejected without a ledger entry.
+Observer heartbeat reached HEALTHY after restart; slow/stale market collection
+remains visible and unresolved. Bookkeeping confirmation does not prove live
+trading readiness, five-second data cadence or email inbox delivery.
 
 ## October 7 normal theta and two owner groups
 
