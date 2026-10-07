@@ -26,7 +26,16 @@ Config/JS/diff checks and isolated synthetic offline demo passed. Consistent
 SQLite backup `pre-external-close-20261007T061914Z.sqlite3` passed full integrity;
 exact capital and owner-control hashes matched production. Observer resumed
 before the background backup verification; shared services remained active.
-Deployment receipt will follow after rollout.
+Rollout exposed intermittent SQLite OperationalError and fixed-socket timeouts.
+Added sanitized observer fault frames/SQLite codes (no messages or source text),
+tested with two secret-redaction cases. A valid response took13.38s against the
+existing12s socket deadline. Removed Normal evaluation writes from viewer reads;
+the existing30s background report worker persists evaluations independently.
+Read-only evaluation still rechecks present input freshness. All65 Normal/runtime/
+diagnostic tests passed after that change; separate52 dashboard/runtime/diagnostic
+checks also passed. The two-CPU VM throttled84% of observer scheduling periods at
+CPUQuota35%. Observer allowance is now60% of one CPU; memory/task/security caps
+remain. No freshness policy was relaxed. Final rollout receipt follows below.
 
 ## October 7 additional investment control
 

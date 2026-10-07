@@ -33,7 +33,8 @@ ReadWritePaths=/var/lib/trading-observer
 MemoryHigh=160M
 MemoryMax=240M
 TasksMax=48
-CPUQuota=35%
+# 60% of one CPU; leaves capacity for shared services on the two-CPU VM.
+CPUQuota=60%
 Nice=10
 StandardOutput=null
 StandardError=null
