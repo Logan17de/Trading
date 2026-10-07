@@ -17,7 +17,9 @@ TABLE='trading_research_records'
 IST=ZoneInfo('Asia/Kolkata')
 META_KEYS=('premium-executor-v1','premium-executor-status','premium-preparation','report-strategy-evaluations',
            'report-strategy-controls-v1','report-execution-preparation',
-           'report-contracts-NIFTY','report-contracts-SENSEX')
+           'report-contracts-NIFTY','report-contracts-SENSEX',
+           'report-iv30-monitor-NIFTY','report-iv30-monitor-SENSEX',
+           'report-official-event-calendar','report-broker-readiness','report-research-campaign-v1')
 
 
 def encoded(body):
@@ -124,11 +126,15 @@ class SupabaseArchive:
             if 'pc_orders' in tables:
                 for r in db.execute('SELECT o.*,s.strategy FROM pc_orders o JOIN pc_slots s USING(slot)').fetchall():
                     body=dict(r)
-                    if body['strategy'] not in ('EVERYDAY','LATE_SESSION'):continue
+                    if body['strategy'] not in ('EVERYDAY','LATE_SESSION','bull_put','bear_call','iron_condor'):continue
                     self._enqueue(db,'algo_order',r['reference'],day,body,append=True)
             placeholders=','.join('?' for _ in META_KEYS)
             for r in db.execute("SELECT * FROM meta WHERE key IN ("+placeholders+") OR key LIKE 'prepared-order-%'",META_KEYS).fetchall():
                 self._enqueue(db,'algo_state',r['key'],day,json.loads(r['body']),append=True)
+            if 'report_iv30_days' in tables:
+                for r in db.execute('SELECT * FROM report_iv30_days').fetchall():
+                    self._enqueue(db,'iv30_research_day',r['index_name']+':'+r['day'],r['day'],json.loads(r['body']),r['index_name'],
+                        at=datetime.fromisoformat(r['at']).timestamp(),append=True)
             if 'pc_pnl_observations' in tables:
                 cursor=db.execute("SELECT body FROM meta WHERE key='research-sync-pnl-cursor'").fetchone()
                 after=json.loads(cursor[0]) if cursor else 0

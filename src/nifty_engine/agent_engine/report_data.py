@@ -70,6 +70,10 @@ def connect_snapshot(store, snapshot, cfg, now):
             if name in history:features[name]=copy.deepcopy(history[name])
         # Preserve explicitly supplied IV/event evidence without synthesizing it.
         b.setdefault('event_calendar',{'status':'UNKNOWN'})
+        official=store.meta('report-official-event-calendar',None)
+        if official is not None:
+            from .event_calendar import assessment
+            b['event_calendar']=assessment(official.get('sources',{}),now,cfg['short_dte'][1]-cfg['close_dte'])
         b.setdefault('contracts',[]);b.setdefault('margins',{})
         contracts=store.meta('report-contracts-'+index,None)
         if contracts is not None:
@@ -84,10 +88,14 @@ def connect_snapshot(store, snapshot, cfg, now):
 
 class ReportData:
     """Independent bounded research reads using the collector's rate limiter."""
-    def __init__(self,market,journal,cfg,*,clock=lambda:datetime.now(timezone.utc),master=download_instrument_text):
+    def __init__(self,market,journal,cfg,*,clock=lambda:datetime.now(timezone.utc),master=download_instrument_text,snapshot_reader=None):
         self.market,self.store,self.cfg=market,journal.store,cfg
         self.clock,self.master=clock,master
+        self.snapshot_reader=snapshot_reader
         self.master_text=None;self.master_at=None;self.next_history={}
+        self.chains={}
+        from .event_calendar import OfficialCalendar
+        self.calendar=OfficialCalendar(self.store)
 
     def call(self,method,**kwargs):
         self.market.limiter.wait()
@@ -132,10 +140,35 @@ class ReportData:
         self.store.set_meta(key,evidence)
         return evidence
 
+    def chain(self,index,expiry):
+        chain=self.call(self.market.groww.get_option_chain,exchange=EXCHANGES[index],underlying=index,expiry_date=expiry)
+        at=self.clock().isoformat();self.chains[(index,expiry)]=(chain,at)
+        return chain,at
+
+    def iv_monitor(self,index,expiries,bundle):
+        from . import iv_observations as iv
+        now=self.clock();spot=bundle.get('features',{}).get('spot',{})
+        if not fresh(spot['observed_at'],now,15):raise ValueError('CURRENT_SPOT_REQUIRED')
+        target=now+timedelta(days=30)
+        dates=sorted(expiries['expiries'])
+        lower=[d for d in dates if datetime.combine(date.fromisoformat(d),datetime.min.time(),IST).replace(hour=15,minute=30)<=target]
+        upper=[d for d in dates if datetime.combine(date.fromisoformat(d),datetime.min.time(),IST).replace(hour=15,minute=30)>=target]
+        if not lower or not upper:raise ValueError('ACTUAL_30_DAY_BRACKET_REQUIRED')
+        terms=[]
+        for expiry in dict.fromkeys((lower[-1],upper[0])):
+            chain,at=self.chain(index,expiry)
+            rows=metadata(self.master_text,index,expiry)
+            terms.append(iv.term(index,expiry,spot['value'],chain,rows,at,self.clock()))
+        now=self.clock()
+        # Network delays must not make the independently received spot fresh.
+        if not fresh(spot['observed_at'],now,15):raise ValueError('SPOT_EXPIRED_DURING_CHAIN_READ')
+        return iv.save(self.store,iv.interpolate(index,terms,now),now)
+
     def books(self,index,expiry,protected):
         rows=metadata(self.master_text,index,expiry)
-        chain=self.call(self.market.groww.get_option_chain,exchange=EXCHANGES[index],underlying=index,expiry_date=expiry)
-        greek_at=self.clock().isoformat();candidates=[]
+        cached=self.chains.get((index,expiry))
+        chain,greek_at=cached if cached and fresh(cached[1],self.clock(),10) else self.chain(index,expiry)
+        candidates=[]
         for strike,sides in chain.get('strikes',{}).items():
             for kind in ('CE','PE'):
                 r=sides.get(kind,{})
@@ -203,6 +236,16 @@ class ReportData:
 
     def check(self,snapshot):
         now=self.clock();connect_snapshot(self.store,snapshot,self.cfg,now)
+        if not any(self.store.meta('report-strategy-evidence-'+i,{})['input_connection']['current_snapshot'] for i in self.cfg['indices']):
+            for i in self.cfg['indices']:
+                self.store.set_meta('report-data-status-'+i,dict(status='WAIT',reason='CURRENT_COLLECTOR_SNAPSHOT_REQUIRED',at=now.isoformat(),broker_writes=False))
+            return
+        self.calendar.check(now)
+        from .broker_readiness import KEY as audit_key,inspect_gtt
+        previous=self.store.meta(audit_key,{})
+        if not previous.get('at') or not fresh(previous['at'],self.clock(),1800):
+            self.store.set_meta(audit_key,inspect_gtt(lambda **kw:self.call(self.market.groww.get_smart_order_list,**{k:v for k,v in kw.items() if k!='timeout'}),self.clock()))
+        now=self.clock();connect_snapshot(self.store,self.snapshot_reader() if self.snapshot_reader else snapshot,self.cfg,now)
         for index in self.cfg['indices']:
             key='report-strategy-evidence-'+index;b=self.store.meta(key,{})
             if not b['input_connection']['current_snapshot']:
@@ -212,6 +255,11 @@ class ReportData:
             except Exception:faults.append('DAILY_HISTORY_UNAVAILABLE')
             try:
                 expiry=self.expiries(index,now);day=now.astimezone(JST).date()
+                if self.snapshot_reader:
+                    connect_snapshot(self.store,self.snapshot_reader(),self.cfg,self.clock())
+                    b=self.store.meta(key,{})
+                try:self.iv_monitor(index,expiry,b)
+                except Exception:faults.append('MATCHED_IV30_MONITOR_UNAVAILABLE')
                 chosen=[]
                 for lo,hi in (self.cfg['short_dte'],self.cfg['calendar_long_dte']):
                     dates=[d for d in expiry['expiries'] if lo<=(date.fromisoformat(d)-day).days<=hi]
@@ -230,4 +278,9 @@ class ReportData:
                 self.store.set_meta('report-expiries-'+index,{'status':'UNKNOWN_BLOCKED'})
             self.store.set_meta('report-data-status-'+index,dict(status='PARTIAL' if faults else 'CONNECTED',
                 reasons=faults,at=self.clock().isoformat(),broker_writes=False,
-                iv_history='EXTERNAL_VERIFIED_HISTORY_REQUIRED',event_calendar='EXTERNAL_DATED_EVIDENCE_REQUIRED'))
+                iv_history='MATCHED_RESEARCH_COLLECTION_NOT_EXECUTION_HISTORY',
+                event_calendar=self.store.meta('report-official-event-calendar',{}).get('status','UNKNOWN')))
+            from .research_campaign import observe
+            now=self.clock()
+            connect_snapshot(self.store,self.snapshot_reader() if self.snapshot_reader else snapshot,self.cfg,now)
+            observe(self.store,index,self.store.meta(key,{}),now)

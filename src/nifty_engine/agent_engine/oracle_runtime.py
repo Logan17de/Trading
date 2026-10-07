@@ -116,6 +116,15 @@ class Runtime:
             view['control']['everyday']=None
             if isinstance(algo,dict):algo['policy_version']=cfg['format']
             view['retired_strategies']=cfg['retired_entries']
+            from . import iv_observations, broker_readiness, research_campaign
+            from .event_calendar import assessment, KEY as calendar_key
+            evidence=self.state.pnl_lines.store
+            now=datetime.now(timezone.utc)
+            view['readiness_evidence']=dict(
+                iv={index:iv_observations.public(evidence,index,now) for index in cfg['indices']},
+                event_calendar=assessment(evidence.meta(calendar_key,{}).get('sources',{}),now),
+                broker_protection=broker_readiness.summary(evidence,now),
+                research_campaign=research_campaign.public(evidence,now),broker_writes=False)
         return view
 
     def command(self,value):
@@ -150,7 +159,9 @@ class Runtime:
         self.preparer=GrowwPreparation(market,self.state.monitor.journal)
         self.preparer.entries_retired=bool(self.research_catalog)
         from .report_data import ReportData
-        self.report_data=ReportData(market,self.state.monitor.journal,self.research_catalog)
+        from .dashboard import load_json
+        self.report_data=ReportData(market,self.state.monitor.journal,self.research_catalog,
+            snapshot_reader=lambda:load_json(self.output,8_000_000))
         from . import premium_strategy
         from .contracts import identity
         from .oracle_orders import GrowwOrderTransport, OracleOrderGateway

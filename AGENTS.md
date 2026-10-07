@@ -13,6 +13,11 @@
   Switch Off prevents new entries, not existing owned management while global
   Algo is On. Global Off/pause/paper still deny every broker write. Missing IV
   history/calendar and actual provider validation keep production blocked.
+  October 7 owner chose 38 calendar days of research; read READINESS_RESEARCH.md.
+  Preserve that private campaign's original horizon. Its completion never
+  activates trading or replaces 252 prior IV sessions. Official scheduled-event
+  sources and versioned ATM IV30 proxy collection are research evidence; the
+  proxy is not an execution feature. Do not shorten the strict event horizon.
   New Everyday/Late-session entries and rolls are retired even if intent is On.
   Keep original records/ownership/exits/protection; never relabel legacy positions
   or migrate fictional SPX win rates. New research requires point-in-time IV/RV,

@@ -1,5 +1,30 @@
 # Current Trading handoff
 
+## October 7 readiness evidence and requested 38-day research
+
+Read docs/READINESS_RESEARCH.md. Owner chose 38 calendar days of research instead
+of changing the restrictive event-free holding-horizon gate. The three credit
+routes are implemented but not provider-validated/live-ready; calendar is still
+research-only. No owner intent or strategy switch is changed by the campaign.
+
+Added official RBI/Fed schedule parsers and a latest-MoSPI-document/hash check,
+dated ATM variance30 research observations for both indexes, a GET-only GTT list
+audit and visible readiness/campaign progress. The proxy is never promoted into
+strategy execution features. Actual near-close observations persist privately;
+no missing sessions are filled and no 252-session history is manufactured.
+Fixed the archive filter to include the report catalog's owned orders. Campaign,
+IV day and source diagnostics use the existing private one-way Supabase outbox.
+
+Actual Oracle authentication and three default-range GTT list reads succeeded
+this morning, each returning zero orders. Empty reads prove API access, not
+protection persistence or generated-child linkage. No parent/child/order was
+created for validation. Broker-write/protection proof remains absent.
+
+Pre-update SQLite backup and off-host hash verified:
+`pre-readiness-20261007.sqlite3`, 114733056 bytes,
+SHA256 `2b4da0060310ab9a9ed5676a4497b7719a0a84b00e57ce0752e397b854acf168`.
+Deployment and actual source/campaign checks are recorded after rollout below.
+
 ## October 7 guarded report execution and per-strategy controls
 
 Owner requested finishing software setup while retaining Off until the owner

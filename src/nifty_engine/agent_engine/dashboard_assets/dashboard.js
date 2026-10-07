@@ -215,6 +215,13 @@ function renderControl() {
   const research=impulse?.research,archive=data.research_archive;
   $("impulse-research-status").textContent=`Premium research · MONITOR ONLY · ${research?.enabled?'NIFTY + SENSEX':research?'disabled':'waiting for Oracle'} · ${Object.entries(research?.active_events||{}).map(([index,e])=>`${index} ATM ${e.locked_atm_strike}, levels ${Object.keys(e.thresholds_crossed||{}).join('/')}`).join(' · ')||'no active impulse'} · Supabase ${archive?.status||'waiting'}${archive?` (${archive.pending_records} queued, ${archive.uncaptured_ticks} local ticks waiting)`:''}${research?.failure?` · ${research.failure}`:''}`;
   $("execution-status").textContent=execution?.code_implemented?`Oracle executor installed · ${String(execution.phase||'IDLE').replaceAll('_',' ').toLowerCase()} · ${execution.provider_execution_verified?'broker validation recorded':'live broker validation pending'}`:'';
+  const readiness=data.readiness_evidence;
+  if(readiness){
+    const calendar=readiness.event_calendar||{};
+    $("execution-status").textContent+=` · IV research: ${Object.entries(readiness.iv||{}).map(([index,r])=>`${index} ${r.completed_observed_days??0}/252 observed days`).join(', ')} · Events: ${calendar.status||'UNKNOWN'}${calendar.unknown_sources?.length?` (${calendar.unknown_sources.join(', ')} unavailable)`:''} · Broker protection: ${readiness.broker_protection?.reason||'unverified'}`;
+    const campaign=readiness.research_campaign;
+    if(campaign?.started_at)$("execution-status").textContent+=` · Research ${campaign.elapsed_calendar_days}/38 days · ${campaign.status==='COLLECTING'?'collecting':'review required'}`;
+  }
   const review=execution?.position_review;
   if(review?.action==='REVIEW_ROLL_SHORT')$("execution-status").textContent+=` · Existing spread: review short rollover (premium ≤ ${inr(review.rollover_threshold_rupees)})`;
   if(review?.action==='REVIEW_OWNED_EXIT'&&review?.reason!=='EXPIRY_1900_HANDOFF')$("execution-status").textContent+=' · Existing spread: review exit (basket stop/trail)';

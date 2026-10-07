@@ -103,7 +103,7 @@ class PcJournal:
         if not isinstance(slot, str) or not 1 <= len(slot) <= 80 or not SYMBOL.fullmatch(symbol) or side not in ("BUY", "SELL"):
             raise ValueError("invalid engine intent")
         positive_int(quantity)
-        if strategy not in ("EVERYDAY", "LATE_SESSION", "SWING", "UNSPECIFIED"):
+        if strategy not in ("EVERYDAY", "LATE_SESSION", "SWING", "UNSPECIFIED", "bull_put", "bear_call", "iron_condor"):
             raise ValueError("known strategy attribution required")
         reference = "GT" + uuid.uuid4().hex[:18]
         with self.store.transaction() as db:
