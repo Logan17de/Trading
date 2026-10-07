@@ -43,13 +43,22 @@ def observed_trend(store, index, now):
     return 'UP' if all(a<b for a,b in zip(closes, closes[1:])) else 'DOWN' if all(a>b for a,b in zip(closes, closes[1:])) else 'FLAT'
 
 
-def metadata(text, index, expiry):
-    rows = {}
+def metadata_catalog(text):
+    """Validate the master once, keyed by exact index and expiry.
+
+    This is a parsed lookup, not freshness evidence. Its caller must retain the
+    original receipt time and refuse stale or failed refreshes.
+    """
+    catalog = {}
     for r in csv.DictReader(io.StringIO(text)):
+        index = r.get('underlying_symbol')
         symbol = r.get('trading_symbol', '')
-        if (r.get('underlying_symbol') != index or r.get('segment') != 'FNO'
-                or r.get('exchange') != EXCHANGES[index] or clean_date(r.get('expiry_date')) != expiry
+        if (index not in EXCHANGES or r.get('segment') != 'FNO'
+                or r.get('exchange') != EXCHANGES[index]
                 or not SYMBOL.fullmatch(symbol)):
+            continue
+        expiry = clean_date(r.get('expiry_date'))
+        if expiry is None:
             continue
         try:
             lot = int(r['lot_size']); tick = float(r['tick_size']); strike = float(r['strike_price'])
@@ -57,8 +66,14 @@ def metadata(text, index, expiry):
                 continue
         except (ValueError, TypeError, KeyError):
             continue
-        rows[symbol] = dict(symbol=symbol, index=index, expiry=expiry, strike=strike, lot_size=lot, tick_size=tick)
-    return rows
+        catalog.setdefault((index, expiry), {})[symbol] = dict(symbol=symbol, index=index, expiry=expiry,
+                                                              strike=strike, lot_size=lot, tick_size=tick)
+    return catalog
+
+
+def metadata(text, index, expiry):
+    """Compatible single-expiry view for callers without a master cache."""
+    return metadata_catalog(text).get((index, expiry), {})
 
 
 class GrowwPreparation:

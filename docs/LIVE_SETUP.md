@@ -137,6 +137,12 @@ for a changed build before expecting Start to execute again.
 
 ## What is and is not proved
 
+Groww documents API GTT parents as lasting one year by default. The request's
+`duration=DAY` is the generated order's validity after a trigger, not the parent
+GTT's lifetime. The verifier therefore checks the parent's actual `expire_at`
+and persistence separately from the generated order and its fill. A historical
+manual target shown on the website cannot supply those API-specific receipts.
+
 Completed commissioning proves the recorded requests/readbacks worked for the
 exact account, IP, release and test. It does not establish profitability or assure
 future fills. A stop trigger is not a guaranteed realized-loss cap. All test

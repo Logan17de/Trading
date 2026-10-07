@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from .contracts import EXCHANGES, identity, number, stamp
 from .dashboard import IST, download_instrument_text
 from .execution import fresh, leg
-from .execution_data import metadata
+from .execution_data import metadata_catalog
 from .market_check import quote_summary
 from .pc_control import JST
 from . import report_strategies as policy
@@ -103,7 +103,7 @@ class ReportData:
         self.clock,self.master=clock,master
         self.snapshot_reader=snapshot_reader
         self.normal_cfg=normal_cfg
-        self.master_text=None;self.master_at=None;self.next_history={}
+        self._master_cache=None;self.next_history={}
         self.chains={}
         self.book_checks={}
         from .event_calendar import OfficialCalendar
@@ -112,6 +112,28 @@ class ReportData:
     def call(self,method,**kwargs):
         self.market.limiter.wait()
         return method(timeout=5,**kwargs)
+
+    @property
+    def master_at(self):
+        return self._master_cache[1] if self._master_cache is not None else None
+
+    def ensure_master(self,now):
+        """Atomically replace one parsed catalog after a successful dated fetch."""
+        cached=self._master_cache
+        if cached is not None and fresh(cached[1],now,3600):return cached
+        text=self.master()
+        received_at=self.clock().isoformat()
+        catalog=metadata_catalog(text)
+        if not catalog:raise ValueError('VALID_CURRENT_INSTRUMENT_MASTER_REQUIRED')
+        if not fresh(received_at,self.clock(),3600):raise ValueError('INSTRUMENT_MASTER_EXPIRED_DURING_PARSE')
+        self._master_cache=(catalog,received_at)
+        return self._master_cache
+
+    def contracts(self,index,expiry):
+        now=self.clock();catalog,received_at=self.ensure_master(now)
+        if date.fromisoformat(expiry)<now.astimezone(JST).date():
+            raise ValueError('UNEXPIRED_MASTER_CONTRACTS_REQUIRED')
+        return catalog.get((index,expiry),{}),received_at
 
     def history(self,index,now):
         day=now.astimezone(IST).date()
@@ -130,8 +152,10 @@ class ReportData:
 
     def expiries(self,index,now):
         day=now.astimezone(JST).date();key='report-expiries-'+index
+        catalog,master_at=self.ensure_master(now)
         saved=self.store.meta(key,{})
-        if saved.get('day_jst')==day.isoformat() and fresh(saved['received_at'],now,3600):return saved
+        if (saved.get('day_jst')==day.isoformat() and saved.get('master_received_at')==master_at
+                and fresh(saved['received_at'],now,3600)):return saved
         dates=set();unavailable_years=[]
         years={day.year,(day+timedelta(days=90)).year}
         for year in sorted(years):
@@ -141,12 +165,12 @@ class ReportData:
             except Exception:
                 if year==day.year:raise
                 unavailable_years.append(year)  # Current verified dates remain usable; no future dates invented.
-        if self.master_at is None or not fresh(self.master_at,now,3600):
-            self.master_text=self.master();self.master_at=self.clock().isoformat()
         matched=[d for d in sorted(dates) if day<=date.fromisoformat(d)<=day+timedelta(days=90)
-            and metadata(self.master_text,index,d)]
+            and catalog.get((index,d))]
+        if not fresh(master_at,self.clock(),3600):raise ValueError('CURRENT_INSTRUMENT_MASTER_REQUIRED')
         evidence=dict(status='CONFIRMED_CURRENT_MASTER' if matched else 'UNKNOWN_BLOCKED',
             day_jst=day.isoformat(),expiries=matched,received_at=self.clock().isoformat(),
+            master_received_at=master_at,
             comparison_scope='INDIVIDUAL_API_AND_MASTER_INTERSECTION_UP_TO_90_DTE')
         evidence['unavailable_years']=unavailable_years
         self.store.set_meta(key,evidence)
@@ -167,17 +191,20 @@ class ReportData:
         upper=[d for d in dates if datetime.combine(date.fromisoformat(d),datetime.min.time(),IST).replace(hour=15,minute=30)>=target]
         if not lower or not upper:raise ValueError('ACTUAL_30_DAY_BRACKET_REQUIRED')
         terms=[]
+        master_times=[]
         for expiry in dict.fromkeys((lower[-1],upper[0])):
+            rows,master_at=self.contracts(index,expiry)
+            master_times.append(master_at)
             chain,at=self.chain(index,expiry)
-            rows=metadata(self.master_text,index,expiry)
             terms.append(iv.term(index,expiry,spot['value'],chain,rows,at,self.clock()))
         now=self.clock()
         # Network delays must not make the independently received spot fresh.
         if not fresh(spot['observed_at'],now,15):raise ValueError('SPOT_EXPIRED_DURING_CHAIN_READ')
+        if any(not fresh(at,now,3600) for at in master_times):raise ValueError('CURRENT_INSTRUMENT_MASTER_REQUIRED')
         return iv.save(self.store,iv.interpolate(index,terms,now),now)
 
     def books(self,index,expiry,protected):
-        rows=metadata(self.master_text,index,expiry)
+        rows,master_at=self.contracts(index,expiry)
         cached=self.chains.get((index,expiry))
         chain,greek_at=cached if cached and fresh(cached[1],self.clock(),10) else self.chain(index,expiry)
         candidates=[]
@@ -227,6 +254,7 @@ class ReportData:
             except Exception:check['read_failures']+=1
         check.update(available_books=len(books),checked_at=self.clock().isoformat())
         self.book_checks[(index,expiry)]=check
+        if not fresh(master_at,self.clock(),3600):raise ValueError('CURRENT_INSTRUMENT_MASTER_REQUIRED')
         return books
 
     def margins(self,index,books,cfg=None):

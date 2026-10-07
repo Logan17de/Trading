@@ -8,6 +8,7 @@ import queue
 import statistics
 import threading
 import copy
+from types import MappingProxyType
 from datetime import datetime, timedelta, timezone
 
 from .impulse import ImpulseDetector, finite
@@ -19,12 +20,25 @@ from .dashboard import clean_date, download_instrument_text, load_json
 MAJOR=('RELIANCE','HDFCBANK','ICICIBANK','INFY','BHARTIARTL')
 
 
-def universe(text,snapshot,now):
-    """Exact current master tokens; sampled major-stock breadth, not full index weights."""
-    day=now.astimezone(JST).date().isoformat();rows=[]
+def _master_rows(text):
+    """Keep only stream-relevant immutable rows from the bounded downloaded master."""
+    if not isinstance(text,str) or len(text)>64_000_000:
+        raise ValueError('bounded instrument master required')
+    rows=[]
     for r in csv.DictReader(io.StringIO(text)):
         if r.get('underlying_symbol') in ('NIFTY','SENSEX') and r.get('segment')=='FNO' or r.get('trading_symbol') in MAJOR and r.get('exchange')=='NSE' and r.get('segment')=='CASH':
-            r=dict(r);r['expiry']=clean_date(r.get('expiry_date'));rows.append(r)
+            r=dict(r);r['expiry']=clean_date(r.get('expiry_date'));rows.append(MappingProxyType(r))
+    return tuple(rows)
+
+
+def universe(text,snapshot,now):
+    """Exact current master tokens; sampled major-stock breadth, not full index weights."""
+    return _universe(_master_rows(text),snapshot,now)
+
+
+def _universe(rows,snapshot,now):
+    # Dates and ATM selection remain current even while source rows are reused.
+    day=now.astimezone(JST).date().isoformat()
     result={}
     for index in ('NIFTY','SENSEX'):
         result[index]=dict(index=index,role='spot',exchange=EXCHANGES[index],segment='CASH',exchange_token='NIFTY' if index=='NIFTY' else '1')
@@ -101,7 +115,7 @@ class StreamingImpulse:
         self.status='WAITING_FOR_MARKET_AUTH';self.failure=None;self.dropped=0;self.connected_at=None
         self.credentials=[];self.threads=[]
         self.confirmations=store.meta('premium-impulse-events',[])[:50];self.confirmed_keys=set()
-        self.dirty=False;self.master_text=None;self.last_universe_refresh=0
+        self.dirty=False;self.master_rows=None;self.last_universe_refresh=0
         self.reconfigure_requested=False
         self.next_connect_at=0
         self.research=PremiumImpulseMonitor(store,cfg=research_config(self.root/'config/premium_impulse_monitor.json'),clock=clock)
@@ -200,8 +214,9 @@ class StreamingImpulse:
 
     def _connect(self,market):
         from growwapi import GrowwFeed
-        text=download_instrument_text();self.master_text=text;snapshot=load_json(self.root/'.agent-state/dashboard-captures/market-check-oracle-live.json',8_000_000)
-        members=universe(text,snapshot,self.clock())
+        rows=_master_rows(download_instrument_text())
+        snapshot=load_json(self.root/'.agent-state/dashboard-captures/market-check-oracle-live.json',8_000_000)
+        members=_universe(rows,snapshot,self.clock())
         registry={}
         for symbol,r in members.items():registry.setdefault((r['exchange'],r['segment'],str(r['exchange_token'])),[]).append(symbol)
         # October 6 provider 307 points from the SDK's trailing slash to this
@@ -210,6 +225,7 @@ class StreamingImpulse:
         self._private_credentials();feed=GrowwFeed(market.groww)
         with self.lock:
             self.generation+=1;self.registry=registry;self.detector=ImpulseDetector(members,clock=self.clock);self.feed=feed
+            self.master_rows=rows
             self.research.configure(members,replace=True)
         spots=[];prices=[];depth=[]
         for key,symbols in registry.items():
@@ -241,7 +257,7 @@ class StreamingImpulse:
 
     def _disconnect(self):
         with self.lock:
-            feed=self.feed;self.feed=None;self.registry={};self.generation+=1
+            feed=self.feed;self.feed=None;self.registry={};self.master_rows=None;self.generation+=1
             if self.detector:self.detector.reset()
             self.research.reset()
         if feed:
@@ -258,10 +274,13 @@ class StreamingImpulse:
         self.credentials=[]
 
     def _refresh_options(self):
-        snapshot=load_json(self.root/'.agent-state/dashboard-captures/market-check-oracle-live.json',8_000_000)
-        members=universe(self.master_text,snapshot,self.clock());added=[]
         with self.lock:
-            if not self.feed or not self.detector:return
+            rows=self.master_rows;generation=self.generation
+            if rows is None or not self.feed or not self.detector:return
+        snapshot=load_json(self.root/'.agent-state/dashboard-captures/market-check-oracle-live.json',8_000_000)
+        members=_universe(rows,snapshot,self.clock());added=[]
+        with self.lock:
+            if generation!=self.generation or rows is not self.master_rows or not self.feed or not self.detector:return
             with self.detector.lock:
                 for symbol,r in members.items():
                     if r['role']!='option' or symbol in self.detector.universe:continue
