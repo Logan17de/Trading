@@ -25,6 +25,34 @@ Pre-update SQLite backup and off-host hash verified:
 SHA256 `2b4da0060310ab9a9ed5676a4497b7719a0a84b00e57ce0752e397b854acf168`.
 Deployment and actual source/campaign checks are recorded after rollout below.
 
+Rollout: immutable source `b86a6aaeaea5033cd259177ff4eb9dfae8e003b1` deployed to
+Oracle; PC source pin/assets refreshed. Only observer restarted. All five shared
+services remain active. Actual private campaign start October 7 11:46:38 JST,
+end November 14 11:46:38 JST. Restart preserved that period. Zero observed
+market days so far; ordinary session collection has not begun at this premarket
+check. No collected research or backtest success is claimed for that schedule.
+
+Actual new-source calendar check passed RBI, FOMC and the latest reviewed MoSPI
+document with no missing sources; six scheduled risk dates in the horizon yield
+EVENT_RISK, not clear. New-source authentication and three GTT list reads passed,
+all empty in the provider's default date range. No protection/child proof exists.
+PC response: healthy advancing VM, null runtime error, global Algo Off, all four
+switches Off, execution false. Readiness JS served; Edge visual rendering remains
+unverified. Private archive is SYNCED with actual provider acknowledgments for
+the campaign/source diagnostics. Fresh IV/Greek collection remains market-hours
+verification, not a completed run. Noon heartbeat prompt updated for the study.
+
+Final full suite406 passed/four skipped; last archive timestamp change17 focused
+passed. Config/JS/diff checks and synthetic offline demo passed. No real orders,
+mail sends, mode/permission/key changes or activation were performed.
+
+Post-update SQLite integrity/hash verified and copied off-host:
+`post-readiness-20261007.sqlite3`, 114733056 bytes,
+SHA256 `4d3b0c68791529692d16188c904cccff92080bc39b5327c9ecfc8587c6a34355`.
+Actual Supabase SELECT confirmed one uploaded campaign, one official-calendar
+record and one broker-read audit. No new IV day records exist at this premarket
+check. Pause present, activation absent, zero owned-order rows verified again.
+
 ## October 7 guarded report execution and per-strategy controls
 
 Owner requested finishing software setup while retaining Off until the owner

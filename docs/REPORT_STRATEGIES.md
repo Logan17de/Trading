@@ -5,8 +5,10 @@ replace overlapping original strategies. Both NIFTY and SENSEX are studied. The
 new catalog is the current dashboard/email strategy list. Its pure evaluator is
 MONITOR_ONLY. A separate guarded adapter inside the existing PremiumExecutor now
 routes the three same-expiry structures. Calendar is research only. Production
-remains paused/paper/Off: dated IV history, event coverage and live provider
-validation are absent. No real order was placed. See ORACLE_EXECUTION.md.
+remains paused/paper/Off: matched IV history and live provider validation are
+absent. Official scheduled-event sources are connected but known event risk
+still blocks the strict holding-horizon policy. No real order was placed.
+See ORACLE_EXECUTION.md and READINESS_RESEARCH.md.
 
 Four owner switches default Off and persist privately on Oracle. They select new
 entries; they do not approve missing evidence or activate LIVE. Disabling a held
@@ -99,8 +101,9 @@ old trading gates. Unverified dealer GEX, aggressive flow/CVD, spot-index VWAP,
 overnight futures and next-day probabilities are not inferred. The existing
 Premium Impulse Monitor remains a separate monitor-only dataset.
 
-There is currently no verified 252-session matched Indian IV series or continuously
-provisioned event calendar in this runtime. Empty/stale inputs produce WAIT;
+There is currently no verified 252-session matched Indian IV series. Official
+RBI/FOMC/MoSPI scheduled-event sources are now connected with freshness and
+document-revision checks; incomplete sources stay UNKNOWN. Empty/stale inputs produce WAIT;
 historical index minute prices are not substituted for an option-volatility
 history. The module does not fetch or purchase SPX datasets. All new strategy
 performance bars remain unknown until reviewed closed-trade/out-of-sample data
@@ -112,10 +115,11 @@ review found [NSE India VIX](https://www.nseindia.com/static/products-services/i
 and [its historical report access](https://www.nseindia.com/static/resources/historical-reports-capital-market-daily-monthly-archives).
 India VIX is based on NIFTY options and represents 30-day expected volatility;
 it is not a matched SENSEX volatility history or individual-contract IV series.
-No unverified substitution, free-history claim, purchase or scraped dataset was
-installed. Current dated contract IV/Greeks/books are archived for study, without
-pretending that the first observation creates 252 prior sessions. Event coverage
-remains unknown, not assumed clear. Calendar remains monitoring-only.
+No unverified substitution, free-history claim or purchase was made. Current
+dated contract IV/Greeks/books and a separately labeled ATM variance30 research
+proxy are archived without pretending they create 252 prior sessions or using
+that proxy as an execution feature. The owner chose a 38-calendar-day study
+instead of shortening the strict event-free horizon. Calendar remains monitoring-only.
 
 ## Private replay / evidence import
 
@@ -139,8 +143,9 @@ the documented1day alias are checked explicitly. An unavailable next-year expiry
 response is recorded separately; only individually matched API/master dates are
 usable. Missing future dates remain unknown; verified current-year dates are retained.
 
-Current-IV30/252-session matched IV history and dated event-calendar evidence
-still need a verified source; no substitute or presumed clear calendar is made.
+Execution IV30/252-session matched IV history still needs validated methodology
+and data; the research proxy is not a substitute. Official scheduled events are
+connected, and no presumed clear calendar is made.
 The worker does not certify a global optimal hedge or always-ready snapshot.
 Minute research reads can expire under the15-second evidence policy; this leaves
 WAIT. Five-second account collection remains independent. Status/counts and
