@@ -37,9 +37,10 @@ and [Orders](https://groww.in/trade-api/docs/curl/orders).
 
 ## Desktop Start contract
 
-Select the strategy switches, then Algo Start saves durable owner On on Oracle.
-Only selected executable strategies may create entries. Calendar remains a
-monitoring selection. The app confirms the exact requested On/Off acknowledgment;
+The current owner choices are Normal theta spread and Research. Select the group
+switches, then Algo Start saves durable owner On on Oracle. Only the selected
+Normal adapter may create new entries; Research remains monitoring only. The app
+confirms the exact requested On/Off acknowledgment;
 an unavailable or mismatched response is displayed as unconfirmed. It waits for
 pending strategy settings before allowing Start and lists the selected routes.
 

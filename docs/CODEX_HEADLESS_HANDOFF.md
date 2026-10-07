@@ -40,11 +40,29 @@ run in the existing preparation worker every five seconds; its network research
 checks retain the60s budget. They no longer hold the collector heartbeat after
 snapshot publication. Stale timestamps are preserved, unavailable research is
 UNKNOWN. All67 Normal/runtime/diagnostic tests passed; the final scheduling test
-replacement also passed all four diagnostic/scheduling tests. Final rollout
-receipt follows below. A busy journal during failure-status recording cannot kill
+replacement also passed all four diagnostic/scheduling tests. A busy journal
+during failure-status recording cannot kill
 the snapshot research retry worker; all five diagnostic/scheduling/recovery tests
 passed after that hardening. Generic refresh failure wording no longer implies
 an API approval problem without authentication evidence.
+
+Final code rollout: `9ca18048a6e8468717130960f2705693fdec092b` on Oracle,
+with the PC fixed SSH binding and background assets refreshed. Observer and all
+four shared services remain active. Paper, original pause, owner Off, both groups
+Off and absent activation proof were verified. The final same-boot protected read
+advanced heartbeat sequence from 8 to 23, returned available money and connected
+closure fields, with no reported runtime/worker exception. A subsequent snapshot
+was READ_ONLY_DATA_AVAILABLE. Intermittent stale reads and connection recovery
+were observed during rollout; continuous five-second cadence is not certified.
+Fresh complete broker-state readiness was still blocked in that sampled response.
+
+The pre-rollout backup remains intact and passed full integrity checking. A new
+investment record appeared through the owner's protected route during rollout;
+the original seed, fees, withdrawals and every earlier addition were preserved.
+No amount or broker identifier is recorded here. No ledger was restored or reset.
+No real order, activation record or verification email was created. Actual GTT
+persistence, generated-child linkage and fills still require a controlled owner
+broker test; replay evidence must never be substituted for those observations.
 
 ## October 7 additional investment control
 
