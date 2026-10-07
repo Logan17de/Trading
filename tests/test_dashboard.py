@@ -82,6 +82,26 @@ def test_independent_quote_position_and_order_reads_start_concurrently():
     assert result['orders_status']=='AVAILABLE' and result['positions_status']=='AVAILABLE'
 
 
+def test_collection_cycle_includes_slow_journal_without_retiming_broker_evidence(tmp_path):
+    from nifty_engine.agent_engine.pc_control import PcJournal
+    current=[NOW]
+    broker=SimpleNamespace(get_quote=lambda **kwargs:{'last_price':100},
+        get_order_list=lambda **kwargs:{'order_list':[]},get_positions_for_user=lambda **kwargs:{'positions':[]},
+        get_historical_candles=lambda **kwargs:{'interval_in_minutes':5,'candles':[]})
+    collector=DashboardCollector(SimpleNamespace(groww=broker,limiter=SimpleNamespace(wait=lambda:None)),
+        clock=lambda:current[0],background_history=False,journal=PcJournal(tmp_path/'journal.sqlite3'),
+        calendar_loader=lambda:{})
+    original=collector.sessions.record
+    def delayed(raw,at):
+        value=original(raw,at); current[0]+=timedelta(seconds=12); return value
+    collector.sessions.record=delayed
+    result=collector.sample()
+    assert result['cycle_duration_seconds']==12 and result['journal_duration_seconds']==12
+    assert result['collection_duration_seconds']==0
+    assert result['finished_at']==result['execution_observation']['received_at']==NOW.isoformat()
+    assert result['sample_completed_at']==(NOW+timedelta(seconds=12)).isoformat()
+
+
 def protocol():
     from pathlib import Path
     return json.loads((Path(__file__).parents[1] / 'config/owner_strategies.json').read_text())

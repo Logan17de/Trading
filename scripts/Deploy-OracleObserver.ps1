@@ -1,4 +1,4 @@
-# Reviewed read-only deployment. Never starts the trader or changes the pause.
+# Reviewed deployment. Preserves existing mode/pause and never starts the trader.
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{40}$')][string]$Commit,
       [Parameter(Mandatory=$true)][ValidatePattern('^[a-zA-Z0-9.-]+$')][string]$HostName,
@@ -25,22 +25,30 @@ raise SystemExit(r.returncode)
 $taskArchiveScript | & $taskPython - $taskArchive $IdentityFile $HostName $Commit
 if ($LASTEXITCODE -ne 0) {throw 'Release transfer failed'}
 $taskSetup=@'
-import json,os,pathlib,pwd,subprocess,sys
+import json,os,pathlib,pwd,runpy,subprocess,sys
 release=pathlib.Path('/opt/growing-trader/releases')/sys.argv[1]
 state=pathlib.Path('/var/lib/trading-observer')
+provision=runpy.run_path(str(release/'scripts/provision_observer.py'))
+# Keep this descriptor alive until the staging process exits. The separate
+# credential stage takes the same root lock and repeats its current preflight.
+deployment_lock=provision['acquire_setup_lock']()
+# Changing the exact source release invalidates activation. Never do that while
+# an owned order/basket is pending, and require the saved owner setting Off.
+environment=pathlib.Path('/etc/growing-trader/observer.env')
+provision['deployment_runtime_preflight'](state,environment)
 try:owner=pwd.getpwnam('trading-observer')
 except KeyError:
  subprocess.run(['useradd','--system','--home',str(state),'--shell','/usr/sbin/nologin','trading-observer'],check=True)
  owner=pwd.getpwnam('trading-observer')
 state.mkdir(mode=0o700,exist_ok=True);os.chown(state,owner.pw_uid,owner.pw_gid)
+# Check the previous runtime before replacing its config link. A cleared runtime
+# pause is an owner choice; the retained original trader marker is independent.
+pause_state=provision['stage_runtime_pause'](state,pathlib.Path('/opt/growing-trader/.trader-paused'),environment)
 config=state/'config'
 if config.exists() or config.is_symlink():
  if not config.is_symlink():raise ValueError('unexpected state config')
  config.unlink()
 config.symlink_to(release/'config',target_is_directory=True)
-pause=state/'.trader-paused'
-if not pathlib.Path('/opt/growing-trader/.trader-paused').is_file():raise ValueError('existing pause missing')
-if not pause.exists():pause.symlink_to('/opt/growing-trader/.trader-paused')
 venv=release/'venv'
 if not venv.exists():subprocess.run(['/usr/bin/python3','-m','venv',str(venv)],check=True)
 site=venv/'lib/python3.12/site-packages'
@@ -49,7 +57,8 @@ subprocess.run([str(venv/'bin/python'),'-I','-c','import nifty_engine.agent_engi
 unit=(release/'deploy/trading-observer.service.example').read_text().replace('RELEASE',sys.argv[1])
 pathlib.Path('/etc/systemd/system/trading-observer.service').write_text(unit)
 subprocess.run(['systemd-analyze','verify','/etc/systemd/system/trading-observer.service'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-print(json.dumps({'status':'READ_ONLY_RELEASE_STAGED','pause':True,'orders_enabled':False}))
+print(json.dumps({'status':'RELEASE_STAGED','pause':pause_state['paused'],
+ 'pause_changed':pause_state['changed'],'runtime_restarted':False,'broker_writes_performed':False}))
 '@
 $taskSetup | & $taskSsh @taskSshArgs "sudo -n python3 - $Commit"
 if ($LASTEXITCODE -ne 0) {throw 'Deployment staging failed'}
@@ -77,5 +86,5 @@ try {
     foreach($taskBuffer in $taskBytes) {if ($null -ne $taskBuffer) {[Array]::Clear($taskBuffer,0,$taskBuffer.Length)}}
     $taskPayload=$null
 }
-# The journal must be migrated/verified before enabling this read-only observer.
+# The journal must be migrated/verified before starting the observer.
 Write-Output 'Release, isolated original credentials and protected PC alerts staged. Observer not started by this script.'

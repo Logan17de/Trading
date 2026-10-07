@@ -26,7 +26,8 @@ class ExecutionDenied(PermissionError):
 
 class ExecutionGate:
     def __init__(self, journal, pause_file, *, mode, release, host, clock, policy_hash, entries_retired=False,
-                 strategy_switches_required=False, matched_iv_required=False, normal_catalog=False):
+                 strategy_switches_required=False, matched_iv_required=False, normal_catalog=False,
+                 commissioning_required=False):
         self.journal, self.pause_file = journal, Path(pause_file)
         self.mode, self.release, self.host = mode, release, host
         self.clock, self.policy_hash = clock, policy_hash
@@ -34,6 +35,8 @@ class ExecutionGate:
         self.strategy_switches_required = strategy_switches_required
         self.matched_iv_required = matched_iv_required
         self.normal_catalog = normal_catalog
+        self.commissioning_required = commissioning_required
+        self.account_fingerprint = None
 
     @contextlib.contextmanager
     def strategy_scope(self, strategy):
@@ -48,11 +51,17 @@ class ExecutionGate:
         if self.pause_file.exists() or self.pause_file.is_symlink(): result.append('REPOSITORY_PAUSED')
         if not policy.intent(self.journal.store)['enabled']: result.append('OWNER_ALGO_OFF')
         proof = self.journal.store.meta('premium-execution-activation', {})
-        if (not isinstance(proof, dict) or proof.get('format') != 'trading-execution-activation-v1'
+        if self.commissioning_required:
+            from .live_setup import activation
+            verified = self.account_fingerprint is not None and activation(
+                self.journal.store, self.release, self.policy_hash, self.account_fingerprint) is not None
+        else:
+            verified = not (not isinstance(proof, dict) or proof.get('format') != 'trading-execution-activation-v1'
                 or proof.get('release') != self.release or not re.fullmatch('[a-f0-9]{40}', self.release)
                 or proof.get('policy_hash') != self.policy_hash
                 or any(proof.get(k) is not True for k in ('owner_approved', 'replay_verified',
-                    'static_ip_verified', 'broker_write_verified', 'persistent_gtt_verified', 'child_link_verified'))):
+                    'static_ip_verified', 'broker_write_verified', 'persistent_gtt_verified', 'child_link_verified')))
+        if not verified:
             result.append('REVIEWED_LIVE_ACTIVATION_REQUIRED')
         if purpose not in ('ENTRY', 'ROLL', 'EXIT', 'PROTECT'):
             result.append('KNOWN_EXECUTION_PURPOSE_REQUIRED')

@@ -6,6 +6,7 @@ book/Greek timestamps remain unknown. Research samples never become positions.
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 from datetime import date, datetime, time, timedelta
 
@@ -84,6 +85,7 @@ def observation(raw, now):
 class SessionJournal:
     def __init__(self, store):
         self.store = store
+        self._chart_versions = {}
         with store.transaction() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS pc_observations(id TEXT PRIMARY KEY, at REAL NOT NULL,
@@ -99,29 +101,48 @@ class SessionJournal:
         day = at.astimezone(JST).date().isoformat()
         complete = all(r["ok"] and r["quote"]["last_price"] is not None and r["quote"]["last_price"] > 0
             for r in value["markets"].values())
+        # The collector reuses seven days of history between refreshes. Replaying
+        # thousands of SELECT/INSERT statements on every quote held the SQLite
+        # writer while live positions aged. Prepare only changed chart versions
+        # outside that lock. Include the time bucket so a retained unfinished bar
+        # is reconsidered when it becomes complete; a content change still causes
+        # the existing immutable-bar revision check.
+        versions, changed = {}, {}
+        for symbol, chart in raw.get("charts", {}).items():
+            if symbol not in INDICES and not SYMBOL.fullmatch(symbol):
+                continue
+            rows = chart.get("context_candles", chart.get("candles", []))[:2000]
+            fingerprint = hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            version = (fingerprint, int(at.timestamp()) // 300)
+            versions[symbol] = version
+            if self._chart_versions.get(symbol) == version:
+                continue
+            changed[symbol] = []
+            for bar in rows:
+                start = stamp(bar["at"])
+                if start+timedelta(minutes=5) > at:
+                    continue
+                prices = {k: finite(bar.get(k)) for k in ("open", "high", "low", "close")}
+                if any(v is None or v <= 0 for v in prices.values()):
+                    continue
+                body = dumps(dict(prices, at=start.isoformat(), interval_minutes=5,
+                    timestamp_semantics="IST_BAR_START_ASSUMPTION_UNVERIFIED"))
+                changed[symbol].append((start, body))
         with self.store.transaction() as db:
             inserted = db.execute("INSERT OR IGNORE INTO pc_observations VALUES(?,?,?,?,?)",
                 (value["id"], at.timestamp(), day, int(complete), dumps(value))).rowcount
             # Keep completed historical bars independently, without duplicating seven
             # days of history into every five-second observation. No silent revision.
-            for symbol, chart in raw.get("charts", {}).items():
-                if symbol not in INDICES and not SYMBOL.fullmatch(symbol):
-                    continue
-                for bar in chart.get("context_candles", chart.get("candles", []))[:2000]:
-                    start = stamp(bar["at"])
-                    if start+timedelta(minutes=5) > at:
-                        continue
-                    prices = {k: finite(bar.get(k)) for k in ("open", "high", "low", "close")}
-                    if any(v is None or v <= 0 for v in prices.values()):
-                        continue
-                    body = dumps(dict(prices, at=start.isoformat(), interval_minutes=5,
-                        timestamp_semantics="IST_BAR_START_ASSUMPTION_UNVERIFIED"))
+            for symbol, bars in changed.items():
+                for start, body in bars:
                     old = db.execute("SELECT body FROM pc_bars WHERE symbol=? AND at=?", (symbol,start.timestamp())).fetchone()
                     if old and old[0] != body:
                         self._revision(db, symbol, start, now)
                     else:
                         db.execute("INSERT OR IGNORE INTO pc_bars VALUES(?,?,?,?)",
                             (symbol,start.timestamp(),start.astimezone(JST).date().isoformat(),body))
+        # A failed transaction must retry all history; never cache before commit.
+        self._chart_versions = versions
         return bool(inserted)
 
     @staticmethod

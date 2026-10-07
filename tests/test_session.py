@@ -71,6 +71,48 @@ def test_session_is_durable_deduplicated_and_never_persists_credentials_or_incom
     assert json.loads(sessions.store.read('SELECT body FROM pc_bars')[0]['body'])['close']==25000
 
 
+def test_unchanged_history_avoids_sql_replay_but_records_quotes_and_newly_complete_bars(tmp_path, monkeypatch):
+    sessions=SessionJournal(PcJournal(tmp_path/'private.sqlite').store)
+    statements=[]
+    connect=sessions.store.connect
+    def traced():
+        db=connect(); db.set_trace_callback(statements.append); return db
+    monkeypatch.setattr(sessions.store,'connect',traced)
+    sessions.record(raw(),NOW)
+    assert any('pc_bars' in sql for sql in statements)
+    statements.clear()
+    record_prices(sessions,NOW+timedelta(seconds=5),51)
+    assert not any('pc_bars' in sql for sql in statements)
+    assert len(sessions.store.read('SELECT * FROM pc_observations'))==2
+    # Cached input can contain an unfinished bar. The next time bucket must
+    # inspect it again, without retiming its original bar start.
+    record_prices(sessions,NOW+timedelta(minutes=5),52)
+    bars=sessions.store.read('SELECT at,body FROM pc_bars ORDER BY at')
+    assert len(bars)==2 and bars[-1]['at']==NOW.timestamp()
+    assert json.loads(bars[-1]['body'])['close']==999
+    changed=raw(); changed['charts']['NIFTY']['candles'][0]['close']=25001
+    sessions.record(changed,NOW)
+    assert sessions.store.read("SELECT key FROM meta WHERE key LIKE 'bar-revision-%'")
+    assert json.loads(sessions.store.read('SELECT body FROM pc_bars ORDER BY at')[0]['body'])['close']==25000
+
+
+def test_failed_history_commit_does_not_cache_or_lose_retry(tmp_path,monkeypatch):
+    from contextlib import contextmanager
+    sessions=SessionJournal(PcJournal(tmp_path/'private.sqlite').store)
+    transaction=sessions.store.transaction
+    @contextmanager
+    def interrupted():
+        with transaction() as db:
+            yield db
+            raise RuntimeError('simulated precommit failure')
+    monkeypatch.setattr(sessions.store,'transaction',interrupted)
+    with pytest.raises(RuntimeError):sessions.record(raw(),NOW)
+    assert sessions.store.read('SELECT * FROM pc_bars')==[]
+    monkeypatch.setattr(sessions.store,'transaction',transaction)
+    assert sessions.record(raw(),NOW)
+    assert len(sessions.store.read('SELECT * FROM pc_bars'))==1
+
+
 @pytest.mark.parametrize('field,value',[('execution_mode','REPLAY'),('order_capability',True),('status','BLOCKED')])
 def test_session_rejects_simulation_and_failed_collectors(tmp_path,field,value):
     sessions=SessionJournal(PcJournal(tmp_path/'private.sqlite').store)

@@ -102,3 +102,24 @@ def test_smart_details_must_match_list_identity_and_bounded_read_count():
     with pytest.raises(ValueError):reader([position()],NOW)
     reader._get=lambda path,params=None: {'orders':[{'smart_order_id':str(n)} for n in range(50)]} if params else dict(oco(trading_symbol='OTHER'),smart_order_id=path.split('/')[-1])
     with pytest.raises(ValueError):reader([position()],NOW)
+
+
+def test_independent_protection_lists_overlap_and_failed_read_is_not_cached():
+    import threading
+    reader=SmartOrderReader(SimpleNamespace(),SimpleNamespace(wait=lambda:None))
+    began={kind:threading.Event() for kind in ('OCO','GTT')}
+    fail=[False]
+    calls=[]
+    def read(path,params=None):
+        kind=params['smart_order_type']; calls.append(kind); began[kind].set()
+        assert began['GTT' if kind=='OCO' else 'OCO'].wait(1)
+        if fail[0] and kind=='GTT':raise OSError('unavailable')
+        return {'orders':[]}
+    reader._get=read
+    assert reader([position()],NOW)==[]
+    assert sorted(calls)==['GTT','OCO']
+    fail[0]=True
+    with pytest.raises(OSError):reader([position()],NOW+timedelta(seconds=5))
+    fail[0]=False
+    assert reader([position()],NOW+timedelta(seconds=6))==[]
+    assert len(calls)==6  # Failure did not advance the cache's timestamp.

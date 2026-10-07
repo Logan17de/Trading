@@ -27,7 +27,13 @@ def backup_database(source, destination):
                     raise ValueError("backup integrity check failed")
                 version = dst.execute("PRAGMA user_version").fetchone()[0]
                 tables = [r[0] for r in dst.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
-        digest = hashlib.sha256(destination.read_bytes()).hexdigest()
+        # Journals can exceed the observer's memory limit. Hash the verified
+        # backup in bounded chunks instead of allocating the entire database.
+        hasher = hashlib.sha256()
+        with destination.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                hasher.update(chunk)
+        digest = hasher.hexdigest()
         return {"status": "VERIFIED_BACKUP", "sha256": digest, "bytes": destination.stat().st_size,
                 "schema_version": version, "tables": tables}
     except BaseException:

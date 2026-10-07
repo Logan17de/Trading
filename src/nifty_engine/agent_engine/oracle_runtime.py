@@ -76,7 +76,7 @@ class Runtime:
                 'legacy_management':premium_strategy.load(self.root),'research':self.research_catalog,
                 **({'normal':self.normal_catalog} if self.normal_catalog else {})}),
             entries_retired=False,strategy_switches_required=True,matched_iv_required=True,
-            normal_catalog=bool(self.normal_catalog))
+            normal_catalog=bool(self.normal_catalog),commissioning_required=True)
         from .impulse_feed import StreamingImpulse
         self.impulse=StreamingImpulse(self.root,self.state.pnl_lines.store)
         from .research_sync import SupabaseArchive
@@ -100,6 +100,8 @@ class Runtime:
         view["runtime"]={"host":"ORACLE","boot_id":self.boot_id,"heartbeat_sequence":self.sequence,
             "heartbeat_at":self.at,"error":self.error,"orders_enabled":execution["execution_enabled"],"collector_host":"ORACLE"}
         view["execution_controller"]=execution
+        from .live_setup import public as live_setup_public
+        view['live_setup']=live_setup_public(self.state.pnl_lines.store,self.gate)
         view['premium_impulse']=self.impulse.public()
         view['research_archive']=self.research_archive.public()
         algo=view.get('control',{}).get('algo')
@@ -108,7 +110,7 @@ class Runtime:
                 ('ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED','ORACLE_EXECUTOR_CONNECTION_REQUIRED')]+execution['blockers']))
             algo['execution_enabled']=execution['execution_enabled']
             algo['status']='ON_READY' if execution['execution_enabled'] else 'ON_BLOCKED' if algo.get('desired_enabled') else 'OFF'
-            algo['stop_status']='PERSISTENT_GTT_IMPLEMENTED_ACTIVATION_UNVERIFIED'
+            algo['stop_status']='PROVIDER_COMMISSIONING_VERIFIED' if view['live_setup']['provider_verified'] else 'PERSISTENT_GTT_IMPLEMENTED_ACTIVATION_UNVERIFIED'
             view['control']['blockers']=algo['blockers']
             view['control']['execution_enabled']=execution['execution_enabled']
         view["runtime"]["initializing"]=self.sequence==1
@@ -142,7 +144,7 @@ class Runtime:
                 iv={index:iv_observations.public(evidence,index,now) for index in cfg['indices']},
                 matched_iv={index:iv_history.public(evidence,index,now) for index in cfg['indices']},
                 event_calendar=assessment(evidence.meta(calendar_key,{}).get('sources',{}),now),
-                broker_protection=broker_readiness.summary(evidence,now),
+                broker_protection=broker_readiness.summary(evidence,now,gate=self.gate),
                 research_campaign=research_campaign.public(evidence,now),broker_writes=False)
             from .strategy_readiness import assess
             statuses=assess(evidence,cfg,self.gate,obs,now)
@@ -200,6 +202,15 @@ class Runtime:
         if importlib.metadata.version("growwapi")!=SDK_VERSION:raise ValueError("SDK pin mismatch")
         token=GrowwAPI.get_access_token(api_key=os.environ["GROWW_OBSERVER_API_KEY"],secret=os.environ["GROWW_OBSERVER_API_SECRET"])
         market=GrowwMarketData(token)
+        from .contracts import identity
+        try:
+            market.limiter.wait()
+            profile=market.groww.get_user_profile(timeout=5)
+            if not all(isinstance(profile.get(k),str) and profile[k] for k in ('vendor_user_id','ucc')):
+                raise ValueError('EXACT_BROKER_ACCOUNT_REQUIRED')
+            self.gate.account_fingerprint=identity({k:profile[k] for k in ('vendor_user_id','ucc')})
+        except Exception:
+            self.gate.account_fingerprint=None
         self.collector=DashboardCollector(market,background_history=True,journal=self.state.monitor.journal,
             smart_loader=SmartOrderReader(market.groww,market.limiter))
         self.collector.news_loader=None

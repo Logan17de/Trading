@@ -35,12 +35,16 @@ def inspect_gtt(read,now):
     return result
 
 
-def summary(store,now):
+def summary(store,now,*,gate=None):
     value=store.meta(KEY,{})
     try:current=fresh(value['at'],now,3600)
     except (KeyError,TypeError,ValueError):current=False
+    verified=False
+    if gate is not None:
+        from .live_setup import activation
+        verified=activation(store,gate.release,gate.policy_hash,getattr(gate,'account_fingerprint',None)) is not None
     return dict(checked_at=value.get('at'),read_api=value.get('gtt_read_api','UNKNOWN') if current else 'UNKNOWN_OR_STALE',
         list_scope=value.get('list_scope','UNSPECIFIED'),window=value.get('window'),
         counts={k:r.get('count') if current else None for k,r in value.get('lists',{}).items()},
-        persistent_owned_gtt_verified=False,generated_child_verified=False,
-        reason=value.get('reason','PROVIDER_AUDIT_NOT_RUN'),broker_writes=False)
+        persistent_owned_gtt_verified=verified,generated_child_verified=verified,
+        reason='OWNER_COMMISSIONING_VERIFIED' if verified else value.get('reason','PROVIDER_AUDIT_NOT_RUN'),broker_writes=False)

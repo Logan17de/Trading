@@ -1,5 +1,47 @@
 # Current Trading handoff
 
+## October 7 concrete owner live setup
+
+Fixed the missing commissioning path. Previously every production write required
+live broker evidence, but no production tool could collect it. Start only saved
+intent, and deployment reset mode to paper on each run. Read LIVE_SETUP.md.
+
+The separate owner-operated `Invoke-OracleLiveSetup.ps1`/`owner_setup.py` workflow
+previews an exact one-lot test, requires the precise plan hash for each test write,
+captures actual GTT persistence and exact generated-child fills, closes only its
+acquired test long, and verifies terminal/flat state. Its private evidence is never
+strategy ownership or P&L. Unknown submissions never resend automatically.
+Production uses a v2 receipt validated against the evidence, installed source,
+policy, SDK and current authenticated account. The owner arm command reruns replay
+tests, backs up the journal, rechecks broker state and prepares live mode with
+Algo Off. It clears only the runtime pause link and preserves the original shared
+pause. Start then controls the selected Normal strategy; Research cannot trade.
+Maintenance has not run test orders or the arm command and has not created proof.
+
+Deployment now preserves existing mode/pause and refuses owner On, open owned
+orders or a running live unpaused observer. It shares setup's root lock and checks
+again before replacing credentials. New releases still require reviewed evidence;
+verification is not copied to a different build. Dashboard readiness now reports
+the actual private setup stage and links an owner guide, replacing permanent
+unverified labels when real evidence is eventually available.
+
+Collection fixes skip unchanged historical-bar SQL inside the writer transaction
+and overlap independent smart-order reads. Source timestamps/freshness limits are
+unchanged. Snapshot timing separates collection and journal time. Backup hashing
+now streams the file; it no longer allocates an entire large journal in the capped
+observer. The actual journal was approximately 0.9 GB during this rollout.
+
+Oracle read-only profile check confirmed required identity fields and active FNO
+access. No raw identity, credential or private financial amount was printed or
+committed. Full-suite verification passed 662 tests with six platform skips;
+after final commissioning result/recovery refinements, all 103 setup/core tests
+passed. The backup/restore regression passed after streaming-hash changes.
+Config, JS, Python compilation, PowerShell syntax and the isolated synthetic
+offline demo passed. The pre-rollout SQLite backup
+`pre-owner-live-setup-20261007T072802Z.sqlite3` passed full integrity checking;
+capital and owner-control hashes still matched after it completed. Actual
+deployment/readiness observations follow after rollout.
+
 ## October 7 protection and external-closure update
 
 Extended the existing persistent GTT adapter with exact owned orphan-parent

@@ -738,7 +738,7 @@ class DashboardCollector:
         self.sequence += 1
         finished = self.clock()
         result.update(sequence=self.sequence, finished_at=finished.isoformat(),
-                      cycle_duration_seconds=(finished-started).total_seconds(),
+                      collection_duration_seconds=(finished-started).total_seconds(),
                       status="READ_ONLY_DATA_AVAILABLE" if all(probes[key + "_quote"]["ok"] for key in INDICES)
                       else "PARTIAL_MARKET_DATA")
         owners = self.journal.pnl_owners(orders,positions,complete=complete) if self.journal else {}
@@ -758,6 +758,10 @@ class DashboardCollector:
                 result["journal_status"] = "RECORDED_AND_PUBLISHED"
             except Exception as exc:
                 result["journal_status"] = "JOURNAL_"+type(exc).__name__
+        completed = self.clock()
+        result["sample_completed_at"] = completed.isoformat()
+        result["journal_duration_seconds"] = (completed-finished).total_seconds()
+        result["cycle_duration_seconds"] = (completed-started).total_seconds()
         return result
 
 
@@ -1107,6 +1111,7 @@ def handler(state):
                     content=content.replace("cid:"+attachment["content_id"],"data:image/png;base64,"+attachment["content"])
                 return self.respond(200,content.encode(),"text/html; charset=utf-8")
             assets = {"/": ("index.html", "text/html; charset=utf-8"),
+                "/live-setup": ("live-setup.html", "text/html; charset=utf-8"),
                 "/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
                 "/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
                 "/app-icon.svg":("app-icon.svg","image/svg+xml")}

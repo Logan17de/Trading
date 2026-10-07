@@ -1,5 +1,16 @@
 # Trading workspace
 
+- Owner-operated commissioning is implemented in broker_commissioning.py and
+  owner_setup.py; read docs/LIVE_SETUP.md. The desktop/observer never calls its
+  submit/close/cancel/arm commands. Maintenance may test them with synthetic
+  brokers only. Actual evidence is private and separate from strategy ownership.
+  Production uses the v2 evidence-bound activation receipt, not hand-set flags.
+  The owner arm command prepares live mode with Algo Off, clears only this
+  runtime's pause link and retains the original shared trader pause. Never run
+  broker-writing commissioning or arm commands as maintenance. Deployment must
+  preserve existing mode/pause and refuse owner On/open owned orders or an active
+  live unpaused runtime; new source requires reviewed commissioning.
+
 - External closure uses `external_close.py`: exact terminal Self offsets, an
   ownership-safe baseline and two fresh complete flat reads. Self means outside
   this engine, not verified personal/device origin. Keep manual flags and external

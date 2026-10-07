@@ -1,5 +1,18 @@
 # Oracle premium execution controller
 
+## Owner commissioning path
+
+Read [LIVE_SETUP.md](LIVE_SETUP.md). Production now requires a v2 receipt tied to
+the actual private commissioning record, exact release/policy/SDK/account. The
+owner-operated tool supplies the missing path from Off/paper/paused to a verified
+live setup; Start itself still only controls persistent owner intent. No setup
+command runs automatically and no real commissioning test was performed during
+maintenance. Existing synthetic v1 fixtures remain replay-only: the production
+runtime explicitly rejects them. Readiness derives from validated observations
+instead of permanently hardcoded false fields.
+
+Historical setup descriptions below describe earlier releases.
+
 ## Closing an algo basket outside the engine
 
 The observer now supplies bounded, private order evidence alongside complete

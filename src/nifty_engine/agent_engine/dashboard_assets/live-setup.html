@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Real trading setup · Options Trader</title><link rel="stylesheet" href="/dashboard.css"></head>
+<body><main style="max-width:760px;margin:40px auto;padding:24px;background:white;border-radius:18px">
+<a href="/">← Dashboard</a><h1>Real trading setup</h1>
+<p>Algo Start controls real trading after the one-time Oracle broker check and live setup are complete. Setup keeps Algo Off.</p>
+<ol>
+<li><strong>Preview the exact test.</strong> Choose one option contract and one lot, with explicit trigger and buy/sell limit prices. The purchase debit must be within ₹1,000. Preview sends no orders.</li>
+<li><strong>Run the broker check yourself.</strong> Confirm the preview's plan hash before submitting the test GTT. The separate owner tool records the real parent, its generated order and its fill. Missing linkage stays unverified.</li>
+<li><strong>Close and confirm the test.</strong> Confirm the exact test's sell limit. The tool verifies the close, flat positions and inactive protection. It cannot adopt or close your other trades.</li>
+<li><strong>Prepare live mode.</strong> Review the evidence digest and run the owner arm command. It rechecks the installed release, reruns tests, backs up the journal and prepares the live runtime with Algo Off.</li>
+<li><strong>Choose Normal theta spread, then Algo Start.</strong> Oracle checks manual positions, margin, current data and a qualifying trend after 14:00 JST. It buys the hedge first, verifies its fill, then sells and verifies protection. Research does not trade.</li>
+</ol>
+<p>The broker check can create a real one-lot long option and incur charges. A limit order may remain unfilled. The tool never chooses a contract or changes your price to force a fill.</p>
+<p><a href="https://github.com/Logan17de/Trading/blob/main/docs/LIVE_SETUP.md" target="_blank" rel="noopener noreferrer">Owner setup commands and recovery guide</a></p>
+<p>After setup, use the desktop app normally. Algo Off prevents further engine orders; already armed broker instructions can still trigger.</p>
+</main></body></html>

@@ -225,6 +225,10 @@ function renderControl() {
   const blockers=[...new Set(algo?.blockers||[])].filter(k=>k!=='OWNER_ALGO_OFF').map(k=>labels[k]||k).join('; ');
   $("algo-start-result").textContent=algoStartPending?"Saving owner setting…":last?.status==='TRANSPORT_FAILED'?"Oracle did not confirm the setting. Read the On/Off state before retrying.":selection+(on?(writesPermitted?"Algo On. Oracle may place real orders for these strategies when their entry checks pass; one basket at a time.":`On is saved until you click Algo Off. Trading blocked: ${blockers||'readiness not confirmed'}.`):`Algo Off. Start saves On on Oracle; orders require live readiness.${blockers?` Currently blocked: ${blockers}.`:''}`);
   const execution=data.execution_controller;
+  const setup=data.live_setup;
+  if($("live-setup-status"))$("live-setup-status").textContent=setup?
+    (setup.next_step==='OWNER_START'?"Real trading setup verified. Select Normal theta spread and click Algo Start when ready.":
+    `Real trading setup: ${String(setup.commissioning?.status||'NOT_STARTED').replaceAll('_',' ').toLowerCase()}. Complete the owner broker check, then prepare live mode. Algo stays Off during setup.`):"Real trading setup: waiting for Oracle status.";
   const impulse=data.premium_impulse;
   $("impulse-status").textContent=impulse?`Stream: ${impulse.transport_status||impulse.status} · ${Object.entries(impulse.indices||{}).map(([index,r])=>`${index}: ${r.score??'—'}/100 (${r.status}, ${r.known_points}/100 evidence)`).join(' · ')||'waiting for current events and history'} · ${impulse.processing_ms??'—'} ms local processing · read-only`:'Streaming breakout detector: waiting for Oracle evidence';
   const lastImpulse=impulse?.recent_confirmations?.at(-1);

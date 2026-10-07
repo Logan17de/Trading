@@ -6,6 +6,7 @@ in-memory token and retains GET-only chart observation; it never arms an order.
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 from .contracts import IST
@@ -39,13 +40,21 @@ class SmartOrderReader:
         symbols = {(r.get("trading_symbol"),r.get("exchange")) for r in positions if r.get("quantity")}
         rows, details = [], 0
         end = now.astimezone(IST)
+        def page_read(kind, page):
+            return self._get("/v1/order-advance/list",{"segment":"FNO","smart_order_type":kind,
+                "status":"ACTIVE","page":page,"page_size":50,
+                "start_date_time":(end-timedelta(days=28)).replace(tzinfo=None).isoformat(timespec="seconds"),
+                "end_date_time":end.replace(tzinfo=None).isoformat(timespec="seconds")})
+        # These GETs are independent. Sequential OCO/GTT list latency was added
+        # after positions had already been read, aging otherwise complete broker
+        # observations before publication. Detail/pagination bounds stay shared.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            pending = {kind:pool.submit(page_read,kind,0) for kind in ("OCO", "GTT")}
+            first = {kind:job.result() for kind,job in pending.items()}
         for kind in ("OCO", "GTT"):
             complete = False
             for page in range(4):
-                body = self._get("/v1/order-advance/list",{"segment":"FNO","smart_order_type":kind,
-                    "status":"ACTIVE","page":page,"page_size":50,
-                    "start_date_time":(end-timedelta(days=28)).replace(tzinfo=None).isoformat(timespec="seconds"),
-                    "end_date_time":end.replace(tzinfo=None).isoformat(timespec="seconds")})
+                body = first[kind] if page == 0 else page_read(kind,page)
                 items = body.get("orders")
                 if not isinstance(items,list) or len(items) > 50:
                     raise ValueError("smart pagination unverified")
