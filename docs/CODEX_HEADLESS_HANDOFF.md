@@ -21,8 +21,40 @@ Real provider order/GTT/generated-child verification remains pending. Setup does
 not fabricate activation proofs, enable LIVE, remove pause or send test orders.
 Actual production remains Off/paper/paused with no owned orders. A Start click
 alone cannot overcome these validation/data blockers. Calendar settlement risk
-and out-of-sample strategy validation also remain unfinished. Deployment and
-post-install verification are recorded separately below when completed.
+and out-of-sample strategy validation also remain unfinished.
+
+Final immutable Oracle source is `12b4cb13939b63438fa2764079c7a3ae565d276d`;
+PC protected transport pin and assets refreshed. Heartbeat advances, runtime
+error is null, all five shared services active. Actual global owner Off, four
+switches Off, execution false, pause and paper preserved, zero owned-order rows.
+All four protected no-op Off submissions returned UNCHANGED on Oracle. No
+activation proof or real order was created. Automated owner Edge loopback
+navigation remains ERR_BLOCKED_BY_CLIENT; rendered UI is unverified, not passed.
+
+Actual read-only deployed execution-source check passed authentication, both
+index quotes, positions/orders and funds; the final source follow-up changes
+only visual reporting. Normal continuous collection remains scheduled from
+12:40 JST and had not started at this morning check. Sampled market-hours
+Greek/book/margin cadence still needs actual verification.
+
+Full suite393 passed/four skipped (397 collected). Final execution-source
+retest24 passed; visual-mail follow-up42 passed/two skipped. Config/JS/compile,
+diff checks and synthetic offline demo passed. Replay covers both indexes,
+three credit structures, exact protection/child races, staged condor cash,
+restart, partial fill, switch race, manual protection, expiration and CSRF.
+These are not real provider order/protection or strategy profitability proofs.
+
+Pre/post backups passed SQLite integrity. Final private off-host copy matches
+`e13984443ad214b0ff7c35cb27574ad0b54b2c94a1dc2cff9a93a5192b17b2f6`,
+114,733,056 bytes. Private final email preview contains all four strategy names
+and selection badges; no test email sent. Scheduler remains19:30 JST. The email
+now distinguishes On/blocked from actual permission to write; no fabricated
+inbox delivery. Existing October6 recipient-server receipt remains historical.
+Supabase archive SYNCED; actual readback122 evaluation versions at02:11 UTC.
+The new contract-observation export is configured, with no current contract
+rows yet before collection; do not claim a completed Greek-data upload.
+No capital/balance/credential fields were added to the cloud archive. Noon
+automation instructions now describe the guarded routes and remaining blockers.
 
 ## October 7 read-only connections and explicit owner Start
 

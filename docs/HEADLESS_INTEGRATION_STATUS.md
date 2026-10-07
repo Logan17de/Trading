@@ -1,5 +1,23 @@
 # Current work · October 7, 2026
 
+Current deployed source: `12b4cb13939b63438fa2764079c7a3ae565d276d`. Three report
+credit-basket adapters share PremiumExecutor; calendar remains monitor-only.
+Four persistent private strategy switches are installed. Actual global Algo Off,
+all four switches Off, paused/paper, zero owned orders. Missing IV/event evidence,
+calendar payoff modeling and real provider order/GTT/child validation still block
+live readiness; Start cannot bypass them. Owner approved continued monitoring
+when a verified source is unavailable. Manual/unknown trades remain protected.
+
+Full suite393 passed/four skipped; execution-source24 and mail follow-up42
+passed (two platform skips). Offline demo/config/JS/compile checks passed. Oracle
+heartbeat advances, shared services active, existing Supabase archive SYNCED.
+Actual read-only auth/quotes/positions/orders/funds passed before the final mail
+follow-up. Collection starts12:40 JST; actual current contract export and
+market-hours cadence remain unverified. Backups and private off-host hash match;
+private email preview contains four strategies, no email/order sent. Rendered
+Edge check remains blocked by its client; API/control path verified. Read the
+current handoff for exact evidence. Earlier deployment records follow.
+
 Read-only connection update deployed `14e88733d8ff41e6b0033c75a12541dade23deac`.
 Owner switch remains Off; Start is the explicit durable intent action and cannot
 bypass monitor-only or live-validation gates. New studies automatically receive
