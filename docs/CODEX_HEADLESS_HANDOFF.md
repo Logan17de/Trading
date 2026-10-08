@@ -23,6 +23,27 @@ fill, stop attachment/persistence or SELL fill was recorded. This is not complet
 live commissioning. No source upgrade may transfer that record into new-release
 activation evidence. Normal's policy/risk bounds and Research's study are unchanged.
 
+Deployed immutable release `d0ced4ae2c25d68a1bb831ee641310cf8383bf45` and
+restarted the local viewer. The full local run had 818 passes, six platform skips
+and one obsolete assertion expecting the bridge in the research loop. Updated
+that scheduling test; all 11 focused regression tests then passed. The earlier
+167-test commissioning/protection/Normal run passed, as did 29 targeted tests on
+the final installed Oracle release, config/JS checks and the two-job offline
+demo (email queued, unsent). No real broker order was sent by maintenance.
+
+Actual GET-only 28-window scanning completed in 9.86 seconds, with authentication
+separately taking 0.60 seconds. This is a scan measurement, not a promised total
+Preview time. Oracle heartbeat advanced on the new boot; PC reported HEALTHY.
+An independent journal read measured copied balances at 5.5 seconds old, while
+PC view/read delays still varied and could show older data. Freshness thresholds
+remain unchanged. No valid live-entry candidate or new filled/protected test was
+certified. Normal remains Off, Research On, global Off, paper and paused.
+
+Verified a new local SQLite backup; retained the previously verified full Oracle
+backup and saved fresh private protected metadata/unit rollback evidence. There
+was no schema migration. Capital, commissioning and owner-control metadata,
+environment/pause and all four shared service process identities were unchanged.
+
 ## October 8 owner-requested broker-test purchase cap removal
 
 The owner explicitly removed the fixed INR 1,000 purchase cap for the supervised
