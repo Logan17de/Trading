@@ -5,33 +5,47 @@ import hashlib
 import os
 import shutil
 import sqlite3
+import time
 from contextlib import closing
 from pathlib import Path
 
 from .contracts import stamp
 
 
-def backup_database(source, destination):
+def backup_database(source, destination, *, timeout_seconds=600):
     """SQLite online backup, including committed WAL; never overwrite a journal."""
     source, destination = Path(source).resolve(), Path(destination).resolve()
+    if timeout_seconds <= 0:
+        raise ValueError("positive backup deadline required")
     if not source.is_file() or source == destination:
         raise ValueError("an existing source and a new destination are required")
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     os.close(fd)
     try:
+        deadline = time.monotonic() + timeout_seconds
+        def progress(status, remaining, total):
+            if time.monotonic() >= deadline:
+                raise TimeoutError("backup deadline exceeded")
         with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src:
+            # Pin one committed WAL snapshot. Otherwise concurrent observer writes
+            # can repeatedly restart sqlite3_backup and starve it indefinitely.
+            src.execute("BEGIN")
+            src.execute("SELECT rootpage FROM sqlite_master LIMIT 1").fetchone()
             with closing(sqlite3.connect(destination)) as dst:
-                src.backup(dst, pages=128, sleep=0.05)
+                src.backup(dst, pages=128, sleep=0.05, progress=progress)
+                dst.set_progress_handler(lambda: int(time.monotonic() >= deadline), 10000)
                 if dst.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
                     raise ValueError("backup integrity check failed")
                 version = dst.execute("PRAGMA user_version").fetchone()[0]
                 tables = [r[0] for r in dst.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+            src.rollback()
         # Journals can exceed the observer's memory limit. Hash the verified
         # backup in bounded chunks instead of allocating the entire database.
         hasher = hashlib.sha256()
         with destination.open('rb') as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                progress(None, None, None)
                 hasher.update(chunk)
         digest = hasher.hexdigest()
         return {"status": "VERIFIED_BACKUP", "sha256": digest, "bytes": destination.stat().st_size,

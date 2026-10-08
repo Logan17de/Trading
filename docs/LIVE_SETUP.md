@@ -6,8 +6,9 @@ These actions are for the owner to run. Deployment and background workers never
 invoke them. Keep Algo Off throughout setup. No commissioning trade has been run
 by maintenance, and a successful synthetic test is not provider evidence.
 
-The test creates one explicitly chosen long option through a GTT BUY, then an
-explicit LIMIT SELL of that test's acquired quantity. Purchase debit is limited
+The test creates one explicitly chosen long option through a GTT BUY. After its
+fill, the owner attaches a declared SELL DOWN stop-loss GTT. Exit uses either its
+exact generated child or a separate explicit LIMIT SELL after stop cancellation. Purchase debit is limited
 to INR 1,000 before fees. It does not sell a naked option, choose an instrument,
 change the owner's prices to force a fill, or use a pre-existing manual position.
 Only NIFTY/SENSEX FNO NRML, one current-master lot and a non-expiry-day contract
@@ -19,15 +20,28 @@ pending if its trigger is not reached or its limit does not fill.
 Open **Real trading setup** from Options Trader, or visit
 `http://127.0.0.1:8765/live-setup` in Edge. No command prompt is required.
 
+The page immediately displays saved state from this PC. Opening or reloading it
+does not authenticate with Groww or send a broker request. Use **Refresh status**
+or **Read broker evidence** for a current Oracle check before a broker action.
+Elapsed seconds remain visible during those checks. Preview/submission can take
+longer because they inspect active GTT/OCO history as well as current broker data.
+The new plan includes exact stop trigger and stop limit prices. **Attach
+stop-loss** is a separate owner action after the BUY fills. Once accepted, Groww
+monitors that GTT. A stop-limit can remain unfilled after a price gap. The closing
+limit is used only by the separate owner **Close test long** action.
+
 1. Enter the exact current contract, one-lot quantity, tick size, your trigger and
-   limit prices, plan deadline and existing Oracle IPv4 approved in Groww.
+   limit prices, stop trigger/limit, plan deadline and existing Oracle IPv4 approved in Groww.
 2. Click **Preview · no order**, then review the exact values displayed.
 3. Check the owner confirmation and click **Submit real BUY GTT** only when ready.
 4. Use **Read broker evidence** for the actual parent and fill observations. Each
    observation is a separate request; the two persistence/flat reads must be at
    least five seconds apart. The page never submits or retries orders by polling.
-5. When the test long is filled, confirm **Close test long**. If an instruction is
-   pending, use its exact cancel action, then read evidence again.
+5. When the test long is filled, confirm **Attach stop-loss**. Read evidence in
+   separate checks at least five seconds apart to verify persistence. To exit
+   separately, confirm **Cancel stop-loss**, verify it inactive, then confirm
+   **Close test long**. A triggered or partial stop child must be reconciled first;
+   the app never sends a second SELL for quantity already filled.
 6. After the test is COMPLETE, click **Check live readiness**, review its result,
    then confirm **Prepare live · keep Algo Off**. This may take several minutes.
 
@@ -54,6 +68,8 @@ required fields are:
 | `trigger_price` | Your BUY UP trigger, above the current ask |
 | `buy_limit_price` | At/above trigger, on tick; quantity times price <=1,000 |
 | `sell_limit_price` | Your explicit test closing LIMIT price, on tick |
+| `stop_trigger_price` | SELL DOWN trigger below BUY trigger and actual entry |
+| `stop_limit_price` | SELL limit at/below stop trigger, on tick |
 | `valid_until` | Zoned ISO timestamp within the next 24 hours |
 | `egress_ip` | Oracle's existing broker-whitelisted public IPv4 |
 
@@ -74,7 +90,7 @@ and observed IP. Future commands cannot silently change that binding.
 ## Run and observe the exact owner test
 
 Replace the placeholders with the preview's actual values. `submit`, `close`
-and `cancel` are real broker actions and require the exact plan hash every time.
+`protect`, `cancel-stop` and `cancel` are real broker actions and require the exact plan hash every time.
 
 ```powershell
 .\scripts\Invoke-OracleLiveSetup.ps1 -Action submit -PlanId PLAN_ID -Confirm PLAN_HASH
@@ -89,8 +105,24 @@ The verifier checks the contract, quantity, direction, price, terminal status an
 full fill. If linkage is absent it reports unverified; it never guesses from net
 positions or adopts a manual order. A timeout never causes a repeated submission.
 
-Once the exact acquired long has a terminal fill, close it at your predeclared
-sell limit and capture two fresh flat reads at least five seconds apart:
+After a full terminal BUY fill, attach the predeclared stop and observe it
+ACTIVE in separate processes at least five seconds apart:
+
+```powershell
+.\scripts\Invoke-OracleLiveSetup.ps1 -Action protect -PlanId PLAN_ID -Confirm PLAN_HASH
+.\scripts\Invoke-OracleLiveSetup.ps1 -Action capture -PlanId PLAN_ID
+```
+
+To exit separately, cancel the exact stop, then verify its parent and any child
+are terminal before closing the remaining acquired quantity. Cancellation can
+race a trigger; its receipt alone is never proof that the position is still open:
+
+```powershell
+.\scripts\Invoke-OracleLiveSetup.ps1 -Action cancel-stop -PlanId PLAN_ID -Confirm PLAN_HASH
+```
+
+Close at your predeclared sell limit and capture two fresh flat reads at least
+five seconds apart:
 
 ```powershell
 .\scripts\Invoke-OracleLiveSetup.ps1 -Action close -PlanId PLAN_ID -Confirm PLAN_HASH
@@ -106,7 +138,8 @@ to the test symbol stop automated test cleanup and require owner reconciliation.
 
 ## Prepare live mode, leaving Algo Off
 
-Only a COMPLETE test with actual parent, child, API close, terminal orders and
+Only a COMPLETE protected test with actual entry/exit linkage, stop persistence,
+inactive protection, terminal orders and
 two confirmed flat reads produces verifiable evidence. The app shows these facts
 without exposing account IDs or private order details.
 
@@ -134,6 +167,16 @@ trigger or fill. Exact release or policy changes invalidate setup; deployment
 refuses an owned open basket or owner On and preserves operational mode/pause.
 It does not silently transfer verification to a new build. Repeat reviewed setup
 for a changed build before expecting Start to execute again.
+
+## Cancelled test from a previous release
+
+Use **Reconcile cancelled test · no order** (CLI `retire`). It uses GET requests
+and two fresh flat observations. It retains the original plan, account binding
+and receipts, and archives the PC form only after reconciliation. It never
+transfers provider proof to a new release. Active/unknown instructions and
+account/policy changes stay blocked. A cancelled unfilled test cannot activate
+real trading. New previews require the protected v2 plan; historical buy-only
+evidence is retained but cannot arm the new release.
 
 ## What is and is not proved
 

@@ -105,9 +105,10 @@ def preview_id(value):
 
 def assemble_plan(spec, current, plan_id=None):
     required={'contract','quantity','trigger_price','buy_limit_price','sell_limit_price','valid_until','egress_ip'}
-    if not isinstance(spec,dict) or set(spec)!=required: raise SetupError('EXACT_PRIVATE_PLAN_SPEC_REQUIRED')
+    from .commissioning_stop import FORMAT, FIELDS
+    if not isinstance(spec,dict) or set(spec)!=required | FIELDS: raise SetupError('EXACT_PRIVATE_PLAN_SPEC_REQUIRED')
     if spec['egress_ip'] != current['egress_ip']: raise SetupError('DECLARED_WHITELIST_IP_DIFFERS')
-    return dict(spec, format='trading-broker-commissioning-plan-v1',
+    return dict(spec, format=FORMAT,
                 id=uuid.uuid4().hex if plan_id is None else preview_id(plan_id),
                 **{k:current[k] for k in ('release','policy_hash','sdk_version','account_fingerprint')})
 
@@ -194,6 +195,35 @@ def quiet_error(exc):
     return str(exc) if isinstance(exc,CommissioningError) else type(exc).__name__
 
 
+def retire_plan(store, tool, current, plan_id):
+    """Read-only broker reconciliation across a source upgrade; never rebind proof."""
+    from .broker_commissioning import Commissioning, PREFIX, validate_plan
+    record = store.meta(PREFIX + preview_id(plan_id))
+    if not isinstance(record, dict):
+        raise SetupError('ORIGINAL_SUBMITTED_PLAN_REQUIRED')
+    original = record['binding']
+    if any(original.get(k) != current.get(k) for k in current if k != 'release'):
+        raise SetupError('ORIGINAL_ACCOUNT_AND_POLICY_REQUIRED')
+    validate_plan(record['plan'], original, tool.clock(), expired=True)
+    old = Commissioning(store, tool.market, binding=original, pause_file=tool.pause_file,
+                        mode=tool.mode, clock=tool.clock, master=tool.master)
+    old._guard()
+    status = old.capture(plan_id)
+    if status['status'] not in ('CANCELLED_FLAT', 'ABORTED_BEFORE_WRITE'):
+        return dict(status, broker_writes=False)
+    # COMPLETE live evidence is deliberately not migrated. An aborted attempt
+    # cannot have a parent/child; cancelled tests require the recorded flat reads.
+    settled = old._load(plan_id)
+    if status['status'] == 'CANCELLED_FLAT' and (not status['facts']['flat_confirmed'] or
+            not status['facts']['inactive_parent']):
+        raise SetupError('COMMISSIONING_CURRENT_FLAT_TERMINAL_STATE_REQUIRED')
+    store.set_meta('broker-commissioning-retirement-' + plan_id,
+        dict(original_binding=original, verifier_binding=current, record_sha256=identity(settled),
+             checked_at=tool.clock().isoformat(), broker_writes=False, provider_verified=False))
+    return dict(status='PRIOR_TEST_RETIRED', broker_writes=False, provider_verified=False,
+                plan_hash=record['plan_hash'], checked_at=tool.clock().isoformat())
+
+
 def worker(payload):
     """Only root's fixed child runs this, as the journal's service UID."""
     import fcntl
@@ -230,6 +260,9 @@ def worker(payload):
             if not plan: raise SetupError('PREVIEW_PLAN_FIRST')
             if action=='submit':return tool.submit(plan,payload['confirm'])
             if action in ('close','cancel'):return getattr(tool,action)(plan_id,payload['confirm'])
+            if action=='protect':return tool.protect(plan_id,payload['confirm'])
+            if action=='cancel-stop':return tool.cancel_stop(plan_id,payload['confirm'])
+            if action=='retire':return retire_plan(store,tool,current,plan_id)
             if action=='capture':return tool.capture(plan_id)
             if action=='status':
                 return arm_recovery_status(store,tool,current,plan_id,plan_status(store,tool,current,plan_id))
@@ -295,7 +328,7 @@ def arm(args, values):
     release=Path(__file__).resolve().parents[3]
     # Replays run with no broker credentials. Source is the installed exact release.
     checked=subprocess.run([sys.executable,'-I','-m','pytest','-q',
-        str(release/'tests/test_broker_commissioning.py'),str(release/'tests/test_live_setup.py'),
+        str(release/'tests/test_broker_commissioning.py'),str(release/'tests/test_commissioning_stop.py'),str(release/'tests/test_live_setup.py'),
         str(release/'tests/test_premium_execution.py'),str(release/'tests/test_external_close.py')],
         cwd=release,capture_output=True,text=True,timeout=600,
         env={k:v for k,v in os.environ.items() if k in ('PATH','LANG','LC_ALL','HOME','TMPDIR')})
@@ -346,7 +379,7 @@ def root_action(args):
             if args.spec.stat().st_mode&0o077 or args.spec.stat().st_size>8192:raise SetupError('PRIVATE_BOUNDED_PLAN_REQUIRED')
             return run_worker('preview',args,values,spec=json.loads(args.spec.read_text()))
         if not args.id or not re.fullmatch('[a-f0-9]{32}',args.id):raise SetupError('EXACT_PREVIEW_PLAN_ID_REQUIRED')
-        if args.action in ('submit','close','cancel','arm') and not re.fullmatch('[a-f0-9]{64}',args.confirm):
+        if args.action in ('submit','close','cancel','protect','cancel-stop','arm') and not re.fullmatch('[a-f0-9]{64}',args.confirm):
             raise SetupError('OWNER_EXACT_CONFIRMATION_REQUIRED')
         return arm(args,values) if args.action=='arm' else run_worker(args.action,args,values)
 
@@ -354,7 +387,7 @@ def root_action(args):
 def main():
     os.umask(0o077)
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=('preview','preview-stdin','submit','capture','status','close','cancel','arm-preview','arm','_worker'))
+    parser.add_argument('action',choices=('preview','preview-stdin','submit','capture','status','close','cancel','protect','cancel-stop','retire','arm-preview','arm','_worker'))
     parser.add_argument('--spec',type=Path,help='Private Oracle JSON file; never a credential file')
     parser.add_argument('--id',help='Optional 32-hex preview ID for safe retries; required for subsequent actions')
     parser.add_argument('--confirm',default='',help='Exact plan hash for a test write, or evidence digest for arm')

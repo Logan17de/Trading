@@ -2,7 +2,7 @@
 
 - Owner-operated commissioning is implemented in broker_commissioning.py and
   owner_setup.py; read docs/LIVE_SETUP.md. Only the owner's explicit protected
-  desktop setup actions or owner CLI call submit/close/cancel/arm. Observer,
+  desktop setup actions or owner CLI call submit/protect/cancel-stop/close/cancel/arm. Observer,
   polling and Algo Start never commission. Maintenance tests use synthetic
   brokers only. Actual evidence is private and separate from strategy ownership.
   Production uses the v2 evidence-bound activation receipt, not hand-set flags.
@@ -11,6 +11,11 @@
   broker-writing commissioning or arm commands as maintenance. Deployment must
   preserve existing mode/pause and refuse owner On/open owned orders or an active
   live unpaused runtime; new source requires reviewed commissioning.
+  Protected v2 commissioning records include explicit owner SELL DOWN stop
+  attachment after the filled BUY, two persistence reads and exact child/exit
+  reconciliation. An active/unknown stop blocks a separate SELL. Legacy buy-only
+  evidence cannot arm a new release. The read-only retire action may reconcile a
+  cancelled old test without changing its original binding or inventing proof.
 
 - External closure uses `external_close.py`: exact terminal Self offsets, an
   ownership-safe baseline and two fresh complete flat reads. Self means outside

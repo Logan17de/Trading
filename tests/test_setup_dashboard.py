@@ -37,6 +37,17 @@ def test_setup_page_only_reads_and_injects_protected_local_token(app):
     assert calls==[]
 
 
+def test_setup_saved_get_is_local_only_and_never_dispatches_command(app):
+    url,state,calls=app
+    state.setup_status=lambda:dict(status='ACTIVE_PARENT_OBSERVED',status_source='SAVED_LOCAL_STATE',operation=None)
+    with urlopen(url+'/api/live-setup') as response:
+        assert json.load(response)['status_source']=='SAVED_LOCAL_STATE'
+        assert response.headers['Cache-Control']=='no-store'
+    with pytest.raises(HTTPError) as error:
+        urlopen(Request(url+'/api/live-setup',headers={'Origin':'https://foreign.invalid'}))
+    assert error.value.code==403 and calls==[]
+
+
 def test_setup_post_refuses_foreign_sites_and_missing_token_before_dispatch(app):
     url,state,calls=app
     for extra in ({},{'X-Local-Token':state.token,'Origin':'https://foreign.invalid'},
@@ -85,23 +96,27 @@ function element(){return {events:{},dataset:{},content:'TOKEN',checked:false,ad
 function get(key){if(!elements.has(key))elements.set(key,element());return elements.get(key);}
 const writes=['submit','close','cancel','arm'].map(action=>Object.assign(element(),{dataset:{write:action}}));
 const reads=['capture','arm-preview'].map(action=>Object.assign(element(),{dataset:{read:action}}));
-let response={status:'NOT_STARTED',allowed_actions:['status','preview']};
-const c=vm.createContext({Intl,Date,Number,Set,FormData:class{},document:{querySelector:get,
+let response={status:'OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT',plan_hash:'a'.repeat(64),allowed_actions:['submit','status','preview']};
+const c=vm.createContext({Intl,Date,Number,Set,setInterval,clearInterval,setTimeout,FormData:class{},document:{querySelector:get,
  querySelectorAll:s=>s==='[data-write]'?writes:reads,createElement:element},fetch:async(url,args)=>{
  if(url==='/api/dashboard')return {json:async()=>({live_setup:{mode:'paper'},control:{algo:{desired_enabled:false}}})};
+ if(!args.method)return {json:async()=>response};
  assert.equal(args.headers['X-Local-Token'],'TOKEN');calls.push(JSON.parse(args.body));return {json:async()=>response};}});
 vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),c);
 (async()=>{
- await new Promise(setImmediate);assert.deepEqual(calls,[{action:'status'}]);
+ await new Promise(setImmediate);assert.deepEqual(calls,[]);
+ assert.match(get('#command-note').textContent,/No broker request/);
+ get('#confirm-action').checked=true;get('#confirm-action').events.change();
+ assert.equal(writes[0].disabled,true);writes[0].events.click();assert.equal(calls.length,0);
  response={status:'OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT',plan_hash:'a'.repeat(64),allowed_actions:['submit','status']};
  await vm.runInContext('command({action:"status"})',c);
- assert.equal(writes[0].disabled,true);writes[0].events.click();assert.equal(calls.length,2);
+ assert.equal(writes[0].disabled,true);writes[0].events.click();assert.equal(calls.length,1);
  get('#confirm-action').checked=true;get('#confirm-action').events.change();assert.equal(writes[0].disabled,false);
  writes[0].events.click();await new Promise(setImmediate);
- assert.deepEqual(calls[2],{action:'submit',confirm:'a'.repeat(64)});assert.equal(get('#confirm-action').checked,false);
+ assert.deepEqual(calls[1],{action:'submit',confirm:'a'.repeat(64)});assert.equal(get('#confirm-action').checked,false);
  c.fetch=async()=>{throw Error('lost response');};
  await vm.runInContext('command({action:"capture"})',c);
- assert.equal(writes.every(b=>b.hidden),true);assert.equal(calls.length,3);
+ assert.equal(writes.every(b=>b.hidden),true);assert.equal(calls.length,2);
  assert.match(get('#command-note').textContent,/No automatic retry/);
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """

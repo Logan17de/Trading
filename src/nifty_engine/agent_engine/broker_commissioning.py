@@ -23,6 +23,7 @@ from .execution import TERMINAL, fresh
 from .execution_gate import ExecutionGate, ExecutionDenied
 from .market_check import SDK_VERSION, quote_summary
 from .oracle_orders import GrowwOrderTransport
+from . import commissioning_stop as protection
 
 PREFIX = 'broker-commissioning-'
 LATEST = PREFIX + 'latest-id'
@@ -85,7 +86,9 @@ def validate_plan(plan, binding, now, *, expired=False):
     required = {'format', 'id', 'release', 'policy_hash', 'sdk_version', 'account_fingerprint',
                 'egress_ip', 'contract', 'quantity', 'trigger_price', 'buy_limit_price',
                 'sell_limit_price', 'valid_until'}
-    if not isinstance(plan, dict) or set(plan) != required or plan['format'] != PLAN_FORMAT:
+    if isinstance(plan, dict) and plan.get('format') == protection.FORMAT:
+        required |= protection.FIELDS
+    if not isinstance(plan, dict) or set(plan) != required or plan['format'] not in (PLAN_FORMAT, protection.FORMAT):
         fail('EXACT_COMMISSIONING_PLAN_REQUIRED')
     value = copy.deepcopy(plan)
     _id(value['id']); expected = _binding(binding)
@@ -110,7 +113,7 @@ def validate_plan(plan, binding, now, *, expired=False):
         fail('COMMISSIONING_EXACT_ONE_LOT_REQUIRED')
     tick = _decimal(c['tick_size'])
     c['tick_size'] = float(tick)
-    for name in ('trigger_price', 'buy_limit_price', 'sell_limit_price'):
+    for name in {'trigger_price', 'buy_limit_price', 'sell_limit_price'} | (protection.FIELDS if value['format'] == protection.FORMAT else set()):
         price = _decimal(value[name])
         if price % tick:
             fail('COMMISSIONING_PRICE_NOT_ON_TICK')
@@ -119,6 +122,9 @@ def validate_plan(plan, binding, now, *, expired=False):
         fail('COMMISSIONING_BUY_LIMIT_BELOW_TRIGGER')
     if _decimal(value['buy_limit_price']) * value['quantity'] > 1000:
         fail('COMMISSIONING_PURCHASE_DEBIT_EXCEEDS_1000')
+    if value['format'] == protection.FORMAT and not (_decimal(value['stop_limit_price']) <=
+            _decimal(value['stop_trigger_price']) < _decimal(value['trigger_price'])):
+        fail('COMMISSIONING_STOP_PRICE_ORDER_INVALID')
     return value
 
 
@@ -152,6 +158,11 @@ def _order_matches(row, request, identifier, reference):
 
 
 def _parent_matches(row, record):
+    from .broker_shapes import smart_order
+    try:
+        row = smart_order(row)
+    except ValueError:
+        fail('COMMISSIONING_PARENT_READBACK_DIFFERS')
     expected = record['request']
     if (not isinstance(row, dict) or row.get('smart_order_id') != record.get('smart_id')
             or row.get('smart_order_type') != 'GTT' or row.get('segment', 'FNO') != 'FNO'
@@ -324,6 +335,8 @@ class Commissioning:
         if record:
             if record.get('child'): own_ids.add(record['child']['order']['groww_order_id'])
             own_ids.update(r['broker_id'] for r in record.get('closes', []) if r.get('broker_id'))
+            if record.get('stop', {}).get('child'):
+                own_ids.add(record['stop']['child']['order']['groww_order_id'])
         baseline = set(record.get('baseline_orders', [])) if record else set()
         same = [r for r in orders if r.get('trading_symbol') == symbol]
         if any(r.get('order_status') not in TERMINAL and r.get('groww_order_id') not in own_ids for r in same):
@@ -518,22 +531,23 @@ class Commissioning:
             self._archive_aborted_closes(record)
             for item in record['closes']:
                 self._capture_close(item)
+            protection.capture(self, record)
             obs = self._observe(record['plan'], record=record)
             obs['received_at'] = min(started, obs['received_at'], key=stamp)
             if not fresh(obs['received_at'], self.clock(), 10):
                 fail('FRESH_COMMISSIONING_OBSERVATION_REQUIRED')
             record['last_observation'] = obs
             acquired = (record.get('child') or {}).get('order', {}).get('filled_quantity', 0)
-            sold = sum(item['order']['filled_quantity'] for item in record['closes'])
+            sold = protection.sold(record)
             if obs['quantity'] != acquired - sold or sold > acquired:
                 fail('COMMISSIONING_POSITION_NOT_EXCLUSIVE')
             child_terminal = not triggered or (record.get('child') or {}).get('order', {}).get('order_status') in TERMINAL
-            close_terminal = all(item['order']['order_status'] in TERMINAL for item in record['closes'])
+            close_terminal = all(item['order_status'] in TERMINAL for item in protection.exit_orders(record))
             if not close_terminal:
                 record['phase'] = 'CLOSE_PENDING_OR_PARTIAL'
             elif child_terminal and obs['quantity'] and acquired < record['plan']['quantity']:
                 record['phase'] = 'CHILD_TERMINAL_WITH_REMAINDER'
-            if not obs['quantity'] and parent['status'] in FINAL_PARENT and child_terminal and close_terminal:
+            if not obs['quantity'] and parent['status'] in FINAL_PARENT and child_terminal and close_terminal and protection.settled(record):
                 if not record['flat'] or (stamp(obs['received_at']) - stamp(record['flat'][-1]['at'])).total_seconds() >= 5:
                     record['flat'].append(dict(at=obs['received_at'], session_id=self.session_id,
                                                observation_hash=identity(obs), observation=obs))
@@ -558,6 +572,8 @@ class Commissioning:
             fail('EXACT_OWNER_PLAN_HASH_REQUIRED')
         if record.get('reason'):
             fail('COMMISSIONING_RECONCILIATION_REQUIRED')
+        if not protection.settled(record):
+            fail('COMMISSIONING_CANCEL_STOP_BEFORE_CLOSE')
         child = (record.get('child') or {}).get('order', {})
         if child.get('order_status') not in TERMINAL or not child.get('filled_quantity'):
             fail('COMMISSIONING_TERMINAL_ACQUIRED_LONG_REQUIRED')
@@ -567,7 +583,7 @@ class Commissioning:
         if parent['status'] not in FINAL_PARENT:
             fail('COMMISSIONING_INACTIVE_PARENT_REQUIRED')
         obs = self._observe(record['plan'], record=record)
-        quantity = child['filled_quantity'] - sum(item['order']['filled_quantity'] for item in record['closes'])
+        quantity = child['filled_quantity'] - protection.sold(record)
         if quantity <= 0 or obs['quantity'] != quantity:
             fail('COMMISSIONING_EXCLUSIVE_ACQUIRED_LONG_REQUIRED')
         previous = copy.deepcopy(record); reference = 'CS' + uuid.uuid4().hex[:18]
@@ -649,7 +665,7 @@ class Commissioning:
             return _command_result(self.status(record['plan']['id']), 'cancel', attempted=False, confirmed=False)
         obs = self._observe(record['plan'], record=record)
         acquired = (record.get('child') or {}).get('order', {}).get('filled_quantity', 0)
-        sold = sum(i['order']['filled_quantity'] for i in record['closes'])
+        sold = protection.sold(record)
         if obs['quantity'] != acquired - sold or sold > acquired:
             fail('COMMISSIONING_POSITION_NOT_EXCLUSIVE')
         request = dict(segment='FNO', groww_order_id=identifier)
@@ -678,12 +694,20 @@ class Commissioning:
         record = self._load(plan_id)
         return _public(record, self.clock())
 
+    def protect(self, plan_id, expected_plan_hash):
+        return protection.attach(self, plan_id, expected_plan_hash)
+
+    def cancel_stop(self, plan_id, expected_plan_hash):
+        return protection.cancel(self, plan_id, expected_plan_hash)
+
     def verify_ready_to_arm(self, plan_id):
         """Fresh GET-only settlement check; historical evidence stays immutable."""
         self._guard()
         if self.store.meta(LATEST) != plan_id:
             fail('LATEST_COMPLETED_COMMISSIONING_PLAN_REQUIRED')
         proof = validated_evidence(self.store, plan_id, self.binding)
+        if not all(proof['facts'].get(k) for k in ('stop_order_write', 'stop_persisted', 'stop_inactive')):
+            fail('COMMISSIONING_STOP_EVIDENCE_REQUIRED')
         record = self._load(plan_id)
         started = self.clock().isoformat()
         self._profile()
@@ -705,6 +729,11 @@ class Commissioning:
             if (row['order_status'] not in TERMINAL or row['filled_quantity'] != previous['filled_quantity']
                     or row['filled_quantity'] and _decimal(row['average_fill_price']) != _decimal(previous['average_fill_price'])):
                 fail('COMMISSIONING_CURRENT_CLOSE_FILL_CHANGED')
+        current = copy.deepcopy(record)
+        protection.capture(self, current)
+        if (not protection.settled(current) or protection.sold(current) != protection.sold(record) or
+                current.get('stop', {}).get('child', {}).get('order') != record.get('stop', {}).get('child', {}).get('order')):
+            fail('COMMISSIONING_CURRENT_STOP_CHANGED')
         obs = self._observe(record['plan'], record=record)
         if obs['quantity'] or any(row.get('order_status') not in TERMINAL for row in obs['orders']):
             fail('COMMISSIONING_CURRENT_FLAT_TERMINAL_STATE_REQUIRED')
@@ -723,8 +752,10 @@ def _facts(record):
     closes = record.get('closes', [])
     acknowledged = bool(closes) and all(i.get('receipt') and i['receipt'].get('binding') == record['binding']
         and i['receipt'].get('request_hash') == identity(i['request']) and i.get('broker_id') == i['receipt'].get('groww_order_id') for i in closes)
-    filled = bool(closes) and all(i.get('order', {}).get('order_status') in TERMINAL for i in closes) and sum(
-        i.get('order', {}).get('filled_quantity', 0) for i in closes) == qty
+    exits = protection.exit_orders(record)
+    filled = bool(exits) and all(i.get('order_status') in TERMINAL for i in exits) and protection.sold(record) == qty
+    if record.get('stop', {}).get('child'):
+        acknowledged = (not closes or acknowledged) and protection.facts(record)['stop_order_write']
     flat = record.get('flat', [])
     creation = record.get('create_receipt') or {}
     facts = dict(oracle_order_write=bool(creation.get('binding') == record['binding']
@@ -735,6 +766,8 @@ def _facts(record):
         standard_order_write=acknowledged, standard_order_filled=filled,
         flat_confirmed=len(flat) == 2 and (stamp(flat[-1]['at']) - stamp(flat[0]['at'])).total_seconds() >= 5,
         inactive_parent=record.get('parent', {}).get('status') in FINAL_PARENT)
+    if record['plan']['format'] == protection.FORMAT:
+        facts.update(protection.facts(record))
     return dict(facts, all_complete=all(facts.values()))
 
 
@@ -748,7 +781,7 @@ def _allowed_actions(record, now):
     child = (record.get('child') or {}).get('order', {})
     closes = record.get('closes', [])
     acquired = child.get('filled_quantity', 0)
-    sold = sum(i['order']['filled_quantity'] for i in closes)
+    sold = protection.sold(record)
     if obs.get('quantity') != acquired - sold or sold > acquired:
         return []
     pending = [i['order'] for i in closes if i['order']['order_status'] not in TERMINAL]
@@ -759,8 +792,17 @@ def _allowed_actions(record, now):
             return []
         return ['cancel']
     parent = record.get('parent', {})
+    stop = record.get('stop')
+    if stop and not protection.settled(record):
+        pending_stop = stop.get('child', {}).get('order', {})
+        if pending_stop:
+            attempted = any(i['broker_id'] == pending_stop['groww_order_id'] and i['status'] != 'ABORTED_BEFORE_WRITE'
+                            for i in record.get('order_cancels', []))
+            return [] if attempted else ['cancel-stop']
+        return [] if stop.get('cancel_attempted') else ['cancel-stop']
     if not pending and child.get('order_status') in TERMINAL and obs['quantity'] > 0 and parent.get('status') in FINAL_PARENT:
-        return ['close']
+        return ['protect', 'close'] if (record['plan']['format'] == protection.FORMAT and not stop and not closes
+            and child.get('filled_quantity') == record['plan']['quantity']) else ['close']
     if (not child and not obs['quantity'] and parent.get('status') == 'ACTIVE' and not parent.get('triggered_at')
             and (not record.get('cancel_attempted') or record.get('cancel_aborted_before_write'))):
         return ['cancel']
@@ -839,6 +881,8 @@ def _validated_evidence(store, plan_id, binding=None):
                 or not created <= stamp(item['at']) <= completed
                 or any(r.get('order_status') not in TERMINAL for r in obs.get('orders', []))):
             fail('COMMISSIONING_EVIDENCE_FLAT_CHANGED')
+    if record['plan']['format'] == protection.FORMAT:
+        protection.validate(record)
     facts = _facts(record)
     if not facts.pop('all_complete'):
         fail('COMMISSIONING_PROVIDER_FACTS_INCOMPLETE')

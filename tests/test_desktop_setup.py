@@ -17,7 +17,7 @@ DIGEST='c'*64
 
 def spec():
     return dict(contract=dict(symbol='NIFTY26O2025000CE',index='NIFTY',expiry='2026-10-20',lot_size=65,tick_size=0.05),
-        quantity=65,trigger_price='10.00',buy_limit_price='10.05',sell_limit_price='9.95',
+        quantity=65,trigger_price='10.00',buy_limit_price='10.05',sell_limit_price='9.95',stop_trigger_price='7.00',stop_limit_price='6.95',
         valid_until=(NOW+timedelta(hours=1)).isoformat(),egress_ip='8.8.8.8')
 
 
@@ -47,6 +47,38 @@ def preview(app):
     result=ctl.command({'action':'preview','spec':spec()})
     assert result['status']==PREVIEW
     return result
+
+
+@pytest.mark.parametrize('action', ['protect','cancel-stop'])
+def test_protection_action_requires_exact_owner_confirm_and_never_poll_retries(app, action):
+    ctl,store,calls,cfg=app; preview(app)
+    saved=store.meta(KEY)
+    saved['result']={'status':'CHILD_FILLED','broker_actions':[action]}
+    store.set_meta(KEY,saved)
+    count=len(calls)
+    assert ctl.command({'action':action,'confirm':'f'*64})['status']=='OWNER_EXACT_CONFIRMATION_REQUIRED'
+    assert len(calls)==count
+    ctl.run=lambda *a,**k: response('STOP_ACTIVE_OBSERVED',command=action,broker_write_attempted=True,
+        broker_write_outcome='ACCEPTED',allowed_actions=['cancel-stop'],facts={'stop_order_write':True})
+    value=ctl.command({'action':action,'confirm':HASH})
+    assert value['facts']['stop_order_write']
+    assert action not in value['allowed_actions']
+    assert ctl.public()['status_source']=='SAVED_LOCAL_STATE'
+
+
+def test_new_release_can_archive_only_a_reconciled_cancelled_test(app):
+    ctl,store,calls,cfg=app; preview(app); old=store.meta(KEY)
+    old.update(uncertain=True,pending_action='submit');store.set_meta(KEY,old)
+    cfg['python']='/opt/growing-trader/releases/'+'e'*40+'/venv/bin/python'
+    (ctl.root/'.agent-state/oracle-viewer.json').write_text(json.dumps(cfg))
+    assert ctl.command({'action':'status'})['status']=='OWNER_SETUP_BINDING_CHANGED'
+    ctl.run=lambda *a,**k: response('ACTIVE_PARENT_OBSERVED',broker_writes=False)
+    assert ctl.command({'action':'retire'})['status']=='ACTIVE_PARENT_OBSERVED'
+    assert store.meta(KEY)==old
+    ctl.run=lambda *a,**k: response('PRIOR_TEST_RETIRED',plan_hash=HASH,broker_writes=False)
+    value=ctl.command({'action':'retire'})
+    assert value['allowed_actions']==['status','preview'] and store.meta(KEY)=={}
+    assert store.meta(KEY+'-archive-'+old['plan_id'])['pending_action']=='submit'
 
 
 def test_fixed_preview_stdin_returns_only_owner_spec_and_hash(app):
@@ -315,7 +347,7 @@ def test_invalid_empty_spec_preserves_correction_controls_without_changing_saved
     store.set_meta(KEY,saved)
     result=ctl.command({'action':'preview','spec':{}})
     assert result['requires_reconciliation'] and result['pending_action']=='submit'
-    assert result['allowed_actions']==['status','capture'] and store.meta(KEY)==saved
+    assert result['allowed_actions']==['status','capture','retire'] and store.meta(KEY)==saved
 
 
 def test_missing_private_connection_has_precise_reason_and_preserves_pending_plan(app):
@@ -326,3 +358,57 @@ def test_missing_private_connection_has_precise_reason_and_preserves_pending_pla
     assert result['status']=='ORACLE_CONNECTION_REQUIRED'
     assert result['reason']=='PRIVATE_ORACLE_CONNECTION_CONFIG_REQUIRED'
     assert result['plan_hash']==HASH and store.meta(KEY)==before and len(calls)==1
+
+
+def test_saved_status_is_local_and_does_not_wait_for_remote_action(app):
+    ctl,store,calls,cfg=app;preview(app)
+    entered=threading.Event();release=threading.Event()
+    def waiting(*a,**kw):
+        entered.set();assert release.wait(3)
+        return response('ACTIVE_PARENT_OBSERVED',plan_hash=HASH,broker_writes=False)
+    ctl.run=waiting
+    thread=threading.Thread(target=lambda:ctl.command({'action':'status'}));thread.start()
+    try:
+        assert entered.wait(1)
+        saved=ctl.public()
+        assert saved['status_source']=='SAVED_LOCAL_STATE'
+        assert saved['operation']['action']=='status' and saved['operation']['elapsed_seconds']>=0
+        assert len(calls)==1 and saved['requires_reconciliation']
+    finally:release.set();thread.join(3)
+    assert ctl.public()['operation'] is None
+
+
+@pytest.mark.parametrize('changes,reason',[
+    ({'buy_limit_price':'20.00'},'COMMISSIONING_PURCHASE_DEBIT_EXCEEDS_1000'),
+    ({'buy_limit_price':'9.00'},'COMMISSIONING_BUY_LIMIT_BELOW_TRIGGER'),
+    ({'buy_limit_price':'10.03'},'COMMISSIONING_PRICE_NOT_ON_TICK'),
+    ({'valid_until':NOW.isoformat()},'COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG')])
+def test_form_errors_are_precise_and_never_call_oracle(app,changes,reason):
+    ctl,store,calls,cfg=app
+    value=spec();value.update(changes)
+    result=ctl.command({'action':'preview','spec':value})
+    assert result['reason']==reason and result['status']=='INVALID_OWNER_SETUP_COMMAND'
+    assert calls==[] and store.meta(KEY) is None
+
+
+def test_rejected_price_preview_is_editable_but_still_checks_original_plan(app):
+    ctl,store,calls,cfg=app
+    def blocked(*a,**kw):
+        return response('OWNER_SETUP_BLOCKED',reason='COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET')
+    ctl.run=blocked
+    result=ctl.command({'action':'preview','spec':spec()})
+    assert 'preview' in result['allowed_actions'] and 'submit' not in result['allowed_actions']
+    old=store.meta(KEY);commands=[]
+    def retry(args,**kw):
+        commands.append(args[-1])
+        if ' status ' in args[-1]:
+            return response('OWNER_SETUP_BLOCKED',reason='PREVIEW_PLAN_FIRST')
+        return response(PREVIEW,plan_id=args[-1].split(' --id ')[1],plan_hash=HASH)
+    ctl.run=retry
+    changed=spec();changed['trigger_price']='10.05'
+    assert ctl.command({'action':'preview','spec':changed})['status']==PREVIEW
+    assert commands[0].endswith('status --id '+old['plan_id'])
+    assert len(commands)==2 and store.meta(KEY)['plan_id']!=old['plan_id']
+    saved=store.meta(KEY);saved['result']={'status':'OWNER_SETUP_BLOCKED','reason':'COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET'}
+    saved['attempted_writes']=['submit'];store.set_meta(KEY,saved)
+    assert 'preview' not in ctl.public()['allowed_actions']

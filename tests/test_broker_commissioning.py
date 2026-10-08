@@ -144,9 +144,16 @@ class Session:
         self.submit(); self.now += timedelta(seconds=5); self.commission = self.new_process()
         return self.commission.capture(self.plan['id'])
 
-    def complete(self):
+    def complete(self, protected=False):
+        if protected:
+            self.plan.update(format='trading-broker-commissioning-plan-v2',stop_trigger_price='7.00',stop_limit_price='6.95')
         self.active(); self.broker.trigger()
         self.commission.capture(self.plan['id'])
+        if protected:
+            self.commission.protect(self.plan['id'], self.plan_hash)
+            self.now += timedelta(seconds=5); self.commission = self.new_process()
+            self.commission.capture(self.plan['id'])
+            self.commission.cancel_stop(self.plan['id'], self.plan_hash)
         self.commission.close(self.plan['id'], self.plan_hash)
         self.now += timedelta(seconds=5)
         result = self.commission.capture(self.plan['id'])
@@ -199,6 +206,39 @@ def test_http_capability_rejects_changed_request(tmp_path):
     status = s.submit()
     assert status['status'] == 'RECONCILIATION_REQUIRED'
     assert not s.broker.writes
+
+
+@pytest.mark.parametrize('index',['NIFTY','SENSEX'])
+def test_camelcase_gtt_readback_and_decimal_numbers_preserve_exact_checks(tmp_path,index):
+    s=Session(tmp_path,index)
+    original=s.broker.get_smart_order
+    def live_shape(**args):
+        row=original(**args)
+        row['order']['orderType']=row['order'].pop('order_type')
+        row['order']['transactionType']=row['order'].pop('transaction_type')
+        row['order']['price']=float(row['order']['price'])
+        row['trigger_price']=float(row['trigger_price'])
+        row.pop('reference_id',None)  # Direct read uses the acknowledged exact ID.
+        return row
+    s.broker.get_smart_order=live_shape
+    assert s.active()['facts']['persistent_gtt']
+    parent=next(iter(s.broker.parents.values()))
+    parent['order']['transaction_type']='SELL'
+    assert s.commission.capture(s.plan['id'])['reason']=='COMMISSIONING_PARENT_READBACK_DIFFERS'
+    assert len(s.broker.writes)==1
+
+
+def test_cancelled_camelcase_parent_can_settle_without_a_replacement_order(tmp_path):
+    s=Session(tmp_path);s.submit()
+    parent=next(iter(s.broker.parents.values()))
+    parent['status']='CANCELLED'
+    parent['order']['orderType']=parent['order'].pop('order_type')
+    parent['order']['transactionType']=parent['order'].pop('transaction_type')
+    assert s.commission.capture(s.plan['id'])['status']=='FLAT_AWAITING_SECOND_READ'
+    s.now+=timedelta(seconds=5);s.commission=s.new_process()
+    result=s.commission.capture(s.plan['id'])
+    assert result['status']=='CANCELLED_FLAT' and not result['facts']['child_filled']
+    assert len(s.broker.writes)==1
 
 
 def test_timeout_is_recovered_only_by_original_reference_and_never_resubmitted(tmp_path):
@@ -499,7 +539,7 @@ def test_slow_final_positions_read_does_not_retime_old_funds_and_quotes(tmp_path
 
 
 def test_arm_readiness_checks_fresh_settlement_without_rewriting_proof(tmp_path):
-    s = Session(tmp_path); proof = s.complete(); calls = len(s.broker.writes)
+    s = Session(tmp_path); proof = s.complete(protected=True); calls = len(s.broker.writes)
     assert s.commission.verify_ready_to_arm(s.plan['id']) == proof
     assert len(s.broker.writes) == calls
     assert validated_evidence(s.store, s.plan['id']) == proof
@@ -507,7 +547,7 @@ def test_arm_readiness_checks_fresh_settlement_without_rewriting_proof(tmp_path)
 
 @pytest.mark.parametrize('fault', ['later_plan', 'manual_position', 'external_order', 'parent_changed', 'parent_active', 'child_changed', 'close_changed'])
 def test_historical_completion_cannot_bypass_current_arm_failures(tmp_path, fault):
-    s = Session(tmp_path); s.complete()
+    s = Session(tmp_path); s.complete(protected=True); writes = len(s.broker.writes)
     if fault == 'later_plan': s.store.set_meta('broker-commissioning-latest-id', 'later-owner-plan')
     elif fault == 'manual_position': s.broker.quantity = 1
     elif fault == 'external_order':
@@ -517,7 +557,7 @@ def test_historical_completion_cannot_bypass_current_arm_failures(tmp_path, faul
     elif fault == 'child_changed': next(r for r in s.broker.orders.values() if r['transaction_type'] == 'BUY')['filled_quantity'] -= 1
     elif fault == 'close_changed': next(r for r in s.broker.orders.values() if r['transaction_type'] == 'SELL')['filled_quantity'] -= 1
     with pytest.raises(ValueError): s.commission.verify_ready_to_arm(s.plan['id'])
-    assert len(s.broker.writes) == 2
+    assert len(s.broker.writes) == writes
 
 
 @pytest.mark.parametrize('malformed', [None, [], {'phase': 'COMPLETE'}, {'phase': 'COMPLETE', 'plan': []}])

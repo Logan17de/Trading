@@ -35,7 +35,7 @@ def test_corrupt_or_legacy_receipt_does_not_authorize(value):
 def commissioned(tmp_path):
     from test_broker_commissioning import Session
     session=Session(tmp_path)
-    evidence=session.complete()
+    evidence=session.complete(protected=True)
     session.store.set_meta(live_setup.KEY,live_setup.receipt(evidence,session.now))
     return session,evidence
 
@@ -194,14 +194,14 @@ def test_only_internal_typed_error_codes_can_be_displayed():
 def test_assemble_plan_rejects_extra_fields_and_ip_changes():
     current=dict(release='a'*40,policy_hash='b'*64,sdk_version='1.5.0',account_fingerprint='c'*64,egress_ip='8.8.8.8')
     spec=dict(contract={'symbol':'fixture-contract'},quantity=1,trigger_price=1,
-              buy_limit_price=1.1,sell_limit_price=.9,valid_until='2026-10-07T06:00:00+00:00',egress_ip='8.8.8.8')
+              buy_limit_price=1.1,sell_limit_price=.9,stop_trigger_price=.8,stop_limit_price=.75,valid_until='2026-10-07T06:00:00+00:00',egress_ip='8.8.8.8')
     with pytest.raises(owner_setup.SetupError,match='EXACT_PRIVATE_PLAN_SPEC_REQUIRED'):
         owner_setup.assemble_plan(dict(spec,api_key='private-fixture'),current)
     with pytest.raises(owner_setup.SetupError,match='DECLARED_WHITELIST_IP_DIFFERS'):
         owner_setup.assemble_plan(dict(spec,egress_ip='1.1.1.1'),current)
     plan=owner_setup.assemble_plan(spec,current)
     assert plan['release']==current['release'] and plan['account_fingerprint']==current['account_fingerprint']
-    assert len(plan['id'])==32 and plan['format']=='trading-broker-commissioning-plan-v1'
+    assert len(plan['id'])==32 and plan['format']=='trading-broker-commissioning-plan-v2'
     assert 'api_key' not in plan
 
 
@@ -209,7 +209,8 @@ def test_assemble_plan_rejects_extra_fields_and_ip_changes():
 def preview_session(tmp_path):
     from test_broker_commissioning import Session
     s=Session(tmp_path);s.plan['id']='d'*32
-    fields={'contract','quantity','trigger_price','buy_limit_price','sell_limit_price','valid_until','egress_ip'}
+    s.plan.update(format='trading-broker-commissioning-plan-v2',stop_trigger_price='7.00',stop_limit_price='6.95')
+    fields={'contract','quantity','trigger_price','buy_limit_price','sell_limit_price','valid_until','egress_ip','stop_trigger_price','stop_limit_price'}
     s.spec={key:deepcopy(s.plan[key]) for key in fields}
     return s
 

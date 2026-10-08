@@ -48,6 +48,18 @@ def test_backup_restore_preserves_pending_state_and_refuses_overwrite(tmp_path):
     with pytest.raises(FileExistsError): restore_database(backup, restored)
 
 
+def test_backup_deadline_removes_only_its_incomplete_copy(tmp_path, monkeypatch):
+    from nifty_engine.agent_engine import operations
+    store=Store(tmp_path/'engine.sqlite')
+    store.set_meta('sentinel',{'pending':True})
+    backup=tmp_path/'incomplete.sqlite'
+    ticks=iter([0,121])
+    monkeypatch.setattr(operations.time,'monotonic',lambda:next(ticks))
+    with pytest.raises(TimeoutError):backup_database(store.path,backup,timeout_seconds=120)
+    assert not backup.exists()
+    assert store.meta('sentinel')=={'pending':True}
+
+
 def test_delivery_event_does_not_claim_inbox_and_does_not_change_pnl(tmp_path, monkeypatch):
     store = Store(tmp_path/'mail.sqlite')
     now = datetime(2026,9,30,10,tzinfo=IST)

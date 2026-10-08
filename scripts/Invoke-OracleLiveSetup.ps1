@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory=$true)]
-  [ValidateSet('preview','submit','capture','status','close','cancel','arm-preview','arm')][string]$Action,
+  [ValidateSet('preview','submit','capture','status','close','cancel','protect','cancel-stop','retire','arm-preview','arm')][string]$Action,
   [string]$SpecFile,
   [ValidatePattern('^[a-f0-9]{32}$')][string]$PlanId,
   [ValidatePattern('^[a-f0-9]{64}$')][string]$Confirm
@@ -31,7 +31,7 @@ if ($Action -eq 'preview') {
 } else {
     if (-not $PlanId) {throw 'Use the exact PlanId returned by preview'}
     $taskCommand+="$Action --id $PlanId"
-    if ($Action -in @('submit','close','cancel','arm')) {
+    if ($Action -in @('submit','close','cancel','protect','cancel-stop','arm')) {
         if (-not $Confirm) {throw 'Provide the exact plan hash (or arm evidence digest) using -Confirm'}
         $taskCommand+=" --confirm $Confirm"
     }

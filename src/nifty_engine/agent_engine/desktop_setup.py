@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -21,8 +22,8 @@ from .contracts import dumps, identity, stamp
 from .oracle_link import settings
 
 KEY = 'desktop-owner-setup-v1'
-ACTIONS = {'preview', 'status', 'capture', 'submit', 'close', 'cancel', 'arm-preview', 'arm'}
-WRITES = {'submit', 'close', 'cancel', 'arm'}
+ACTIONS = {'preview', 'status', 'capture', 'submit', 'close', 'cancel', 'protect', 'cancel-stop', 'retire', 'arm-preview', 'arm'}
+WRITES = {'submit', 'close', 'cancel', 'protect', 'cancel-stop', 'arm'}
 TERMINAL = {'COMPLETE', 'CANCELLED_FLAT', 'ABORTED_BEFORE_WRITE'}
 PREVIEW = 'OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT'
 REMOTE_STATUSES = TERMINAL | {PREVIEW, 'OWNER_SETUP_BLOCKED', 'GTT_SUBMITTING', 'GTT_ACCEPTED',
@@ -30,11 +31,28 @@ REMOTE_STATUSES = TERMINAL | {PREVIEW, 'OWNER_SETUP_BLOCKED', 'GTT_SUBMITTING', 
     'FLAT_AWAITING_SECOND_READ', 'RECONCILIATION_REQUIRED', 'CLOSE_SUBMITTING',
     'CLOSE_PENDING_OR_PARTIAL', 'CHILD_TERMINAL_WITH_REMAINDER',
     'VERIFIED_OWNER_EVIDENCE', 'LIVE_PREPARED_ALGO_OFF', 'OWNER_PREVIEW_EXPIRED',
-    'OWNER_PREVIEW_BINDING_CHANGED', 'OWNER_PREVIEW_INVALID'}
+    'OWNER_PREVIEW_BINDING_CHANGED', 'OWNER_PREVIEW_INVALID', 'PRIOR_TEST_RETIRED',
+    'STOP_SUBMITTING', 'STOP_CREATE_UNCERTAIN', 'STOP_CANCEL_UNCERTAIN', 'STOP_ACTIVE_OBSERVED', 'STOP_CHILD_OBSERVED'}
 FACTS = {'oracle_order_write', 'persistent_gtt', 'exact_child_link', 'child_filled',
-    'standard_order_write', 'standard_order_filled', 'flat_confirmed', 'inactive_parent'}
-UNCERTAIN = {'GTT_SUBMITTING', 'GTT_CREATE_UNCERTAIN', 'CLOSE_SUBMITTING', 'RECONCILIATION_REQUIRED'}
+    'standard_order_write', 'standard_order_filled', 'flat_confirmed', 'inactive_parent',
+    'stop_order_write', 'stop_persisted', 'stop_inactive'}
+UNCERTAIN = {'GTT_SUBMITTING', 'GTT_CREATE_UNCERTAIN', 'CLOSE_SUBMITTING', 'RECONCILIATION_REQUIRED',
+    'STOP_SUBMITTING', 'STOP_CREATE_UNCERTAIN', 'STOP_CANCEL_UNCERTAIN'}
 _LOCKS, _LOCKS_LOCK = {}, threading.Lock()
+
+
+class SetupValidationError(ValueError):
+    """Code-owned, non-secret validation reasons for the desktop form."""
+
+
+def _rejected_preview(value):
+    return value.get('status') == 'OWNER_PREVIEW_EXPIRED' or (
+        value.get('status') == 'OWNER_SETUP_BLOCKED' and value.get('reason') in {
+            'PREVIEW_PLAN_FIRST', 'COMMISSIONING_CURRENT_MASTER_MISMATCH',
+            'COMMISSIONING_RECENT_OPTION_QUOTE_REQUIRED',
+            'COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET',
+            'COMMISSIONING_INSUFFICIENT_PURCHASE_BALANCE',
+            'FRESH_COMMISSIONING_OBSERVATION_REQUIRED'})
 
 
 def _hex(value, length):
@@ -42,7 +60,8 @@ def _hex(value, length):
 
 
 def _spec(value, now):
-    required = {'contract', 'quantity', 'trigger_price', 'buy_limit_price', 'sell_limit_price', 'valid_until', 'egress_ip'}
+    required = {'contract', 'quantity', 'trigger_price', 'buy_limit_price', 'sell_limit_price', 'valid_until', 'egress_ip',
+                'stop_trigger_price', 'stop_limit_price'}
     if not isinstance(value, dict) or set(value) != required:
         raise ValueError()
     c = value['contract']
@@ -54,7 +73,7 @@ def _spec(value, now):
         raise ValueError()
     date.fromisoformat(c['expiry'])
     if not 0 < (stamp(value['valid_until']) - now).total_seconds() <= 86400:
-        raise ValueError()
+        raise SetupValidationError('COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG')
     address = ipaddress.ip_address(value['egress_ip'])
     if address.version != 4 or not address.is_global:
         raise ValueError()
@@ -65,10 +84,15 @@ def _spec(value, now):
         if not n.is_finite() or not 0 < n < 1000000: raise ValueError()
         return n
     tick = price(c['tick_size'])
-    prices = {k:price(value[k]) for k in ('trigger_price', 'buy_limit_price', 'sell_limit_price')}
-    if (any(p % tick for p in prices.values()) or prices['buy_limit_price'] < prices['trigger_price']
-            or prices['buy_limit_price'] * value['quantity'] > 1000):
-        raise ValueError()
+    prices = {k:price(value[k]) for k in ('trigger_price', 'buy_limit_price', 'sell_limit_price', 'stop_trigger_price', 'stop_limit_price')}
+    if any(p % tick for p in prices.values()):
+        raise SetupValidationError('COMMISSIONING_PRICE_NOT_ON_TICK')
+    if prices['buy_limit_price'] < prices['trigger_price']:
+        raise SetupValidationError('COMMISSIONING_BUY_LIMIT_BELOW_TRIGGER')
+    if prices['buy_limit_price'] * value['quantity'] > 1000:
+        raise SetupValidationError('COMMISSIONING_PURCHASE_DEBIT_EXCEEDS_1000')
+    if not prices['stop_limit_price'] <= prices['stop_trigger_price'] < prices['trigger_price']:
+        raise SetupValidationError('COMMISSIONING_STOP_PRICE_ORDER_INVALID')
     result = copy.deepcopy(value)
     result['contract']['tick_size'] = float(tick)
     result.update({k:format(v, 'f') for k,v in prices.items()})
@@ -96,7 +120,7 @@ def _safe_response(raw):
     if raw.get('command') in WRITES: result['command'] = raw['command']
     if 'allowed_actions' in raw:
         actions=raw['allowed_actions']
-        if not isinstance(actions,list) or any(a not in ('close','cancel') for a in actions): raise ValueError()
+        if not isinstance(actions,list) or any(a not in ('close','cancel','protect','cancel-stop') for a in actions): raise ValueError()
         result['broker_actions']=list(dict.fromkeys(actions))
     for key in ('checked_at', 'completed_at'):
         if raw.get(key) is not None: result[key] = stamp(raw[key]).isoformat()
@@ -116,6 +140,8 @@ class OwnerSetupController:
         self.root, self.store, self.run, self.clock = Path(root), store, run, clock
         with _LOCKS_LOCK:
             self.lock = _LOCKS.setdefault(str(self.root.resolve()),threading.Lock())
+        self.activity_lock = threading.Lock()
+        self.activity = None
 
     def _config(self):
         source = self.root/'.agent-state/oracle-viewer.json'
@@ -161,18 +187,18 @@ class OwnerSetupController:
             allowed_actions=['status'])
         if saved.get('plan_id'):
             value['allowed_actions'].append('capture')
+            value['allowed_actions'].append('retire')
             if not saved.get('uncertain') and not saved.get('pending_action'):
                 attempts=saved.get('attempted_writes',[])
                 recent=saved.get('writes_since_capture',[])
-                unsubmitted_rejected=(value['status']=='OWNER_PREVIEW_EXPIRED' or
-                    value['status']=='OWNER_SETUP_BLOCKED' and value.get('reason')=='PREVIEW_PLAN_FIRST')
+                unsubmitted_rejected=_rejected_preview(value)
                 if (value['status'] in TERMINAL or value['status']==PREVIEW and not attempts
                         or unsubmitted_rejected and not attempts):
                     value['allowed_actions'].append('preview')
                 if value['status']==PREVIEW and saved.get('plan_hash') and 'submit' not in attempts:
                     value['allowed_actions'].append('submit')
                 if saved.get('plan_hash'):
-                    for action in ('close','cancel'):
+                    for action in ('close','cancel','protect','cancel-stop'):
                         if action in value.get('broker_actions',[]) and action not in recent:
                             value['allowed_actions'].append(action)
                 if value['status'] in ('COMPLETE','VERIFIED_OWNER_EVIDENCE'):
@@ -185,7 +211,14 @@ class OwnerSetupController:
 
     def public(self):
         """Local display only; this never issues an Oracle or broker command."""
-        try: return self._view()
+        try:
+            value=self._view()
+            value['status_source']='SAVED_LOCAL_STATE'
+            with self.activity_lock:
+                activity=copy.deepcopy(self.activity)
+            value['operation']=dict(action=activity['action'],
+                elapsed_seconds=round(max(0,time.monotonic()-activity['started']),1)) if activity else None
+            return value
         except Exception: return {'status':'OWNER_SETUP_LOCAL_STATE_UNAVAILABLE','allowed_actions':['status']}
 
     def command(self, body):
@@ -196,12 +229,21 @@ class OwnerSetupController:
             action=body['action']
             expected={'action','spec'} if action=='preview' else {'action','confirm'} if action in WRITES else {'action'}
             if set(body)!=expected: raise ValueError()
+            with self.activity_lock:
+                self.activity={'action':action,'started':time.monotonic()}
             try: cfg=self._config()
             except OSError:
                 return self._view(status='ORACLE_CONNECTION_REQUIRED',reason='PRIVATE_ORACLE_CONNECTION_CONFIG_REQUIRED')
             saved=self.store.meta(KEY,{})
-            if saved and saved.get('config_hash') != identity(cfg):
+            if saved and saved.get('config_hash') != identity(cfg) and action != 'retire':
                 return self._view(saved,status='OWNER_SETUP_BINDING_CHANGED',reason='REVIEW_EXISTING_PLAN_ON_ORACLE')
+            if action == 'retire' and saved:
+                remote = self._remote(cfg, 'retire', saved)
+                if remote['status'] == 'PRIOR_TEST_RETIRED':
+                    self.store.set_meta(KEY + '-archive-' + saved['plan_id'], dict(saved, retirement=remote))
+                    self._save({})
+                    return self._view({}, status='PRIOR_TEST_RETIRED')
+                return self._view(saved, status=remote['status'], reason=remote.get('reason'))
             if action=='preview':
                 spec=_spec(body['spec'],self.clock())
                 if saved:
@@ -209,8 +251,7 @@ class OwnerSetupController:
                     remote=self._remote(cfg,'status',saved)
                     self._accept(saved,'status',remote)
                     replaceable=remote['status'] in TERMINAL | {PREVIEW}
-                    rejected_preview=(remote['status']=='OWNER_PREVIEW_EXPIRED' or
-                        remote['status']=='OWNER_SETUP_BLOCKED' and remote.get('reason')=='PREVIEW_PLAN_FIRST')
+                    rejected_preview=_rejected_preview(remote)
                     if rejected_preview and not saved.get('attempted_writes'): replaceable=True
                     if prior_pending or not replaceable:
                         return self._view(saved,reason='EXISTING_PLAN_REQUIRES_REVIEW')
@@ -244,12 +285,16 @@ class OwnerSetupController:
                 return self._view(saved)
             self._accept(saved,action,remote)
             return self._view(saved)
+        except SetupValidationError as exc:
+            return self._view(status='INVALID_OWNER_SETUP_COMMAND',reason=str(exc))
         except Exception:
             try:
                 return self._view(status='INVALID_OWNER_SETUP_COMMAND',reason='CHECK_SETUP_COMMAND_FIELDS')
             except Exception:
                 return {'status':'OWNER_SETUP_LOCAL_STATE_UNAVAILABLE','allowed_actions':['status']}
         finally:
+            with self.activity_lock:
+                self.activity=None
             self.lock.release()
 
     def _accept(self,saved,action,remote):

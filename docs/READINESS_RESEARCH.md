@@ -61,6 +61,12 @@ read diagnostics use the existing one-way Supabase outbox. Report-owned order
 attribution now joins that archive. Manual positions, account capital and secrets
 are excluded. Source receipts, unknowns and methodology survive restart.
 
+Existing Supabase archives created before IV collection need the additive
+`deploy/premium-research-iv30-category.sql` migration. It adds the actual IV-day
+category without altering access permissions or trading gates. Applied October 8;
+the retained October 7 observations were acknowledged for both indexes. The
+38-day campaign and matched 252-session requirement are unchanged.
+
 ## Remaining production validation
 
 1. Obtain or validate a matching dated 252-session Indian IV benchmark for both

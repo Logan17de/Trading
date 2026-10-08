@@ -2,7 +2,7 @@
 create table public.trading_research_records (
   source_id uuid not null,
   record_key text not null,
-  category text not null check (category in ('impulse_ticks','impulse_event','impulse_outcome','daily_summary','algo_order','algo_state','algo_pnl')),
+  category text not null check (category in ('impulse_ticks','impulse_event','impulse_outcome','daily_summary','algo_order','algo_state','algo_pnl','iv30_research_day')),
   trade_date date not null,
   index_name text check (index_name in ('NIFTY','SENSEX') or index_name is null),
   observed_at timestamptz not null,

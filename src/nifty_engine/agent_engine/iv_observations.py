@@ -82,7 +82,12 @@ def public(store,index,now):
     point=value.get('current',{})
     try:current=bool(point and fresh(point['observed_at'],now,15))
     except (ValueError,TypeError,KeyError):current=False
+    # Count the dated journal at read time: a new JST/IST day must not wait for
+    # another successful chain fetch before yesterday becomes a prior session.
+    tables=store.read("SELECT name FROM sqlite_master WHERE type='table' AND name='report_iv30_days'")
+    completed=store.read('SELECT COUNT(*) AS n FROM report_iv30_days WHERE index_name=? AND day<?',
+        (index,now.astimezone(IST).date().isoformat()))[0]['n'] if tables else 0
     return dict(status='CURRENT_RESEARCH_PROXY' if current else 'UNKNOWN_OR_STALE',
         method=METHOD,value=point.get('value') if current else None,
-        observed_at=point.get('observed_at'),completed_observed_days=value.get('completed_observed_days',0),
+        observed_at=point.get('observed_at'),completed_observed_days=completed,
         required_prior_sessions=252,execution_feature=False,broker_writes=False)

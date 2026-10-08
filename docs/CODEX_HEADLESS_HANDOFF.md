@@ -1,5 +1,159 @@
 # Current Trading handoff
 
+## October 8 protected owner commissioning update
+
+New owner previews use a v2 plan with declared stop trigger and stop limit.
+After a full BUY fill, the explicit Attach stop-loss action submits an exact
+SELL DOWN GTT. Two separate observations at least five seconds apart verify
+persistence. Active/unknown protection blocks a separate close. Stop-trigger
+children, partial fills and cancel races reconcile against the original
+reference and exact quantity; no polling path submits/retries broker writes.
+Legacy buy-only evidence is preserved but cannot prepare this release for live.
+
+A GET-only retire action reconciles a cancelled prior-release test and archives
+its PC form after confirmed flat reads, retaining its original binding and
+receipts. It never transfers activation proof. Account/policy changes or an
+active/unknown instruction remain blocked. The previous expired contract and
+prices are not reused for a new test.
+
+The reviewed bundle also contains the actual Groww parent-schema normalization,
+local-only setup-page loading with elapsed action status, separate bounded
+backup/report workers and the dated IV-count fix. The existing Supabase CHECK
+migration was already applied as recorded below. Local synthetic protection
+checks cover both indexes, partial stops, unknown child linkage, timeouts,
+restart deduplication, cancel/trigger races and tampered evidence. Latest rollout
+and complete test results are recorded above this section after verification.
+
+
+## October 8 owner-requested execution testing
+
+Ran the full current working-tree suite: 788 passed, six platform skips, no
+failures (794 collected). Skips are four POSIX subprocess/timeout cases and two
+Windows symlink-privilege cases. Tests include both-index Normal entries,
+hedge-first ordering, persistent stop readback, trailing changes, partial fills,
+cancel/trigger races, profit/loss exits, restart deduplication and manual-position
+protection. These use synthetic brokers; they are not real execution receipts.
+Both dashboard JavaScript files passed syntax checks, all eight config JSON files
+parsed, and the offline demo completed two jobs with an unsent replay report.
+
+At 13:30 JST the actual Oracle runtime was progressing, in paper mode and paused,
+with global Algo Off. Normal was Off and the owner had selected Research On;
+these settings were not changed. A fresh GET again confirmed the exact previous
+commissioning parent CANCELLED. Its observed schema matches the locally repaired
+adapter, but that repair is not deployed and the saved setup remains
+RECONCILIATION_REQUIRED. No broker write, fill, activation or new test occurred.
+
+The current owner commissioning page creates a BUY GTT and a separately requested
+LIMIT SELL. It does not attach an automatic protective stop-loss. Consequently
+the requested real BUY -> stop-loss -> SELL sequence is not verified, and the
+test results above must not be advertised as full live readiness. Actual broker
+protection/child/fill evidence and the pending reviewed deployment remain open.
+
+## October 8 noon maintenance check
+
+At the actual noon check, the owner's Edge showed the existing Codex key Expired.
+Its Approve action completed and the page showed Approved / resets tomorrow.
+Oracle SDK 1.5.0 authentication and GET positions, funds and NIFTY quote each
+returned HTTP 200. The standalone funds response was received at 03:05:34 UTC;
+it was not injected into the observer. Premarket collection starts at 12:40 JST,
+so the PC correctly retained unknown monetary values for its stale prior-day read.
+Owner intent and both Normal/Research switches remain Off, with paper and both
+pause markers retained. No order or permission change occurred. A separate exact
+parent read again confirmed the owner's cancelled commissioning GTT as CANCELLED;
+its incomplete private verification record/binding was not rewritten.
+
+Repaired a real archive failure: production's category CHECK omitted
+`iv30_research_day`, rejecting batches with HTTP 400. Applied the additive
+`trading_research_iv30_category` migration, also saved as
+`deploy/premium-research-iv30-category.sql`. The original categories, RLS, grants,
+hash and MONITOR_ONLY constraints remain. Supabase now contains the October 7
+dated IV observations for both indexes, with last receipts at 09:59:35 and
+09:59:59 UTC. The existing worker drained its outbox to zero and reported SYNCED
+with fresh acknowledgments. No observations or capture cursors were invented.
+
+The original campaign still spans October 7 02:46:38 UTC to November 14
+02:46:38 UTC. Its fresh-contract checkpoint coverage is NIFTY one day / SENSEX
+zero days; this is separate from the one actual near-close IV day for each index.
+The source now counts completed IV days from dated rows at read time, so midnight
+does not leave the display at yesterday's saved zero. That count fix is tested
+locally, not deployed. It does not certify a session calendar or 252-session history.
+A fresh in-memory official-calendar fetch parsed RBI and FOMC; MoSPI remained
+UNKNOWN. October 27–28 FOMC risk remains known. No freshness policy changed and
+the diagnostic did not replace runtime calendar evidence.
+
+Found a reporting incident: no October 7 email outbox record exists. Its report
+thread had been occupied by the October 7 backup since 19:05 JST. The partial
+backup was still being modified the next morning and had no verification marker.
+It is not a valid backup. October 6 has provider and recipient-server acceptance
+(provider event `opened`), with inbox verification still false. Today's scheduled
+status is not proof of a send or recovery of yesterday's missed report.
+
+Stopped/started only the paused observer to release the stuck backup, retaining
+the same immutable release. Its heartbeat resumed and advanced; PC health is
+HEALTHY and stale balances remain unknown. Shared services were not restarted.
+Maintenance backup attempts did not finish within their bounds; their incomplete
+copies were cleaned up, and no successful backup is claimed. The final helper
+check found no leftover backup process. The original partial nightly file remains
+for diagnosis. The owner intent, strategy switches, campaign and commissioning
+record were preserved.
+
+Local source repair separates nightly backup from email scheduling, pins the
+backup read snapshot, bounds copy/integrity/hash work, and records backup errors
+independently. Fresh attempt paths prevent an orphan partial copy from blocking
+subsequent retries. All 50 relevant tests passed (two platform skips), including
+a blocked-backup/email regression; the synthetic demo completed two jobs and
+queued an unsent report. These Python reporting/backup/IV-count changes are NOT
+deployed. The existing release and cancelled test's exact binding remain; do not
+edit an immutable release or silently transfer commissioning proof. A reviewed
+rollout is still needed before relying on tonight's automatic backup/email path.
+
+## October 7 setup responsiveness and live schema finding
+
+Owner submitted a real GTT through the explicit desktop action, then cancelled
+it in Groww. A read-only diagnostic independently observed the exact parent as
+CANCELLED. No maintenance order write occurred. The current Oracle journal still
+reports RECONCILIATION_REQUIRED / COMMISSIONING_PARENT_READBACK_DIFFERS; do not
+treat the cancellation alone as a filled, closed or completed commissioning test.
+
+The actual GTT detail returned nested `orderType` and `transactionType`, whereas
+the published schema and old verifier expect `order_type` and `transaction_type`.
+The source adapters now normalize only these two spellings, reject conflicting
+duplicates, and retain exact ID, quantity, side and decimal-price checks. This
+Oracle adapter fix is tested locally but NOT deployed. The existing release,
+private test binding, journal, paper mode and pause remain unchanged. Do not
+resubmit the original order or silently migrate its evidence to a different build.
+
+PC viewer changes are applied: GET `/api/live-setup` reads saved local state and
+never authenticates or calls Oracle/Groww. Opening setup uses this fast endpoint,
+restores its saved fields and labels the result as saved. Broker writes stay
+disabled until an explicit current check. An in-progress command shows elapsed
+time; reopening observes its local progress without resending it. Fresh checks
+remain explicit. Specific cap/tick/limit/deadline errors replace the generic form
+error, and confirmed unsubmitted quote failures allow correction after the
+original remote plan is checked. Uncertain/submitted plans remain locked.
+
+Before the PC-only restart, its SQLite backup passed verification and no setup
+SSH process was active. After restart the same accepted test and uncertain
+submission record were retained. Three saved-status reads took 43.0, 16.1 and
+6.3 milliseconds; the existing dashboard sample took 82 milliseconds. Owner Edge
+visibly loaded the saved contract/status with the explicit no-auto-SL/target note.
+44 focused desktop/setup tests passed. No Oracle service, source pin, credential,
+strategy intent, pause or shared service was changed.
+
+All 244 focused desktop, HTTP/JS setup, commissioning, activation, schema and
+premium-executor checks passed across the targeted runs. JS syntax and Python
+compilation passed. The separate synthetic demo completed two jobs and queued
+an unsent replay report. A second GET-only parent check confirmed CANCELLED and
+that the reviewed alias normalization makes all exact declared fields agree;
+it did not modify the production evidence or certify a filled trade.
+
+Fresh broker checks are still slower: the measured authentication took 8.783s
+and the exact parent GET 0.697s (13.128s including process/SSH startup). Initial
+preview and submission additionally scan 392 days of active GTT/OCO history.
+These timings are actual samples, not latency guarantees. This change improves
+page opening and explains remaining waits; it does not claim faster execution,
+relax freshness or certify current protection/child-order verification.
+
 ## October 7 concrete owner live setup
 
 Fixed the missing commissioning path. Previously every production write required

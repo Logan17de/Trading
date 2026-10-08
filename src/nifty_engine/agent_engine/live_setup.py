@@ -18,6 +18,8 @@ def activation(store, release, policy_hash, account_fingerprint=None):
             return None
         from .broker_commissioning import validated_evidence
         evidence = validated_evidence(store, value['plan_id'])
+        if not all(evidence['facts'].get(k) for k in ('stop_order_write', 'stop_persisted', 'stop_inactive')):
+            return None
         binding = evidence['binding']
         if (binding['release'] != release or binding['policy_hash'] != policy_hash
                 or binding['host'] != 'ORACLE' or binding['sdk_version'] != '1.5.0'

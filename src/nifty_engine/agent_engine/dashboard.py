@@ -944,6 +944,12 @@ class DashboardState:
             return {"status":"OWNER_SETUP_BLOCKED", "reason":"ORACLE_CONNECTION_REQUIRED", "allowed_actions":[]}
         return self.owner_setup.command(body)
 
+    def setup_status(self):
+        """Fast local journal projection; never contacts Oracle or a broker."""
+        if self.owner_setup is None:
+            return {"status":"OWNER_SETUP_BLOCKED", "reason":"ORACLE_CONNECTION_REQUIRED", "allowed_actions":[]}
+        return self.owner_setup.public()
+
     def record_investment(self, body):
         if self.remote:
             return self.remote.record_investment(body)
@@ -1135,6 +1141,11 @@ def handler(state):
                     return self.respond(200, state.read())
                 except Exception:
                     return self.respond(503, {"status": "LOCAL_DATA_UNAVAILABLE"})
+            if self.path == '/api/live-setup':
+                try:
+                    return self.respond(200,state.setup_status())
+                except Exception:
+                    return self.respond(503,{'status':'OWNER_SETUP_LOCAL_STATE_UNAVAILABLE','allowed_actions':['status']})
             if self.path == '/api/impulse/events':
                 self.send_response(200);self.send_header('Content-Type','text/event-stream')
                 self.send_header('Cache-Control','no-store');self.end_headers()

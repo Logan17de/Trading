@@ -118,6 +118,12 @@ def test_iv_completed_days_no_intraday_or_downtime_fill_restart_and_archive(tmp_
     close=NOW.replace(hour=9,minute=57)  # 15:27 IST
     iv.save(store,point(close),close)
     restored=Store(store.path);iv.save(restored,point(close),close)
+    # Midnight must count yesterday even if today's chain fetch has not worked.
+    next_day=close+timedelta(days=1)
+    public=iv.public(restored,'NIFTY',next_day)
+    assert public['completed_observed_days']==1
+    assert public['value'] is None and public['status']=='UNKNOWN_OR_STALE'
+    assert iv.public(restored,'SENSEX',next_day)['completed_observed_days']==0
     assert len(restored.read('SELECT * FROM report_iv30_days'))==1
     next_day=close+timedelta(days=1)
     result=iv.save(restored,point(next_day),next_day)

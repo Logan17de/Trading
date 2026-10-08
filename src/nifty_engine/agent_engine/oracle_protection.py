@@ -90,8 +90,10 @@ class PersistentProtection:
             raise ValueError('EXCLUSIVE_OWNED_POSITION_REQUIRED')
 
     def _full(self, record):
+        from .broker_shapes import smart_order
         full = self.transport.get_smart_order(segment='FNO', smart_order_type='GTT',
                                             smart_order_id=record['smart_id'], timeout=5)
+        full = smart_order(full)
         request = record['request']
         if (full.get('smart_order_id')!=record['smart_id'] or full.get('smart_order_type')!='GTT'
                 or ('reference_id' in full and full['reference_id']!=record['reference'])
