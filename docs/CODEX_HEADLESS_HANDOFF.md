@@ -1,5 +1,53 @@
 # Current Trading handoff
 
+## October 8 failure email and diagnostic wake-up
+
+Owner requested failure email and a Codex wake-up. Read FAILURE_ALERTS.md.
+Installed a separate unprivileged, resource-capped Oracle failure watchdog and
+30-second-after-completion timer from immutable alert release
+`5fad39d3665cd1c9960e23ecfa2c2df9f43e940f`. The broker executor remains on
+`d0ced4ae2c25d68a1bb831ee641310cf8383bf45`; alert installation does not change
+its source, commissioning binding, mode, pause or owner preferences. Private
+diagnostics/mail receipts use a separate SQLite journal. No new credentials or
+broker permissions. The existing PC outage mail now carries sanitized diagnostic
+context and frozen retry content. Updated and restarted the local viewer.
+
+Created the ACTIVE `trading-incident-watch` heartbeat on this chat every five
+minutes. Its read-only pc-status command was manually verified against the actual
+Oracle incident journal. Configured wake-ups are best effort, not proof that a
+scheduled run happened. The monitor cannot execute repairs or trades; Codex's
+prompt permits reversible non-trading fixes but prohibits activation, orders and
+restarts/deployment of an active executor or unresolved order. No instant event
+callback or external cloud outage monitor is installed. Full VM loss still needs
+the PC awake/online for outage mail; application-fault mail runs on Oracle even
+when the PC is asleep. Codex must be available for a scheduled diagnostic check.
+
+Sent one explicitly labelled alert-test email using the existing approved mail
+configuration. Resend accepted it and subsequently reported delivered with an
+exact envelope match (recipient-server acceptance). Inbox delivery is unverified.
+No trade was placed or modified. Stable incident IDs, typed error/code locations,
+secret exclusion, recovery/debounce, restart-safe retries and provider receipt
+distinctions are tested. Status reads now bypass the monitor's send lock so an
+in-flight email cannot prevent diagnostics. Source update does not reset alert
+journal records or sender/recipient configuration.
+
+Live checks exposed intermittent observer socket reads timing out at 18 seconds.
+After verifying paper/pause, owner Off, no owned open rows and no unresolved
+commissioning record, restarted only the paused observer on its existing source.
+Protected metadata/environment and shared service PIDs were unchanged. Latest
+PC view was HEALTHY/RECENT, heartbeat sequence advanced on the new boot, and
+the watchdog recorded recovery. The underlying cause of the intermittent latency
+was not proven; do not report the timeout as permanently fixed. Monitor startup
+and recovery are distinct from successful broker execution.
+
+Full local run: 835 passed, six platform skips. The subsequent lock-free status
+and typed timeout regression brought the focused suite to 41 passing tests,
+also passed on the final installed alert release. Config/JS/PowerShell checks
+and two-job offline demo passed (demo email unsent). New local SQLite backup
+verified. Global Off, Normal Off, Research On, paper and pause remain intact.
+Real commissioning still lacks filled BUY/protected stop/SELL evidence; this work
+does not enable real money or create an activation receipt.
+
 ## October 8 execution-input timing and setup latency
 
 Found a real input-timing fault: the five-second strategy snapshot bridge shared

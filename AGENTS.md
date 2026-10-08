@@ -130,6 +130,13 @@
 - Keep Oracle continuously running. Verified private SSH and fixed Unix-socket
   client; no public trading port. Liveness needs heartbeat advancement. PC alerts
   require PC awake/signed in/online; no external cloud monitor is installed.
+- Read FAILURE_ALERTS.md for the independent Oracle failure-email watchdog and
+  five-minute Codex incident watch. The monitor is a separate immutable release
+  and private journal; never couple an alert-only rollout to an executor upgrade.
+  Its only external write is approved owner email. Preserve incident IDs, frozen
+  retry envelopes and actual delivery distinctions. Diagnostic status must remain
+  readable during a send. No alert, wake-up or email failure authorizes orders,
+  activation, changed owner intent, relaxed limits, or active-executor restarts.
 - Protect `.agent-state`, sibling `.secrets/growing-trader` DPAPI vault, original
   production keys/ciphertext and Codex authentication. No secrets/account IDs in
   Git/logs/prompts/reports. Root-only observer credentials reuse existing keys for
