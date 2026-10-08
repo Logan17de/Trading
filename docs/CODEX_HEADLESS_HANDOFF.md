@@ -1,6 +1,6 @@
 # Current Trading handoff
 
-## October 8 Trading email quiet hours — rollout pending
+## October 8 Trading email quiet hours — installed
 
 Owner requested no Oracle email after market close. Reports, incident alerts
 and PC outage emails now share a 12:45 inclusive–19:00 exclusive JST send window
@@ -15,10 +15,37 @@ Visual reports freeze after 19:29 on regular trading days and wait in the durabl
 outbox for the next session, keeping the original report date. Recovered incidents
 are not emailed next morning; unresolved ones remain eligible. The prior 19:30
 send schedule is superseded. Existing approved mail identities are preserved.
-See FAILURE_ALERTS.md. Deployment and actual after-hours status verification
-are pending; synthetic tests have made no provider send or broker write.
+See FAILURE_ALERTS.md. Installed observer/report and independent alert release
+`4fb53bce11d4c539c944cc02be3dc924e1cfad3e`. At 20:27 JST the actual watchdog
+was CURRENT and reported WAIT_MARKET_SESSION; its health read was HEALTHY,
+with the earlier unreachable incident still in its recovery debounce. No new
+incident provider acceptance was recorded after today's cutoff. The normal
+closed-market data snapshot can remain stale; liveness uses advancing heartbeats.
 
-## October 8 simpler owner test — implementation in progress
+The full local run before the final quiet-hours/exit-attention additions passed
+867 tests with six platform skips. The subsequent combined regression passed
+141 tests with four skips; the final viewer/mail regressions passed 86 tests.
+Final Oracle release passed 113 focused tests including the boundary, holiday,
+restart, next-session outbox and owner test protections. JS syntax checks passed;
+the earlier offline demo completed two jobs without sending email. No synthetic
+test sent a real email or broker request.
+
+The roughly 1.25 GB Oracle backup/full integrity check exceeded the local SSH
+call's 210-second timeout. Read-only inspection confirmed that the original
+deployment process continued; it was not duplicated. It completed integrity,
+saved rollback evidence, installed the release and restarted the paused observer.
+Independent readback confirmed the release, protected metadata and paper/pause.
+Shared services were preserved by the deployment assertions. The independent
+watchdog rollout preserved executor/shared-service identities. PC connection pins
+and assets were refreshed; the draft remains saved. The Edge automation tool was
+unavailable (request-header policy failed twice), so current visual verification
+in Edge is not claimed; local HTTP assets and synthetic UI tests passed.
+
+Updated the noon check's existing prompt to this mail policy. Its schedule stays
+active. The separate incident-watch heartbeat was already PAUSED and was left
+paused. No change to owner Algo intent, strategy switches or broker permissions.
+
+## October 8 simpler owner test — installed, no real test performed
 
 Owner asked to replace the cumbersome multi-action test with a reviewed Buy click.
 The new default v3 plan uses an ordinary DAY LIMIT BUY, with a persistent private
@@ -36,9 +63,13 @@ CLOSED_UNVERIFIED, not complete activation proof. Partial/unknown/manual-conflic
 states stop continuation and reach the independent watchdog; no automatic retries
 of broker writes. Deployment refuses a running test job or unresolved test.
 
-Rollout and final verification are pending. Existing installed executor remains
-on the prior release until a verified paused/off/settled deployment. No real
-test or activation has been performed by maintenance.
+Installed in the release above after paper/off/settled preflight. Pre-submission
+job failures are visible even without a broker record; an unused failed preview
+can be reconciled without changing submitted instructions. A target LIMIT SELL
+still pending after stop cancellation is explicitly reported as open without its
+stop and monitored read-only. Terminal partial exits and unexpected inactive stops
+halt continuation for review. No real test or activation was performed by
+maintenance; actual filled/protected broker verification remains incomplete.
 
 ## October 8 failure email and diagnostic wake-up
 
