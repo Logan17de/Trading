@@ -9,8 +9,24 @@ option-buy balance, exact lot/contract/prices, stop protection and explicit owne
 confirmation still apply. This changes commissioning only; Normal strategy risk
 bounds and its loss policy remain unchanged. Date restrictions are unchanged.
 Synthetic checks cover purchases above the old cap for both indexes, insufficient
-broker funds, exact-price confirmation and no orders during Preview. Deployment
-and actual read-only verification are recorded below when complete.
+broker funds, exact-price confirmation and no orders during Preview.
+
+Deployed immutable Oracle release `4113b8d2031d4d3c1fbb3181cc6ea0c8154774f9`
+and restarted the PC viewer. The full local suite passed 813 tests with six
+platform skips; JS/config checks and the two-job unsent offline demo passed.
+The broader Oracle replay exceeded its 160-second bound and is not a pass;
+the 16 targeted cap-removal, owner-gate and protection tests passed on the new
+installed release. Retained the earlier fully verified Oracle journal backup,
+saved fresh private protected metadata/unit rollback data, and verified a fresh
+PC SQLite backup. There was no journal schema migration or credential change.
+The deployment preserved protected capital/control/commissioning records,
+paper/pause, owner Off and all four shared services with unchanged process IDs.
+
+Refreshed the owner's Edge form and retained their latest NIFTY draft. Actual
+GET-only Preview reached the new Oracle code for a purchase above the old cap;
+the cap no longer rejected it. It returned the separate above-market BUY trigger
+check after reading the quote. Its later buying-balance check was therefore not
+reached on that preview. No broker write, activation or completed test is claimed.
 
 ## October 8 desktop setup simplification
 
