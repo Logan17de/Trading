@@ -136,7 +136,7 @@ class Monitor:
 
     def save(self): self.store.set_meta(KEY, self.state)
 
-    def tick(self, view, now):
+    def tick(self, view, now, *, read_error=None):
         from .oracle_link import health
         state = 'UNKNOWN'
         if view is not None:
@@ -145,6 +145,8 @@ class Monitor:
                 progress_at=self.state.get('progress_at'))
             self.state.update(previous=previous, progress_at=progress)
         found = faults(view, now, state)
+        if read_error is not None and 'OBSERVER_UNREACHABLE' in found:
+            found['OBSERVER_UNREACHABLE']['details']=diagnostics(dict(read_error,stage='LOCAL_SOCKET_READ'))
         self.record(found, now, complete=view is not None and state=='HEALTHY')
         self.state.update(checked_at=now.isoformat(), health=state)
         self.save()
@@ -268,6 +270,19 @@ def pc_status(root, *, run=None):
     return result
 
 
+def saved_status(root):
+    """WAL read only: an in-flight send must not lock out diagnostics."""
+    import sqlite3
+    path=(root/'.agent-state/failure-monitor.sqlite3').resolve()
+    monitor=Monitor.__new__(Monitor)
+    monitor.state={'incidents':{},'health':'NOT_STARTED'}
+    if path.exists():
+        with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=3) as db:
+            row=db.execute('SELECT body FROM meta WHERE key=?',(KEY,)).fetchone()
+            if row: monitor.state=json.loads(row[0])
+    return monitor.public()
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action',choices=('tick','status','test-email','receipt','pc-status'))
@@ -282,14 +297,18 @@ def main():
     # environment values are discarded without being used or exposed.
     env={k:os.environ.get(k,'') for k in ('RESEND_API_KEY','TRADING_REPORT_FROM','TRADING_REPORT_TO')}
     os.environ.clear()
+    if args.action=='status':
+        print(dumps(saved_status(args.root))); return
     with (args.root/'.agent-state/failure-monitor.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         monitor=Monitor(Store(args.root/'.agent-state/failure-monitor.sqlite3'))
         now=datetime.now(timezone.utc)
         if args.action=='tick':
+            read_error=None
             try: view=read_observer(args.root)
-            except Exception: view=None
-            monitor.tick(view,datetime.now(timezone.utc))
+            except Exception as exc:
+                view=None;read_error={'error_type':type(exc).__name__}
+            monitor.tick(view,datetime.now(timezone.utc),read_error=read_error)
             monitor.deliver(datetime.now(timezone.utc),env)
         elif args.action=='test-email':
             old=next((r for r in monitor.state['incidents'].values() if r['code']=='ALERT_TEST'),None)

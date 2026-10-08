@@ -114,3 +114,17 @@ def test_journal_contains_only_monitor_state_and_diagnostics_are_bounded(tmp_pat
         'frames':[{'file':'/private/credentials.py','function':'get','line':3}]})
     assert data=={'error_type':'HTTPError','provider_code':'403','frames':[]}
 
+
+def test_status_reader_works_during_send_and_classifies_socket_timeout(tmp_path):
+    from nifty_engine.agent_engine.failure_alerts import saved_status
+    path=tmp_path/'.agent-state/failure-monitor.sqlite3'
+    m=Monitor(Store(path));m.tick(broken(),NOW)
+    def send(*args):
+        current=saved_status(tmp_path)
+        assert current['incidents'][0]['mail_status']=='SENDING'
+        return 'synthetic-receipt'
+    m.deliver(NOW,ENV,send=send)
+    m.tick(None,NOW+timedelta(seconds=5),read_error={'error_type':'TimeoutError','message':'PRIVATE'})
+    item=next(r for r in saved_status(tmp_path)['incidents'] if r['code']=='OBSERVER_UNREACHABLE')
+    assert item['details']['error_type']=='TimeoutError' and 'PRIVATE' not in str(item)
+
