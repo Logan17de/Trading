@@ -94,6 +94,57 @@ def test_fixed_preview_stdin_returns_only_owner_spec_and_hash(app):
     assert {'submit','status','capture'}<=set(result['allowed_actions'])
 
 
+def test_direct_buy_is_owner_click_only_and_not_repeated_after_restart(app):
+    ctl,store,calls,cfg=app
+    value=dict(spec(),entry_mode='LIMIT',trigger_price='10.05',sell_limit_price='12.00')
+    ready=ctl.command({'action':'preview','spec':value})
+    assert 'buy-protect' in ready['allowed_actions'] and 'submit' not in ready['allowed_actions']
+    ctl.run=lambda *a,**k: response('OWNER_TEST_RUNNING',plan_hash=HASH,broker_writes=False)
+    started=ctl.command({'action':'buy-protect','confirm':HASH})
+    assert 'buy-protect' not in started['allowed_actions']
+    again=OwnerSetupController(ctl.root,store,run=lambda *a,**k:pytest.fail('repeated start'),clock=lambda:NOW)
+    assert 'buy-protect' not in again.public()['allowed_actions']
+    assert 'buy-protect' not in again.command({'action':'buy-protect','confirm':HASH})['allowed_actions']
+
+
+def test_contract_lookup_is_read_only_and_filters_private_fields(app):
+    ctl,store,calls,cfg=app;preview(app);before=store.meta(KEY)
+    def lookup(args,**kw):
+        assert ' lookup-stdin --id ' in args[-1]
+        assert json.loads(kw['input'])=={'index':'NIFTY','symbol':spec()['contract']['symbol']}
+        return response('OWNER_CONTRACT_FOUND',contract=spec()['contract'],egress_ip='8.8.8.8',
+            checked_at=NOW.isoformat(),quote={'last_price':10,'bid_price':9.95,'offer_price':10,
+                'timestamp_status':'RECENT_TRADE_ONLY','api_key':'PRIVATE'},account_id='PRIVATE',broker_writes=False)
+    ctl.run=lookup
+    result=ctl.command({'action':'lookup','spec':{'index':'NIFTY','symbol':spec()['contract']['symbol']}})
+    assert result['contract']==spec()['contract'] and result['quote']['offer_price']==10
+    assert store.meta(KEY)==before and 'PRIVATE' not in str(result)
+
+
+def test_archived_draft_survives_page_restart_without_broker_request(app):
+    ctl,store,calls,cfg=app
+    store.set_meta(KEY+'-archive-'+'a'*32,{'spec':spec()})
+    result=ctl.public()
+    assert result['draft_spec']==spec() and result['plan_spec'] is None and calls==[]
+
+
+def test_explicit_review_can_replace_unused_old_release_preview_without_extra_owner_action(app):
+    ctl,store,calls,cfg=app;preview(app);old=store.meta(KEY)
+    cfg['python']='/opt/growing-trader/releases/'+'e'*40+'/venv/bin/python'
+    (ctl.root/'.agent-state/oracle-viewer.json').write_text(json.dumps(cfg))
+    seen=[]
+    def run(args,**kw):
+        seen.append(args[-1])
+        if ' retire ' in args[-1]:return response('PRIOR_TEST_RETIRED',plan_hash=HASH,broker_writes=False)
+        return response(PREVIEW,plan_hash=HASH,plan_id=args[-1].split(' --id ')[1],broker_writes=False)
+    ctl.run=run
+    result=ctl.command({'action':'preview','spec':spec()})
+    assert result['status']==PREVIEW and len(seen)==2
+    assert ' retire ' in seen[0] and ' preview-stdin ' in seen[1]
+    assert store.meta(KEY+'-archive-'+old['plan_id'])['attempted_writes']==[]
+    assert store.meta(KEY)['plan_id']!=old['plan_id']
+
+
 @pytest.mark.parametrize('field,value',[('host',';danger'),('python','python;danger'),('user','root'),('root','/tmp/other')])
 def test_tampered_transport_never_invokes_process(app,field,value):
     ctl,store,calls,cfg=app

@@ -13,6 +13,10 @@ restart the executor, or modify a trading position.
 - Latched executor failures and uncertain broker protection/order reconciliation.
 - Owner On with incomplete live setup or no executable strategy selected.
 - Daily report delivery failures and research archive synchronization failures.
+- An explicitly owner-started Buy + protect test with failed/uncertain execution,
+  partial BUY/protection requiring review, or a running job checkpoint older than
+  four minutes. These incidents apply even while the normal Algo is Off. The
+  monitor never starts or retries the test; accepted mail is not broker recovery.
 
 Normal Off, paper/pause while Off, no qualifying trade, research missing inputs
 and closed-market collection inactivity do not generate failure alerts. Routine

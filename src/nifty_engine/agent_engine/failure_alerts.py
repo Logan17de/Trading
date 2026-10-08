@@ -37,6 +37,7 @@ MESSAGES = {
     'DAILY_EMAIL_FAILED': ('Daily report', 'The daily report sender recorded a delivery failure.'),
     'RESEARCH_ARCHIVE_FAILED': ('Research archive', 'The one-way research archive reported a synchronization failure.'),
     'ALERT_TEST': ('Alert transport test', 'This is a requested notification test. No broker order was sent.'),
+    'OWNER_TEST_FAILED': ('Owner broker test', 'The owner test needs attention. Check its entry, stop-loss and remaining position in Groww.'),
 }
 SETUP_BLOCKERS = {'LIVE_ENVIRONMENT_NOT_ACTIVATED', 'REPOSITORY_PAUSED',
     'REVIEWED_LIVE_ACTIVATION_REQUIRED', 'ALL_EXECUTABLE_STRATEGIES_OFF'}
@@ -81,6 +82,12 @@ def faults(view, now, health='HEALTHY'):
         add('OBSERVER_UNREACHABLE', {'stage':'LOCAL_SOCKET_READ'})
         return found
     runtime = view.get('runtime', {})
+    test=view.get('live_setup',{}).get('owner_test',{})
+    if test.get('state')=='ERROR':add('OWNER_TEST_FAILED',{'stage':test.get('reason') or test.get('status')},True)
+    elif test.get('state')=='RUNNING':
+        try:stale=(now-stamp(test.get('checked_at'))).total_seconds()>240
+        except (ValueError,TypeError):stale=True
+        if stale:add('OWNER_TEST_FAILED',{'stage':'OWNER_TEST_JOB_STALE'},True)
     if health in ('WORKER_STUCK', 'INVALID_HEARTBEAT'): add(health, runtime)
     if runtime.get('error'): add('COLLECTOR_FAILED', runtime['error'])
     execution = view.get('execution_controller', {})

@@ -97,12 +97,12 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
 const elements=new Map(),calls=[];
 function element(){return {events:{},dataset:{},content:'TOKEN',checked:false,addEventListener(k,fn){this.events[k]=fn;},replaceChildren(){},append(){},focus(){this.focused=true;},scrollIntoView(){this.scrolled=true;}};}
 function get(key){if(!elements.has(key))elements.set(key,element());return elements.get(key);}
-const writes=['submit','close','cancel','arm'].map(action=>Object.assign(element(),{dataset:{write:action}}));
+const writes=['submit','close','cancel','arm','buy-protect'].map(action=>Object.assign(element(),{dataset:{write:action}}));
 const reads=['capture','arm-preview'].map(action=>Object.assign(element(),{dataset:{read:action}}));
 let response={status:'OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT',plan_hash:'a'.repeat(64),allowed_actions:['submit','status','preview']};
 let now=Date.parse('2026-10-08T05:00:00Z');
 class Clock extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
-const c=vm.createContext({Intl,Date:Clock,Number,Set,setInterval,clearInterval,setTimeout,FormData:class{constructor(fields){this.fields=fields;}get(key){return this.fields[key];}},document:{querySelector:get,
+const c=vm.createContext({Intl,Date:Clock,Number,Set,setInterval,clearInterval,setTimeout:()=>0,clearTimeout:()=>{},FormData:class{constructor(fields){this.fields=fields;}get(key){return this.fields[key];}},document:{querySelector:get,
  querySelectorAll:s=>s==='[data-write]'?writes:reads,createElement:element},fetch:async(url,args)=>{
  if(url==='/api/dashboard')return {json:async()=>({live_setup:{mode:'paper'},control:{algo:{desired_enabled:false}}})};
  if(!args.method)return {json:async()=>response};
@@ -160,9 +160,23 @@ vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),c);
  assert.equal(get('#preview-button').disabled,false);
  c.fetch=async()=>({json:async()=>({status:'NOT_STARTED',allowed_actions:['preview','status']})});
  await vm.runInContext('command({action:"status"})',c);
- assert.match(get('#command-note').textContent,/No test has been previewed/);
+ assert.match(get('#command-note').textContent,/Load the contract/);
  get('#plan-form').events.invalid({target:{labels:[{textContent:'BUY limit ₹'}],validationMessage:'Please fill out this field.'}});
  assert.match(get('#preview-feedback').textContent,/Check BUY limit/);
+ // The direct mode requires a reviewed plan but no redundant checkbox. Page
+ // reads never submit; only the Buy + protect click carries its exact hash.
+ c.fetch=async(url,args)=>{
+   if(url==='/api/dashboard')return {json:async()=>({live_setup:{supports_direct_test:true,mode:'paper'}})};
+   calls.push(JSON.parse(args.body));
+   return {json:async()=>({status:'OWNER_TEST_RUNNING',allowed_actions:['status','capture'],plan_hash:'b'.repeat(64)})};
+ };
+ vm.runInContext('current={status:"OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT",plan_hash:"b".repeat(64),allowed_actions:["buy-protect","status"]};savedOnly=true;render()',c);
+ const buy=writes[4];assert.equal(buy.disabled,true);buy.events.click();assert.equal(calls.length,2);
+ vm.runInContext('savedOnly=false;render()',c);
+ assert.equal(buy.disabled,false);assert.equal(get('#confirm-row').hidden,true);
+ buy.events.click();buy.events.click();await new Promise(setImmediate);
+ assert.equal(calls.length,3);assert.deepEqual(calls[2],{action:'buy-protect',confirm:'b'.repeat(64)});
+ assert.equal(buy.hidden,true);assert.match(get('#command-note').textContent,/job started on Oracle/);
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
     result=subprocess.run([node,'-e',script,str(source)],capture_output=True,text=True,timeout=10)

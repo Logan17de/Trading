@@ -149,6 +149,21 @@ def test_deployment_unknown_schema_does_not_silently_mean_flat(tmp_path):
         MODULE.deployment_preflight(tmp_path)
 
 
+@pytest.mark.parametrize('kind',['job','pending','partial','unknown'])
+def test_deployment_preserves_unresolved_owner_test(tmp_path,kind):
+    import json,sqlite3
+    journal=_deployment_database(tmp_path,['CLOSED'],{'enabled':False})
+    if kind=='job':key,value='owner-direct-test-authorization',{'state':'RUNNING'}
+    else:
+        key='broker-commissioning-'+'a'*32
+        value={'format':'trading-broker-direct-record-v1','phase':{'pending':'BUY_PENDING_OR_PARTIAL',
+            'partial':'CHILD_TERMINAL_WITH_REMAINDER','unknown':'RECONCILIATION_REQUIRED'}[kind]}
+    with sqlite3.connect(journal) as db:db.execute('INSERT INTO meta VALUES(?,?)',(key,json.dumps(value)))
+    before=journal.read_bytes()
+    with pytest.raises(ValueError):MODULE.deployment_preflight(tmp_path)
+    assert journal.read_bytes()==before
+
+
 def test_deployment_refuses_live_running_unpaused_even_when_owner_off(tmp_path):
     _deployment_database(tmp_path,['CLOSED'],{'enabled':False})
     with pytest.raises(ValueError,match='PAUSE_OR_STOP_LIVE_RUNTIME_BEFORE_DEPLOYMENT'):

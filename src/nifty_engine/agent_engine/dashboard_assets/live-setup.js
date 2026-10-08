@@ -8,6 +8,23 @@ let savedOnly = true;
 let startedAt = 0;
 let activeAction = '';
 let progressTimer = null;
+let runtimeTimer = null;
+let directSupported = false;
+const nextSteps = {
+  NOT_STARTED:'Load your contract, enter the prices and review your test.',
+  PRIOR_TEST_RETIRED:'The old test is archived. Your last draft is kept for editing.',
+  OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT:'Review the details below. Your Buy click sends the real order.',
+  OWNER_TEST_RUNNING:'Oracle is running your reviewed test. You can close this page.',
+  BUY_PENDING_OR_PARTIAL:'The limit BUY has not filled completely. Oracle is following the original order.',
+  CHILD_FILLED:'BUY filled. The stop-loss is not yet confirmed. Follow the protection status here.',
+  STOP_ACTIVE_OBSERVED:'Stop-loss accepted. Oracle is checking persistence and monitoring your target.',
+  CLOSE_PENDING_OR_PARTIAL:'Exit is pending or partially filled. The position is not confirmed closed.',
+  FLAT_AWAITING_SECOND_READ:'The position is flat. Oracle is waiting for a second independent check.',
+  CANCELLED_FLAT:'The order ended without a completed trade. There is no remaining test position.',
+  CLOSED_UNVERIFIED:'The test position is closed. BUY, protection and exit checks are recorded; a generated stop-order fill has not been verified.',
+  COMPLETE:'The broker checks are complete. Live preparation remains your separate action.',
+  RECONCILIATION_REQUIRED:'Oracle cannot confirm the broker state. Check Groww before another order.'
+};
 const money = value => value != null && Number.isFinite(Number(value)) ? new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:2}).format(Number(value)) : '—';
 const words = value => String(value || '').replaceAll('_',' ').toLowerCase().replace(/^./,s=>s.toUpperCase());
 const reasons = {
@@ -20,8 +37,13 @@ const reasons = {
   COMMISSIONING_STOP_MUST_START_BELOW_MARKET:'The declared stop is already at or above the current bid. No stop was submitted; manage the test position in Groww or use its explicit close action.',
   COMMISSIONING_PARENT_READBACK_DIFFERS:'Groww accepted an instruction, but its returned details could not be verified. Check the existing instruction in Groww. Do not submit another test.',
   COMMISSIONING_CREATE_RECONCILIATION_REQUIRED:'Submission outcome needs verification. Read the original broker evidence; do not repeat the BUY.'
+  ,REVIEW_EXISTING_PLAN_ON_ORACLE:'The saved test belongs to an earlier Oracle release. Use Reconcile cancelled test if it was cancelled and is flat. Your draft stays here.',
+  EXISTING_PLAN_REQUIRES_REVIEW:'A previous test still needs reconciliation. Read broker evidence or reconcile the cancelled test before reviewing another.',
+  COMMISSIONING_DIRECT_TARGET_MUST_EXCEED_BUY_LIMIT:'The target must be above the BUY limit for this long-option test.'
+  ,COMMISSIONING_PARTIAL_BUY_REQUIRES_REVIEW:'The BUY filled only partly. Automatic continuation stopped; this quantity has no confirmed stop. Check the original order and position in Groww.',
+  OWNER_TEST_JOB_START_FAILED:'Oracle could not confirm the test job started. Continuation is stopped. Read the saved status before trying another test.'
 };
-const labels = {oracle_order_write:'Oracle order accepted',persistent_gtt:'GTT persisted',exact_child_link:'Exact generated order',child_filled:'Test BUY filled',standard_order_write:'Exit order linked',standard_order_filled:'Test SELL filled',stop_order_write:'Stop-loss accepted',stop_persisted:'Stop-loss persisted',stop_inactive:'Stop-loss settled',flat_confirmed:'Flat position confirmed',inactive_parent:'GTT inactive'};
+const labels = {oracle_order_write:'BUY accepted',persistent_gtt:'GTT persisted',exact_child_link:'Generated GTT order linked',child_filled:'BUY filled',standard_order_write:'Exit order linked',standard_order_filled:'SELL filled',stop_order_write:'Stop-loss accepted',stop_persisted:'Stop-loss persisted',stop_inactive:'Stop-loss settled',flat_confirmed:'Flat position confirmed',inactive_parent:'Test instructions inactive'};
 function previewFeedback(message, kind='info', focus=false) {
   const notice=$('#preview-feedback');notice.textContent=message;notice.dataset.kind=kind;notice.hidden=false;
   if(focus){notice.focus({preventScroll:true});notice.scrollIntoView({block:'nearest'});}
@@ -30,10 +52,12 @@ function render() {
   const allowed = new Set(current.allowed_actions || []);
   $('#setup-state').textContent = words(current.status || 'SETUP_STATUS_UNKNOWN');
   $('#setup-reason').textContent = reasons[current.reason] || words(current.reason || current.pending_action || '');
+  $('#next-action').textContent = nextSteps[current.status] || 'Check the latest broker status before taking another action.';
   $('#plan-fields').disabled = busy || !allowed.has('preview');
   $('#preview-button').disabled = busy || !allowed.has('preview');
-  $('#preview-button').textContent = busy && activeAction==='preview' ? 'Checking preview…' : 'Preview · no order';
+  $('#preview-button').textContent = busy && activeAction==='preview' ? 'Checking preview…' : 'Review test · no order';
   $('#refresh-status').disabled = busy;
+  $('#lookup-contract').disabled = busy || !allowed.has('preview');
   for (const button of document.querySelectorAll('[data-read]')) {
     button.hidden = !allowed.has(button.dataset.read); button.disabled = busy;
   }
@@ -41,16 +65,18 @@ function render() {
   for (const button of document.querySelectorAll('[data-write]')) {
     const action = button.dataset.write;
     button.hidden = !allowed.has(action); writes ||= !button.hidden;
-    button.disabled = busy || savedOnly || !$('#confirm-action').checked || !(action==='arm' ? current.evidence_digest : current.plan_hash);
+    button.disabled = busy || savedOnly || (action!=='buy-protect' && !$('#confirm-action').checked) || !(action==='arm' ? current.evidence_digest : current.plan_hash);
   }
   $('#write-actions').hidden = !writes;
+  $('#confirm-row').hidden = allowed.has('buy-protect');
   $('#confirm-label').textContent = allowed.has('arm') ? 'I reviewed the verified test. Prepare real trading with Algo Off; I will start it separately.' : 'I reviewed the exact contract, quantity and prices above. The selected action sends a real broker request.';
   const spec = current.plan_spec;
   $('#review-plan').replaceChildren(); $('#review-plan').hidden = !spec; $('#test-effect').hidden = !spec;
   if (spec) {
-    const rows = [['Contract',spec.contract.symbol,'wide'],['Quantity',`${spec.quantity} · one lot`],['Expiry',spec.contract.expiry],['BUY trigger',money(spec.trigger_price)],['BUY limit',money(spec.buy_limit_price)],['Close SELL limit',money(spec.sell_limit_price)],['Stop-loss trigger',money(spec.stop_trigger_price)],['Stop-loss limit',money(spec.stop_limit_price)],['Maximum purchase debit',money(spec.quantity*spec.buy_limit_price)],['Submit BUY before',new Date(spec.valid_until).toLocaleString(),'wide']];
+    const rows = [['Contract',spec.contract.symbol,'wide'],['Quantity',`${spec.quantity} · one lot`],['Expiry',spec.contract.expiry],...(spec.entry_mode==='LIMIT'?[]:[['BUY trigger',money(spec.trigger_price)]]),['BUY limit',money(spec.buy_limit_price)],['Target / SELL limit',money(spec.sell_limit_price)],['Stop-loss trigger',money(spec.stop_trigger_price)],['Stop-loss limit',money(spec.stop_limit_price)],['Maximum purchase debit before charges',money(spec.quantity*spec.buy_limit_price)],['Submit BUY before',new Date(spec.valid_until).toLocaleString(),'wide']];
     for (const [label,value,kind] of rows) { const div=document.createElement('div');if(kind)div.className=kind;const dt=document.createElement('dt');dt.textContent=label;const dd=document.createElement('dd');dd.textContent=value;div.append(dt,dd);$('#review-plan').append(div); }
   }
+  $('#test-effect').textContent = spec?.entry_mode==='LIMIT' ? 'Buy + protect authorizes one real limit BUY, stop-loss after the full fill, and an Oracle-managed target exit. The BUY and stop are separate requests. Failed or uncertain protection needs attention; prices are never raised to force a fill.' : 'This GTT BUY waits for its price trigger. After a fill, Attach stop-loss is a separate action. Acceptance does not mean filled.';
   $('#evidence').replaceChildren();
   for (const [key,label] of Object.entries(labels)) {const span=document.createElement('span');const ok=current.facts?.[key]===true;span.textContent=`${ok?'✓':'○'} ${label}`;if(ok)span.className='positive';$('#evidence').append(span);}
 }
@@ -68,11 +94,32 @@ function restoreForm(spec) {
   for(const key of ['index','symbol','expiry','lot_size','tick_size','trigger_price','buy_limit_price','sell_limit_price','stop_trigger_price','stop_limit_price','egress_ip']) {
     const input = $(`[name="${key}"]`); if(input && values[key]!=null)input.value=values[key];
   }
+  $('[name="entry_mode"]').value=spec.entry_mode || 'GTT';entryMode();
+}
+function entryMode(){
+  const direct=$('[name="entry_mode"]').value==='LIMIT';
+  $('#buy-trigger-field').hidden=direct;$('[name="trigger_price"]').required=!direct;
+  $('#entry-explanation').textContent=direct ? 'Oracle sends your limit BUY, then attaches the declared stop after a full fill. It monitors the target and verifies stop cancellation before selling. A limit order can remain unfilled.' : 'GTT waits for an upward price crossing. Its BUY trigger must be above the current ask. Each subsequent broker action requires your click.';
+}
+async function lookupContract(){
+  if(busy)return;busy=true;activeAction='lookup';render();
+  $('#contract-summary').textContent='Reading the contract and current quote from Oracle…';
+  try{
+    const response=await fetch('/api/live-setup',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':token},body:JSON.stringify({action:'lookup',spec:{index:$('[name="index"]').value,symbol:$('[name="symbol"]').value.trim()}}),cache:'no-store'});
+    const data=await response.json();
+    if(data.status!=='OWNER_CONTRACT_FOUND')throw new Error(reasons[data.reason] || words(data.reason || data.status));
+    for(const key of ['expiry','lot_size','tick_size'])$(`[name="${key}"]`).value=data.contract[key];
+    $('[name="egress_ip"]').value=data.egress_ip;
+    const q=data.quote || {};
+    $('#contract-summary').textContent=`${data.contract.index} · ${data.contract.expiry} · 1 lot = ${data.contract.lot_size} · Tick ${money(data.contract.tick_size)}. Last ${money(q.last_price)} · Bid ${money(q.bid_price)} · Ask ${money(q.offer_price)}. ${q.timestamp_status==='RECENT_TRADE_ONLY'?'Quote received':'Quote not current'} ${new Date(data.checked_at).toLocaleTimeString()}.`;
+  }catch(error){$('#contract-summary').textContent=`Contract lookup: ${error.message}. Your prices are unchanged.`;}
+  finally{busy=false;render();}
 }
 async function loadSaved() {
   try {
     const response=await fetch('/api/live-setup',{cache:'no-store'});
-    const result=await response.json();current=result;savedOnly=true;restoreForm(current.plan_spec);
+    const result=await response.json();current=result;savedOnly=true;restoreForm(current.plan_spec || current.draft_spec);
+    if(!current.plan_spec){$('[name="entry_mode"]').value='LIMIT';entryMode();}
     if(result.operation) {
       busy=true;activeAction=result.operation.action;startedAt=Date.now()-result.operation.elapsed_seconds*1000;progress();
       setTimeout(loadSaved,1000);
@@ -94,10 +141,10 @@ async function command(body) {
   try {
     const response=await fetch('/api/live-setup',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':token},body:JSON.stringify(body),cache:'no-store'});
     const result=await response.json(); current=result;savedOnly=false;
-    if(result.status==='PRIOR_TEST_RETIRED')$('#plan-form').reset();
+    // Retirement archives broker evidence. Keep the owner's form and prices.
     const elapsed=((Date.now()-startedAt)/1000).toFixed(1);
     const note = result.broker_write_outcome==='ACCEPTED' ? 'Broker accepted the request. Acceptance does not mean filled. Read broker evidence for current state.' : result.broker_write_outcome==='UNCERTAIN' ? 'The broker result is uncertain. Refresh the saved test; do not submit another order.' :
-      result.reason ? 'The check is blocked. Review the reason above.' : result.status==='NOT_STARTED' ? 'No test has been previewed. Complete the form and click Preview · no order.' : 'Setup check completed.';
+      result.reason ? 'The check is blocked. Review the reason above.' : result.status==='OWNER_TEST_RUNNING' ? 'Your test job started on Oracle. Waiting for its actual BUY and protection results.' : result.status==='NOT_STARTED' ? 'Load the contract, enter your prices and review the test.' : 'Setup check completed.';
     $('#command-note').textContent = `${note} ${elapsed}s.`;
     if(body.action==='preview'){
       const ready=result.status==='OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT';
@@ -113,6 +160,8 @@ async function command(body) {
 $('#plan-form').addEventListener('submit',event=>{
   event.preventDefault();if(busy || !(current.allowed_actions || []).includes('preview'))return;
   const fields=new FormData(event.currentTarget);const value=key=>Number(fields.get(key));const now=new Date();
+  const direct=fields.get('entry_mode')==='LIMIT';
+  if(direct && !directSupported){previewFeedback('The installed Oracle release does not support the new limit test yet. No order was sent.','error',true);return;}
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
   if(fields.get('expiry')<=today){
     $('#setup-state').textContent='Contract expiry is not eligible';
@@ -121,21 +170,34 @@ $('#plan-form').addEventListener('submit',event=>{
     previewFeedback(`Preview blocked: the selected contract expires ${fields.get('expiry')}. This test requires an expiry after today. No order was sent. Changing the date alone would not change the contract.`,'error',true);
     return;
   }
-  command({action:'preview',spec:{contract:{symbol:fields.get('symbol').trim(),index:fields.get('index'),expiry:fields.get('expiry'),lot_size:value('lot_size'),tick_size:value('tick_size')},quantity:value('lot_size'),trigger_price:value('trigger_price'),buy_limit_price:value('buy_limit_price'),sell_limit_price:value('sell_limit_price'),stop_trigger_price:value('stop_trigger_price'),stop_limit_price:value('stop_limit_price'),valid_until:new Date(now.getTime()+30*60*1000).toISOString(),egress_ip:fields.get('egress_ip').trim()}});
+  command({action:'preview',spec:{...(direct?{entry_mode:'LIMIT'}:{}),contract:{symbol:fields.get('symbol').trim(),index:fields.get('index'),expiry:fields.get('expiry'),lot_size:value('lot_size'),tick_size:value('tick_size')},quantity:value('lot_size'),trigger_price:direct?value('buy_limit_price'):value('trigger_price'),buy_limit_price:value('buy_limit_price'),sell_limit_price:value('sell_limit_price'),stop_trigger_price:value('stop_trigger_price'),stop_limit_price:value('stop_limit_price'),valid_until:new Date(now.getTime()+30*60*1000).toISOString(),egress_ip:fields.get('egress_ip').trim()}});
 });
 $('#plan-form').addEventListener('invalid',event=>{
+  $('#technical-details').open=true;
   previewFeedback(`Check ${event.target.labels?.[0]?.textContent.trim() || 'the highlighted field'}: ${event.target.validationMessage}`,'error');
 },true);
 $('#plan-form').addEventListener('input',()=>{$('#preview-feedback').hidden=true;});
 $('#refresh-status').addEventListener('click',()=>command({action:'status'}));
+$('#lookup-contract').addEventListener('click',lookupContract);
+$('[name="entry_mode"]').addEventListener('change',entryMode);
 $('#confirm-action').addEventListener('change',render);
 for(const button of document.querySelectorAll('[data-read]'))button.addEventListener('click',()=>command({action:button.dataset.read}));
-for(const button of document.querySelectorAll('[data-write]'))button.addEventListener('click',()=>{if(busy || savedOnly || !$('#confirm-action').checked)return;const action=button.dataset.write;command({action,confirm:action==='arm'?current.evidence_digest:current.plan_hash});});
+for(const button of document.querySelectorAll('[data-write]'))button.addEventListener('click',()=>{const action=button.dataset.write;if(busy || savedOnly || (action!=='buy-protect' && !$('#confirm-action').checked) || !(current.allowed_actions||[]).includes(action))return;command({action,confirm:action==='arm'?current.evidence_digest:current.plan_hash});});
 function readRuntime(){return fetch('/api/dashboard',{cache:'no-store'}).then(r=>r.json()).then(data=>{
   const setup=data.live_setup;
+  directSupported=setup?.supports_direct_test===true;
   const on=data.control?.algo?.desired_enabled;
   const mode=setup?.mode==='live'?'Live mode':setup?.mode==='paper'?'Paper mode':'Mode unknown';
   $('#runtime-status').textContent = setup ? `${mode} · ${on===true?'Algo On':on===false?'Algo Off':'Algo state unknown'}` : 'Setup status unavailable';
-}).catch(()=>{$('#runtime-status').textContent='Oracle status unavailable';});}
+  if(!busy && current.plan_hash && setup?.commissioning?.plan_hash===current.plan_hash && setup.commissioning.binding_current===true){
+    const result=setup.commissioning;
+    current={...current,status:result.status,facts:result.facts,reason:result.reason};
+    $('#command-note').textContent=`Oracle test observation: ${result.checked_at?new Date(result.checked_at).toLocaleTimeString():'waiting'}. ${data.freshness==='RECENT'?'Recent viewer data.':'Viewer data is stale; check Groww.'}`;
+    if(setup.owner_test?.state==='ERROR')current={...current,status:'OWNER_TEST_FAILED',reason:setup.owner_test.reason};
+    render();
+  }
+}).catch(()=>{$('#runtime-status').textContent='Oracle status unavailable';}).finally(()=>{
+  clearTimeout(runtimeTimer);runtimeTimer=setTimeout(readRuntime,3000);
+});}
 loadSaved();
 readRuntime();

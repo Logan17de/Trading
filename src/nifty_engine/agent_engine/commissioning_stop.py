@@ -1,6 +1,7 @@
 """Owner-requested protective SELL GTT for one commissioning long.
 
-No background/polling write. References are durable before each request;
+Only an explicit owner action or its exact authorized test job may write.
+References are durable before each request;
 uncertain creates/cancels are reconciled, never retried to force an outcome.
 """
 from __future__ import annotations
@@ -15,7 +16,16 @@ from .execution_gate import ExecutionDenied
 from .market_check import quote_summary
 
 FORMAT = 'trading-broker-commissioning-plan-v2'
+DIRECT_FORMAT = 'trading-broker-commissioning-plan-v3'
+PROTECTED_FORMATS = (FORMAT, DIRECT_FORMAT)
 FIELDS = {'stop_trigger_price', 'stop_limit_price'}
+
+
+def entry_settled(record):
+    if record['plan']['format'] == DIRECT_FORMAT:
+        return record.get('child', {}).get('order', {}).get('order_status') in TERMINAL
+    from .broker_commissioning import FINAL_PARENT
+    return record.get('parent', {}).get('status') in FINAL_PARENT
 
 
 def request(plan, reference, quantity):
@@ -96,14 +106,14 @@ def attach(tool, plan_id, expected_hash):
         fail('EXACT_OWNER_PLAN_HASH_REQUIRED')
     if record.get('reason'):
         fail('COMMISSIONING_RECONCILIATION_REQUIRED')
-    if record['plan']['format'] != FORMAT:
+    if record['plan']['format'] not in PROTECTED_FORMATS:
         fail('COMMISSIONING_PROTECTED_PLAN_REQUIRED')
     if record.get('stop'):
         return _command_result(tool.status(plan_id), 'protect', attempted=False, confirmed=False)
     child = record.get('child', {}).get('order', {})
     if child.get('order_status') != 'EXECUTED' or child.get('filled_quantity') != record['plan']['quantity'] or record['closes']:
         fail('COMMISSIONING_FULL_UNCLOSED_LONG_REQUIRED')
-    if record['parent']['status'] not in FINAL_PARENT:
+    if not entry_settled(record):
         fail('COMMISSIONING_INACTIVE_PARENT_REQUIRED')
     if _decimal(record['plan']['stop_trigger_price']) >= _decimal(child['average_fill_price']):
         fail('COMMISSIONING_STOP_MUST_BE_BELOW_ENTRY')

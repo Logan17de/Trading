@@ -33,6 +33,20 @@ def test_expected_off_research_unknown_no_trade_and_closed_market_are_quiet():
     assert faults(view(),NOW.replace(hour=22))=={}
 
 
+@pytest.mark.parametrize('state,age,expected',[
+    ('RUNNING',10,None),('RUNNING',241,'OWNER_TEST_JOB_STALE'),
+    ('ERROR',1,'COMMISSIONING_PARTIAL_BUY_REQUIRES_REVIEW'),('FINISHED',1000,None)])
+def test_owner_test_failures_are_visible_even_when_algo_off(state,age,expected):
+    v=view();v['live_setup']['owner_test']=dict(state=state,checked_at=(NOW-timedelta(seconds=age)).isoformat(),
+        reason='COMMISSIONING_PARTIAL_BUY_REQUIRES_REVIEW',private='SECRET')
+    found=faults(v,NOW)
+    if expected:
+        assert found['OWNER_TEST_FAILED']['immediate']
+        assert found['OWNER_TEST_FAILED']['details']['stage']==expected
+    else:assert 'OWNER_TEST_FAILED' not in found
+    assert 'SECRET' not in str(found)
+
+
 @pytest.mark.parametrize('field,code',[
     ('runtime','COLLECTOR_FAILED'),('execution','EXECUTOR_WORKER_FAILED'),('protection','ORDER_RECONCILIATION_REQUIRED'),
     ('funds','FUNDS_UNAVAILABLE'),('orders','ORDERS_UNAVAILABLE'),('positions','POSITIONS_UNAVAILABLE'),

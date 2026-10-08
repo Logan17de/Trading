@@ -2,25 +2,69 @@
 
 The normal executor and desktop Start control are installed. One-time broker
 commissioning verifies the actual provider behavior before preparing live mode.
-These actions are for the owner to run. Deployment and background workers never
-invoke them. Keep Algo Off throughout setup. No commissioning trade has been run
+These actions are for the owner to run. Only an explicit **Buy + protect** starts
+the exact test job described below; deployment, observers and page reads never
+start it. Keep Algo Off throughout setup. No commissioning trade has been run
 by maintenance, and a successful synthetic test is not provider evidence.
 
-The test creates one explicitly chosen long option through a GTT BUY. After its
-fill, the owner attaches a declared SELL DOWN stop-loss GTT. Exit uses either its
-exact generated child or a separate explicit LIMIT SELL after stop cancellation.
+The default test sends an ordinary DAY LIMIT BUY for one explicitly chosen long
+option. After a full fill, Oracle attaches the declared SELL DOWN stop-loss GTT.
+Oracle monitors the declared target; when a fresh bid reaches it, it cancels the
+stop, verifies its inactivity and any generated child, then sends the exact
+remaining-quantity LIMIT SELL. A triggered stop and a target cannot create two
+SELLs for the same quantity. These are separate broker requests, not an atomic
+broker bracket/OCO. Protection is not present until Groww accepts it.
 There is no fixed INR purchase cap for this owner-chosen one-lot test. The quoted
 purchase amount must fit the actual Groww option-buy balance; keep charges available
 as well. It does not sell a naked option, choose an instrument,
 change the owner's prices to force a fill, or use a pre-existing manual position.
 Only NIFTY/SENSEX FNO NRML, one current-master lot and a non-expiry-day contract
 are accepted. Keep the purchase amount and charges available. A test may remain
-pending if its trigger is not reached or its limit does not fill.
+pending if its limit does not fill. Advanced GTT mode remains available.
 
 ## Use the desktop app
 
 Open **Real trading setup** from Options Trader, or visit
 `http://127.0.0.1:8765/live-setup` in Edge. No command prompt is required.
+
+### Default: Buy + protect
+
+1. Choose NIFTY/SENSEX and enter the exact listed option symbol. **Load contract
+   & current price** fills expiry, one-lot quantity, tick size and observed Oracle
+   IP. It shows a dated quote; it does not change your prices or IP whitelist.
+2. Enter BUY limit, target SELL limit, stop trigger and stop SELL limit. Technical
+   details and optional GTT entry type are collapsed below the prices.
+3. Click **Review test · no order** and review the exact values. The desktop
+   supplies a fixed 30-minute submission deadline; there is no date/time to enter.
+4. Click **Buy + protect · real order**. This one owner action authorizes the
+   exact BUY, stop after full fill, and target exit. Oracle performs current
+   broker checks before submitting. Acceptance is distinct from fills. It never
+   raises your limit or submits a second BUY after a timeout.
+5. The page reads progress automatically. Oracle continues this authorized test
+   if the PC page closes. An ordinary BUY, stop-limit or target limit can remain
+   unfilled. Partial buys, conflicting manual orders, failed protection and
+   uncertain results stop continuation and generate an incident for the existing
+   mail watchdog. Check the original order/position in Groww when alerted.
+
+A target exit can close successfully without exercising a generated GTT stop
+child. That test is **CLOSED_UNVERIFIED**, with individual facts shown honestly;
+it cannot certify generated-child linkage for activation. A naturally triggered
+stop child can supply that proof. An unfilled cancelled test is **CANCELLED_FLAT**.
+Synthetic tests do not substitute for provider evidence. Live preparation and
+Algo Start remain separate owner actions after complete verification.
+
+The job is a resource-capped transient systemd service pinned to the reviewed
+Oracle release. Each pass waits five seconds after its reads complete; network
+delays extend this cadence. Attempts and references persist before writes.
+Process restarts use those original records. A VM reboot does not recreate the
+transient job; its stale checkpoint alerts, and the owner must inspect Groww.
+An accepted broker stop is independent of this target monitor. An uncertain job
+launch revokes continuation and reports a failure. No test job runs by default.
+
+### Advanced: GTT BUY
+
+Select **GTT BUY · wait for trigger** under Contract details & entry type for the
+older flow below, with separate broker actions. Saved drafts survive retirement.
 
 The page immediately displays saved state from this PC. Opening or reloading it
 does not authenticate with Groww or send a broker request. Use **Refresh status**
@@ -56,7 +100,10 @@ The PC saves the pending plan before sending it and resumes it after restart.
 A lost response stays uncertain until the original plan is read back. Do not
 create another test to work around an unknown result. Test actions use the fixed
 protected SSH connection, never browser-held broker credentials or a public port.
-The following command-line workflow is an alternative for the owner.
+The following GTT command-line workflow is an alternative for the owner. A direct
+plan adds `entry_mode: "LIMIT"`, sets internal `trigger_price` equal to BUY limit,
+and requires target above BUY limit. After preview, the owner may invoke
+`buy-protect` with the exact PlanId and Confirm hash instead of `submit`.
 
 ## Private plan and preview
 

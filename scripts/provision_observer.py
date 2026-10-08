@@ -86,6 +86,13 @@ def deployment_preflight(state, *, mode=None, service_active=False):
             if not isinstance(intent,dict) or type(intent.get('enabled')) is not bool:
                 raise ValueError('DEPLOYMENT_OWNER_INTENT_INVALID')
             if intent['enabled']:raise ValueError('TURN_ALGO_OFF_BEFORE_DEPLOYMENT')
+            row=db.execute("SELECT body FROM meta WHERE key='owner-direct-test-authorization'").fetchone()
+            if row and json.loads(row[0]).get('state')=='RUNNING':raise ValueError('OWNER_TEST_RUNNING_DO_NOT_DEPLOY')
+            for row in db.execute("SELECT body FROM meta WHERE key LIKE 'broker-commissioning-%'"):
+                record=json.loads(row[0])
+                if isinstance(record,dict) and record.get('format') in ('trading-broker-commissioning-record-v1','trading-broker-direct-record-v1'):
+                    if record.get('phase') not in ('COMPLETE','CANCELLED_FLAT','ABORTED_BEFORE_WRITE','CLOSED_UNVERIFIED'):
+                        raise ValueError('UNRESOLVED_BROKER_TEST_DO_NOT_DEPLOY')
     except (sqlite3.Error,OSError,json.JSONDecodeError,TypeError):
         raise ValueError('DEPLOYMENT_OWNERSHIP_CHECK_UNAVAILABLE') from None
     return {'journal_present':True,'owner_off':True,'owned_orders_open':False}

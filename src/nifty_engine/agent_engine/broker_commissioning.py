@@ -87,9 +87,9 @@ def validate_plan(plan, binding, now, *, expired=False):
     required = {'format', 'id', 'release', 'policy_hash', 'sdk_version', 'account_fingerprint',
                 'egress_ip', 'contract', 'quantity', 'trigger_price', 'buy_limit_price',
                 'sell_limit_price', 'valid_until'}
-    if isinstance(plan, dict) and plan.get('format') == protection.FORMAT:
+    if isinstance(plan, dict) and plan.get('format') in protection.PROTECTED_FORMATS:
         required |= protection.FIELDS
-    if not isinstance(plan, dict) or set(plan) != required or plan['format'] not in (PLAN_FORMAT, protection.FORMAT):
+    if not isinstance(plan, dict) or set(plan) != required or plan['format'] not in (PLAN_FORMAT, *protection.PROTECTED_FORMATS):
         fail('EXACT_COMMISSIONING_PLAN_REQUIRED')
     value = copy.deepcopy(plan)
     _id(value['id']); expected = _binding(binding)
@@ -114,16 +114,19 @@ def validate_plan(plan, binding, now, *, expired=False):
         fail('COMMISSIONING_EXACT_ONE_LOT_REQUIRED')
     tick = _decimal(c['tick_size'])
     c['tick_size'] = float(tick)
-    for name in {'trigger_price', 'buy_limit_price', 'sell_limit_price'} | (protection.FIELDS if value['format'] == protection.FORMAT else set()):
+    for name in {'trigger_price', 'buy_limit_price', 'sell_limit_price'} | (protection.FIELDS if value['format'] in protection.PROTECTED_FORMATS else set()):
         price = _decimal(value[name])
         if price % tick:
             fail('COMMISSIONING_PRICE_NOT_ON_TICK')
         value[name] = format(price, 'f')
     if _decimal(value['buy_limit_price']) < _decimal(value['trigger_price']):
         fail('COMMISSIONING_BUY_LIMIT_BELOW_TRIGGER')
-    if value['format'] == protection.FORMAT and not (_decimal(value['stop_limit_price']) <=
+    if value['format'] in protection.PROTECTED_FORMATS and not (_decimal(value['stop_limit_price']) <=
             _decimal(value['stop_trigger_price']) < _decimal(value['trigger_price'])):
         fail('COMMISSIONING_STOP_PRICE_ORDER_INVALID')
+    if value['format'] == protection.DIRECT_FORMAT and (_decimal(value['trigger_price']) != _decimal(value['buy_limit_price']) or
+            _decimal(value['sell_limit_price']) <= _decimal(value['buy_limit_price'])):
+        fail('COMMISSIONING_DIRECT_TARGET_MUST_EXCEED_BUY_LIMIT')
     return value
 
 
@@ -253,7 +256,7 @@ class Commissioning:
             latest = db.execute('SELECT body FROM meta WHERE key=?', (LATEST,)).fetchone()
             if latest and json.loads(latest[0]) != record['plan']['id']:
                 other = db.execute('SELECT body FROM meta WHERE key=?', (PREFIX + json.loads(latest[0]),)).fetchone()
-                if not other or json.loads(other[0]).get('phase') not in ('COMPLETE', 'CANCELLED_FLAT', 'ABORTED_BEFORE_WRITE'):
+                if not other or json.loads(other[0]).get('phase') not in ('COMPLETE', 'CANCELLED_FLAT', 'ABORTED_BEFORE_WRITE','CLOSED_UNVERIFIED'):
                     fail('OTHER_COMMISSIONING_PLAN_UNSETTLED')
             db.execute('INSERT OR REPLACE INTO meta VALUES(?,?)', (key, dumps(record)))
             db.execute('INSERT OR REPLACE INTO meta VALUES(?,?)', (LATEST, dumps(record['plan']['id'])))
@@ -370,7 +373,7 @@ class Commissioning:
         quote = quote_summary(raw, self.clock())
         if quote['timestamp_status'] != 'RECENT_TRADE_ONLY' or quote.get('offer_price') is None:
             fail('COMMISSIONING_RECENT_OPTION_QUOTE_REQUIRED')
-        if _decimal(quote['offer_price']) >= _decimal(plan['trigger_price']):
+        if plan['format'] != protection.DIRECT_FORMAT and _decimal(quote['offer_price']) >= _decimal(plan['trigger_price']):
             fail('COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET')
         funds = self._read('get_available_margin_details').get('fno_margin_details', {})
         if _decimal(funds.get('option_buy_balance_available')) < _decimal(plan['buy_limit_price']) * plan['quantity']:
@@ -405,6 +408,9 @@ class Commissioning:
             self.gate.expected = None
 
     def submit(self, plan, expected_plan_hash):
+        if plan.get('format') == protection.DIRECT_FORMAT:
+            from .commissioning_direct import submit
+            return submit(self, plan, expected_plan_hash)
         value = validate_plan(plan, self.binding, self.clock())
         if expected_plan_hash != identity(value):
             fail('EXACT_OWNER_PLAN_HASH_REQUIRED')
@@ -499,6 +505,9 @@ class Commissioning:
 
     def capture(self, plan_id):
         record = self._load(plan_id)
+        if record['plan']['format'] == protection.DIRECT_FORMAT:
+            from .commissioning_direct import capture
+            return capture(self, record)
         # Completed evidence is immutable; viewing it never rewrites its digest.
         if record['phase'] == 'COMPLETE':
             validated_evidence(self.store, plan_id, self.binding)
@@ -588,8 +597,7 @@ class Commissioning:
             fail('COMMISSIONING_TERMINAL_ACQUIRED_LONG_REQUIRED')
         if any(item['order']['order_status'] not in TERMINAL for item in record['closes']):
             fail('COMMISSIONING_CLOSE_ALREADY_PENDING')
-        parent = record['parent']
-        if parent['status'] not in FINAL_PARENT:
+        if not protection.entry_settled(record):
             fail('COMMISSIONING_INACTIVE_PARENT_REQUIRED')
         obs = self._observe(record['plan'], record=record)
         quantity = child['filled_quantity'] - protection.sold(record)
@@ -634,6 +642,8 @@ class Commissioning:
         if pending or child and child.get('order_status') not in TERMINAL:
             return self._cancel_linked_order(record, pending[0] if pending else child,
                                              'CLOSE' if pending else 'CHILD')
+        if record['plan']['format'] == protection.DIRECT_FORMAT:
+            return _command_result(self.status(plan_id),'cancel',attempted=False,confirmed=False)
         parent = record['parent']
         if (record.get('cancel_attempted') and not record.get('cancel_aborted_before_write')
                 or record.get('order_cancels') and parent['status'] in FINAL_PARENT):
@@ -720,6 +730,9 @@ class Commissioning:
         record = self._load(plan_id)
         started = self.clock().isoformat()
         self._profile()
+        if record['plan']['format'] == protection.DIRECT_FORMAT:
+            from .commissioning_direct import verify_current
+            return verify_current(self, record, proof)
         parent = self._read('get_smart_order', segment='FNO', smart_order_type='GTT', smart_order_id=record['smart_id'])
         parent = _parent_matches(parent, record)
         if parent['status'] not in FINAL_PARENT:
@@ -752,6 +765,9 @@ class Commissioning:
 
 
 def _facts(record):
+    if record['plan']['format'] == protection.DIRECT_FORMAT:
+        from .commissioning_direct import facts
+        return facts(record)
     active = record.get('active', [])
     persistent = any(a['session_id'] != b['session_id'] and (stamp(b['at']) - stamp(a['at'])).total_seconds() >= 5
                      for a in active for b in active)
@@ -783,7 +799,7 @@ def _facts(record):
 def _allowed_actions(record, now):
     """Display hints only; commands always capture and enforce their gates again."""
     obs = record.get('last_observation') or {}
-    if (record.get('reason') or record['phase'] in ('COMPLETE', 'CANCELLED_FLAT', 'ABORTED_BEFORE_WRITE')
+    if (record.get('reason') or record['phase'] in ('COMPLETE', 'CANCELLED_FLAT', 'ABORTED_BEFORE_WRITE','CLOSED_UNVERIFIED')
             or obs.get('complete') is not True or not fresh(obs.get('received_at'), now, 10)
             or not fresh(record.get('checked_at'), now, 10)):
         return []
@@ -809,8 +825,8 @@ def _allowed_actions(record, now):
                             for i in record.get('order_cancels', []))
             return [] if attempted else ['cancel-stop']
         return [] if stop.get('cancel_attempted') else ['cancel-stop']
-    if not pending and child.get('order_status') in TERMINAL and obs['quantity'] > 0 and parent.get('status') in FINAL_PARENT:
-        return ['protect', 'close'] if (record['plan']['format'] == protection.FORMAT and not stop and not closes
+    if not pending and child.get('order_status') in TERMINAL and obs['quantity'] > 0 and protection.entry_settled(record):
+        return ['protect', 'close'] if (record['plan']['format'] in protection.PROTECTED_FORMATS and not stop and not closes
             and child.get('filled_quantity') == record['plan']['quantity']) else ['close']
     if (not child and not obs['quantity'] and parent.get('status') == 'ACTIVE' and not parent.get('triggered_at')
             and (not record.get('cancel_attempted') or record.get('cancel_aborted_before_write'))):
@@ -834,6 +850,9 @@ def _command_result(status, command, *, attempted, confirmed):
 
 def _validated_evidence(store, plan_id, binding=None):
     record = store.meta(PREFIX + _id(plan_id))
+    if isinstance(record, dict) and record.get('plan', {}).get('format') == protection.DIRECT_FORMAT:
+        from .commissioning_direct import validate_evidence
+        return validate_evidence(record, plan_id, binding)
     if not isinstance(record, dict) or record.get('phase') != 'COMPLETE' or record.get('reason'):
         fail('COMMISSIONING_COMPLETED_PROVIDER_EVIDENCE_REQUIRED')
     if record.get('plan', {}).get('id') != plan_id:
@@ -920,6 +939,6 @@ def public_status(store, release, policy_hash):
         verified = False
         if current and record.get('phase') == 'COMPLETE':
             validated_evidence(store, plan_id); verified = True
-        return dict(value, provider_verified=verified, binding_current=current)
+        return dict(value, provider_verified=verified, binding_current=current,plan_hash=record.get('plan_hash'))
     except Exception:
         return dict(status='UNVERIFIED', provider_verified=False, broker_writes=False)

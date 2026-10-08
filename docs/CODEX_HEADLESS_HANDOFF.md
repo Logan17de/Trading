@@ -1,5 +1,27 @@
 # Current Trading handoff
 
+## October 8 simpler owner test — implementation in progress
+
+Owner asked to replace the cumbersome multi-action test with a reviewed Buy click.
+The new default v3 plan uses an ordinary DAY LIMIT BUY, with a persistent private
+authorization and a transient Oracle `owner_test_job` started only by the explicit
+owner Buy + protect action. Full fill attaches the declared SELL DOWN GTT; a fresh
+target bid initiates verified stop cancellation and then an exact remaining-qty
+LIMIT SELL. Legacy GTT flow remains available. Read LIVE_SETUP.md. Page reads,
+observer, Algo Start and maintenance never start a test job or authorize orders.
+
+The screen loads contract metadata/IP and dated quotes, preserves prior drafts,
+hides technical fields, removes the extra checkbox only for the already reviewed
+Buy + protect action, and polls read-only progress. Current individual broker
+facts remain visible. Target closure without a generated stop child is explicitly
+CLOSED_UNVERIFIED, not complete activation proof. Partial/unknown/manual-conflict
+states stop continuation and reach the independent watchdog; no automatic retries
+of broker writes. Deployment refuses a running test job or unresolved test.
+
+Rollout and final verification are pending. Existing installed executor remains
+on the prior release until a verified paused/off/settled deployment. No real
+test or activation has been performed by maintenance.
+
 ## October 8 failure email and diagnostic wake-up
 
 Owner requested failure email and a Codex wake-up. Read FAILURE_ALERTS.md.

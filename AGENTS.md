@@ -1,5 +1,16 @@
 # Trading workspace
 
+- Owner **Buy + protect** uses the direct LIMIT test (plan v3) and starts only
+  that exact authorized `owner_test_job` on Oracle. It submits once, attaches the
+  declared stop after a full fill, and manages the declared target after verified
+  stop cancellation. This explicit composite action is separate from Algo Start;
+  no page read, maintenance, observer or deployment starts it. Partial/uncertain
+  fills or protection stop continuation and alert. Never retry an unknown write.
+  Legacy GTT testing retains its separate owner actions. A direct target exit is
+  CLOSED_UNVERIFIED unless an actual generated stop child was observed; never
+  fabricate that proof. Deployment refuses a running job or unresolved test.
+  Read docs/LIVE_SETUP.md. Do not execute Buy + protect during maintenance.
+
 - Owner-operated commissioning is implemented in broker_commissioning.py and
   owner_setup.py; read docs/LIVE_SETUP.md. Only the owner's explicit protected
   desktop setup actions or owner CLI call submit/protect/cancel-stop/close/cancel/arm. Observer,

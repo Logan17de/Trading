@@ -22,21 +22,21 @@ from .contracts import dumps, identity, stamp
 from .oracle_link import settings
 
 KEY = 'desktop-owner-setup-v1'
-ACTIONS = {'preview', 'status', 'capture', 'submit', 'close', 'cancel', 'protect', 'cancel-stop', 'retire', 'arm-preview', 'arm'}
-WRITES = {'submit', 'close', 'cancel', 'protect', 'cancel-stop', 'arm'}
-TERMINAL = {'COMPLETE', 'CANCELLED_FLAT', 'ABORTED_BEFORE_WRITE'}
+ACTIONS = {'lookup','buy-protect','preview', 'status', 'capture', 'submit', 'close', 'cancel', 'protect', 'cancel-stop', 'retire', 'arm-preview', 'arm'}
+WRITES = {'buy-protect','submit', 'close', 'cancel', 'protect', 'cancel-stop', 'arm'}
+TERMINAL = {'COMPLETE', 'CANCELLED_FLAT', 'ABORTED_BEFORE_WRITE','CLOSED_UNVERIFIED'}
 PREVIEW = 'OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT'
-REMOTE_STATUSES = TERMINAL | {PREVIEW, 'OWNER_SETUP_BLOCKED', 'GTT_SUBMITTING', 'GTT_ACCEPTED',
+REMOTE_STATUSES = TERMINAL | {PREVIEW,'OWNER_CONTRACT_FOUND','OWNER_TEST_RUNNING','BUY_SUBMITTING','BUY_ACCEPTED','BUY_PENDING_OR_PARTIAL','BUY_RESULT_UNKNOWN', 'OWNER_SETUP_BLOCKED', 'GTT_SUBMITTING', 'GTT_ACCEPTED',
     'GTT_CREATE_UNCERTAIN', 'ACTIVE_PARENT_OBSERVED', 'CHILD_FILLED', 'CHILD_PENDING_OR_PARTIAL',
     'FLAT_AWAITING_SECOND_READ', 'RECONCILIATION_REQUIRED', 'CLOSE_SUBMITTING',
     'CLOSE_PENDING_OR_PARTIAL', 'CHILD_TERMINAL_WITH_REMAINDER',
     'VERIFIED_OWNER_EVIDENCE', 'LIVE_PREPARED_ALGO_OFF', 'OWNER_PREVIEW_EXPIRED',
     'OWNER_PREVIEW_BINDING_CHANGED', 'OWNER_PREVIEW_INVALID', 'PRIOR_TEST_RETIRED',
     'STOP_SUBMITTING', 'STOP_CREATE_UNCERTAIN', 'STOP_CANCEL_UNCERTAIN', 'STOP_ACTIVE_OBSERVED', 'STOP_CHILD_OBSERVED'}
-FACTS = {'oracle_order_write', 'persistent_gtt', 'exact_child_link', 'child_filled',
+FACTS = {'buy_order_link','oracle_order_write', 'persistent_gtt', 'exact_child_link', 'child_filled',
     'standard_order_write', 'standard_order_filled', 'flat_confirmed', 'inactive_parent',
     'stop_order_write', 'stop_persisted', 'stop_inactive'}
-UNCERTAIN = {'GTT_SUBMITTING', 'GTT_CREATE_UNCERTAIN', 'CLOSE_SUBMITTING', 'RECONCILIATION_REQUIRED',
+UNCERTAIN = {'BUY_SUBMITTING','BUY_RESULT_UNKNOWN','GTT_SUBMITTING', 'GTT_CREATE_UNCERTAIN', 'CLOSE_SUBMITTING', 'RECONCILIATION_REQUIRED',
     'STOP_SUBMITTING', 'STOP_CREATE_UNCERTAIN', 'STOP_CANCEL_UNCERTAIN'}
 _LOCKS, _LOCKS_LOCK = {}, threading.Lock()
 
@@ -62,6 +62,8 @@ def _hex(value, length):
 def _spec(value, now):
     required = {'contract', 'quantity', 'trigger_price', 'buy_limit_price', 'sell_limit_price', 'valid_until', 'egress_ip',
                 'stop_trigger_price', 'stop_limit_price'}
+    direct=isinstance(value,dict) and value.get('entry_mode')=='LIMIT'
+    if direct:required.add('entry_mode')
     if not isinstance(value, dict) or set(value) != required:
         raise ValueError()
     c = value['contract']
@@ -103,6 +105,15 @@ def _safe_response(raw):
     if not isinstance(raw, dict) or raw.get('status') not in REMOTE_STATUSES:
         raise ValueError()
     result = {'status':raw['status']}
+    if raw['status']=='OWNER_CONTRACT_FOUND':
+        c=raw['contract'];q=raw['quote']
+        if (not isinstance(c,dict) or set(c)!={'symbol','index','expiry','lot_size','tick_size'} or
+                c['index'] not in ('NIFTY','SENSEX') or not re.fullmatch('[A-Z0-9]{8,50}(?:CE|PE)',c['symbol']) or
+                type(c['lot_size']) is not int or not 0<c['lot_size']<100000):raise ValueError()
+        date.fromisoformat(c['expiry']);ipaddress.ip_address(raw['egress_ip'])
+        if not 0<float(c['tick_size'])<100:raise ValueError()
+        result.update(contract=copy.deepcopy(c),egress_ip=raw['egress_ip'],quote={
+            k:v for k,v in q.items() if k in ('last_price','bid_price','offer_price','received_at','last_trade_time','timestamp_status')})
     reason = raw.get('reason')
     if reason is not None:
         result['reason'] = reason if isinstance(reason,str) and re.fullmatch(
@@ -151,7 +162,7 @@ class OwnerSetupController:
 
     def _remote(self, cfg, action, saved, confirm=None):
         command = 'sudo -n '+cfg['python']+' -I -m nifty_engine.agent_engine.owner_setup '
-        command += ('preview-stdin' if action == 'preview' else action)+' --id '+saved['plan_id']
+        command += ({'preview':'preview-stdin','lookup':'lookup-stdin'}.get(action,action))+' --id '+saved['plan_id']
         if confirm is not None: command += ' --confirm '+confirm
         ssh = Path(os.environ.get('SYSTEMROOT','C:/Windows'))/'System32/OpenSSH/ssh.exe'
         args = [str(ssh),'-F','NUL','-T','-i',cfg['identity_file'],'-o','BatchMode=yes',
@@ -159,7 +170,7 @@ class OwnerSetupController:
             '-o','IdentityAgent=none','-o','PasswordAuthentication=no','-o','KbdInteractiveAuthentication=no',
             '-o','ClearAllForwardings=yes','-o','ConnectTimeout=8','-o','LogLevel=ERROR',
             cfg['user']+'@'+cfg['host'],command]
-        response = self.run(args,input=dumps(saved['spec']) if action == 'preview' else '',
+        response = self.run(args,input=dumps(saved['spec']) if action in ('preview','lookup') else '',
             capture_output=True,text=True,encoding='utf-8',timeout=1600 if action == 'arm' else 210,
             **({'creationflags':subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
         if not isinstance(response.stdout,str) or len(response.stdout.encode('utf-8')) > 32768:
@@ -193,8 +204,9 @@ class OwnerSetupController:
                 if (value['status'] in TERMINAL or value['status']==PREVIEW and not attempts
                         or unsubmitted_rejected and not attempts):
                     value['allowed_actions'].append('preview')
-                if value['status']==PREVIEW and saved.get('plan_hash') and 'submit' not in attempts:
-                    value['allowed_actions'].append('submit')
+                buy_action='buy-protect' if saved.get('spec',{}).get('entry_mode')=='LIMIT' else 'submit'
+                if value['status']==PREVIEW and saved.get('plan_hash') and buy_action not in attempts:
+                    value['allowed_actions'].append(buy_action)
                 if saved.get('plan_hash'):
                     for action in ('close','cancel','protect','cancel-stop'):
                         if action in value.get('broker_actions',[]) and action not in recent:
@@ -211,6 +223,11 @@ class OwnerSetupController:
         """Local display only; this never issues an Oracle or broker command."""
         try:
             value=self._view()
+            if not value.get('plan_spec'):
+                drafts=[json.loads(r['body']).get('spec') for r in self.store.read(
+                    'SELECT body FROM meta WHERE key LIKE ?', (KEY+'-archive-%',))]
+                drafts=[d for d in drafts if isinstance(d,dict) and d.get('valid_until')]
+                value['draft_spec']=max(drafts,key=lambda d:stamp(d['valid_until'])) if drafts else None
             value['status_source']='SAVED_LOCAL_STATE'
             with self.activity_lock:
                 activity=copy.deepcopy(self.activity)
@@ -225,7 +242,7 @@ class OwnerSetupController:
         try:
             if not isinstance(body,dict) or body.get('action') not in ACTIONS: raise ValueError()
             action=body['action']
-            expected={'action','spec'} if action=='preview' else {'action','confirm'} if action in WRITES else {'action'}
+            expected={'action','spec'} if action in ('preview','lookup') else {'action','confirm'} if action in WRITES else {'action'}
             if set(body)!=expected: raise ValueError()
             with self.activity_lock:
                 self.activity={'action':action,'started':time.monotonic()}
@@ -233,8 +250,22 @@ class OwnerSetupController:
             except OSError:
                 return self._view(status='ORACLE_CONNECTION_REQUIRED',reason='PRIVATE_ORACLE_CONNECTION_CONFIG_REQUIRED')
             saved=self.store.meta(KEY,{})
+            if action=='lookup':
+                spec=body['spec']
+                if (not isinstance(spec,dict) or set(spec)!={'index','symbol'} or spec['index'] not in ('NIFTY','SENSEX') or
+                        not isinstance(spec['symbol'],str) or not re.fullmatch('[A-Z0-9]{8,50}(?:CE|PE)',spec['symbol'])):raise ValueError()
+                return self._remote(cfg,'lookup',dict(plan_id=uuid.uuid4().hex,spec=spec))
             if saved and saved.get('config_hash') != identity(cfg) and action != 'retire':
-                return self._view(saved,status='OWNER_SETUP_BINDING_CHANGED',reason='REVIEW_EXISTING_PLAN_ON_ORACLE')
+                if action=='preview' and not saved.get('attempted_writes') and saved.get('pending_action') in (None,'preview'):
+                    # Explicit Review may archive an unused preview only after
+                    # Oracle proves there is no submitted/authorized test.
+                    remote=self._remote(cfg,'retire',saved)
+                    if remote['status']!='PRIOR_TEST_RETIRED':
+                        return self._view(saved,status=remote['status'],reason=remote.get('reason'))
+                    self.store.set_meta(KEY+'-archive-'+saved['plan_id'],dict(saved,retirement=remote))
+                    saved={};self._save(saved)
+                else:
+                    return self._view(saved,status='OWNER_SETUP_BINDING_CHANGED',reason='REVIEW_EXISTING_PLAN_ON_ORACLE')
             if action == 'retire' and saved:
                 remote = self._remote(cfg, 'retire', saved)
                 if remote['status'] == 'PRIOR_TEST_RETIRED':
