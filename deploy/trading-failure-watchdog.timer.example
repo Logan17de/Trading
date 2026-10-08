@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Trading failures every 30 seconds
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=30s
+AccuracySec=2s
+Unit=trading-failure-watchdog.service
+
+[Install]
+WantedBy=timers.target

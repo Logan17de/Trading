@@ -97,14 +97,15 @@ def revalidate(view,now):
     return view
 
 
-def notify(root, status, incident_id):
+def notify(root, status, incident_id, details=None):
     """Independent Windows mail key is DPAPI protected; values never leave this pipe."""
     helper=Path(root)/"scripts/Send-TradingAlert.ps1"
     if os.name!="nt" or not helper.is_file():return "ALERT_TRANSPORT_UNAVAILABLE"
-    result=subprocess.run(["powershell.exe","-NoProfile","-File",str(helper),"-Status",status,"-Incident",incident_id],
-        stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=35,creationflags=subprocess.CREATE_NO_WINDOW)
-    try:return json.loads(result.stdout).get("status","ALERT_FAILED")
-    except (ValueError,TypeError):return "ALERT_FAILED"
+    try:
+        result=subprocess.run(["powershell.exe","-NoProfile","-File",str(helper),"-Status",status,"-Incident",incident_id],
+            input=dumps(details or {}),capture_output=True,text=True,timeout=35,creationflags=subprocess.CREATE_NO_WINDOW)
+        return json.loads(result.stdout).get("status","ALERT_FAILED")
+    except (OSError,subprocess.TimeoutExpired,ValueError,TypeError):return "ALERT_FAILED"
 
 
 class RemoteViewer:
@@ -116,8 +117,11 @@ class RemoteViewer:
         saved=self.store.meta("vm-incident",{})
         self.incident=saved.get("id") if saved.get("status") not in (None,"RECOVERED") else None
         self.alert_status=saved.get("alert_status") if self.incident else None
+        self.incident_details=saved.get('details',{})
+        self.incident_code=saved.get('alert_code',saved.get('status'))
         self.bad_reads=0;self.healthy_since=None
         self.impulse=None;self.impulse_at=None
+        self.failure_details={}
 
     def impulse_read(self):
         with self.lock:
@@ -163,10 +167,12 @@ class RemoteViewer:
                 previous=self.previous,progress_at=self.progress_at)
             with self.lock:self.cache=view
             self.failed_since=None
-        except Exception:
+            self.failure_details={k:view.get('runtime',{}).get(k) for k in ('heartbeat_at','heartbeat_sequence')}
+        except Exception as exc:
             if not fixed_clock:now=datetime.now(timezone.utc)
             self.failed_since=self.failed_since or now.timestamp()
             state="VM_UNREACHABLE" if now.timestamp()-self.failed_since>=30 else "RECONNECTING"
+            self.failure_details={'stage':'SSH_OBSERVER_READ','error_type':type(exc).__name__}
         if state in ("VM_UNREACHABLE","WORKER_STUCK","INVALID_HEARTBEAT"):
             self.healthy_since=None
             self.bad_reads+=1
@@ -176,10 +182,20 @@ class RemoteViewer:
             if self.incident is None:
                 self.incident="oracle-"+str(int(now.timestamp()))
                 self.last_attempt=0
-            if now.timestamp()-self.last_attempt>=300 and self.alert_status!="ACCEPTED":
+                from .failure_alerts import diagnostics
+                self.incident_details=dict(diagnostics(self.failure_details),detected_at=now.isoformat())
+                self.incident_code=state
+            if now.timestamp()-self.last_attempt>=300 and self.alert_status not in ('ACCEPTED','DELIVERY_UNKNOWN'):
                 self.last_attempt=now.timestamp()
-                self.alert_status=alert(self.root,state,self.incident)
-            self.store.set_meta("vm-incident",{"id":self.incident,"status":state,"at":now.isoformat(),"alert_status":self.alert_status})
+                # Freeze context so a retry keeps the provider idempotency payload.
+                if now.timestamp()-int(self.incident.split('-')[1])>=23*3600:
+                    self.alert_status='DELIVERY_UNKNOWN'
+                else:
+                    try:self.alert_status=alert(self.root,self.incident_code,self.incident,self.incident_details)
+                    except Exception:self.alert_status='ALERT_FAILED'
+            self.store.set_meta("vm-incident",{"id":self.incident,"status":state,"at":now.isoformat(),
+                "details":self.incident_details,"alert_code":self.incident_code,
+                "alert_status":self.alert_status,"inbox_verified":False})
         elif state=="HEALTHY":
             self.bad_reads=0
             self.healthy_since=self.healthy_since or now.timestamp()

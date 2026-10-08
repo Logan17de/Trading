@@ -11,7 +11,9 @@ try {
     catch { Add-Type -AssemblyName System.Security }
     $taskBytes=[System.Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($taskVault),$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser)
     $taskMail=[Text.Encoding]::UTF8.GetString($taskBytes) | ConvertFrom-Json
-    $taskPayload=@{key=$taskMail.key;sender=$taskMail.sender;recipient=$taskMail.recipient;status=$Status;incident=$Incident} | ConvertTo-Json -Compress
+    $taskDiagnosticRaw=[Console]::In.ReadToEnd()
+    $taskDiagnostic=if ($taskDiagnosticRaw) { $taskDiagnosticRaw | ConvertFrom-Json } else { @{} }
+    $taskPayload=@{key=$taskMail.key;sender=$taskMail.sender;recipient=$taskMail.recipient;status=$Status;incident=$Incident;details=$taskDiagnostic} | ConvertTo-Json -Compress -Depth 8
     $taskPayload | & (Join-Path $taskRoot '.venv\Scripts\python.exe') -I -m nifty_engine.agent_engine.vm_alert
 } catch { Write-Output '{"status":"ALERT_TRANSPORT_UNAVAILABLE"}' }
 finally {

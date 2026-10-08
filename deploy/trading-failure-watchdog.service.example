@@ -1,0 +1,32 @@
+[Unit]
+Description=Trading failure email monitor (no trading actions)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=trading-observer
+Group=trading-observer
+WorkingDirectory=/var/lib/trading-observer
+EnvironmentFile=/etc/growing-trader/observer.env
+ExecStart=/opt/growing-trader/releases/RELEASE/venv/bin/python -I -m nifty_engine.agent_engine.failure_alerts tick
+TimeoutStartSec=75
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/trading-observer/.agent-state
+MemoryMax=96M
+TasksMax=8
+CPUQuota=25%
+Nice=15
+StandardOutput=null
+StandardError=null
