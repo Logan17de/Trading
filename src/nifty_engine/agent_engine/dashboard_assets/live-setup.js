@@ -193,8 +193,13 @@ function readRuntime(){return fetch('/api/dashboard',{cache:'no-store'}).then(r=
     const result=setup.commissioning;
     current={...current,status:result.status,facts:result.facts,reason:result.reason};
     $('#command-note').textContent=`Oracle test observation: ${result.checked_at?new Date(result.checked_at).toLocaleTimeString():'waiting'}. ${data.freshness==='RECENT'?'Recent viewer data.':'Viewer data is stale; check Groww.'}`;
-    if(setup.owner_test?.state==='ERROR')current={...current,status:'OWNER_TEST_FAILED',reason:setup.owner_test.reason};
     render();
+  }
+  // Pre-submission failures have no commissioning record yet. Match the exact
+  // authorization independently so the page cannot keep saying Running forever.
+  if(!busy && current.plan_hash && setup?.owner_test?.plan_hash===current.plan_hash && setup.owner_test.state==='ERROR'){
+    current={...current,status:'OWNER_TEST_FAILED',reason:setup.owner_test.reason};
+    $('#command-note').textContent='Oracle stopped this test. Check the reported reason and Groww before another action.';render();
   }
 }).catch(()=>{$('#runtime-status').textContent='Oracle status unavailable';}).finally(()=>{
   clearTimeout(runtimeTimer);runtimeTimer=setTimeout(readRuntime,3000);

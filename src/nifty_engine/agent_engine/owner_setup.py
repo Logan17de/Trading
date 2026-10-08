@@ -244,7 +244,13 @@ def retire_plan(store, tool, current, plan_id):
         from .commissioning_direct import AUTH
         plan=store.meta(PLAN_KEY+plan_id)
         auth=store.meta(AUTH,{})
-        if auth.get('plan_id')==plan_id:raise SetupError('OWNER_AUTHORIZED_TEST_REQUIRES_REVIEW')
+        if auth.get('plan_id')==plan_id:
+            if auth.get('state')!='ERROR':raise SetupError('OWNER_AUTHORIZED_TEST_REQUIRES_REVIEW')
+            # The worker lock is held, no pre-write broker record exists, and
+            # the supervisor stopped. Retire this failed authorization only.
+            tool._guard()
+            store.set_meta(AUTH,dict(auth,state='FINISHED',status='ABORTED_BEFORE_WRITE',
+                retired_at=tool.clock().isoformat()))
         if plan is None:
             # Preview may fail before its immutable plan is saved. Both the
             # authorization and pre-write broker record are absent for this ID.

@@ -33,6 +33,9 @@ def submit(tool, plan, expected_hash):
         if tool._load(value['id'])['plan_hash'] != expected_hash: fail('COMMISSIONING_PLAN_ID_CONFLICT')
         return _command_result(tool.capture(value['id']), 'submit', attempted=False, confirmed=False)
     obs = tool._initial(value)
+    auth=tool.store.meta(AUTH,{})
+    if auth.get('plan_id')!=value['id'] or auth.get('plan_hash')!=expected_hash or auth.get('state')!='RUNNING':
+        fail('EXACT_OWNER_TEST_AUTHORIZATION_REQUIRED')
     ref = 'CB' + uuid.uuid4().hex[:18]
     record = dict(format='trading-broker-direct-record-v1', plan=value, plan_hash=identity(value),
         binding=tool.binding, phase='BUY_SUBMITTING', reference=ref, request=request(value, ref),

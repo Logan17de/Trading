@@ -177,6 +177,10 @@ vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),c);
  buy.events.click();buy.events.click();await new Promise(setImmediate);
  assert.equal(calls.length,3);assert.deepEqual(calls[2],{action:'buy-protect',confirm:'b'.repeat(64)});
  assert.equal(buy.hidden,true);assert.match(get('#command-note').textContent,/job started on Oracle/);
+ c.fetch=async()=>({json:async()=>({live_setup:{owner_test:{state:'ERROR',plan_hash:'b'.repeat(64),reason:'OWNER_TEST_JOB_START_FAILED'}}})});
+ await vm.runInContext('readRuntime()',c);
+ assert.match(get('#setup-state').textContent,/Owner test failed/);
+ assert.match(get('#setup-reason').textContent,/could not confirm/);
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
     result=subprocess.run([node,'-e',script,str(source)],capture_output=True,text=True,timeout=10)

@@ -39,6 +39,9 @@ def test_unused_preview_can_be_archived_but_authorized_test_cannot(tmp_path):
     assert s.store.meta(setup.PLAN_KEY+s.plan['id'])==s.plan and s.broker.writes==[]
     missing=setup.retire_plan(s.store,s.commission,s.binding,'b'*32)
     assert missing['status']=='PRIOR_TEST_RETIRED' and missing['preview_only']
+    s.store.set_meta(direct.AUTH,dict(plan_id=s.plan['id'],state='ERROR',reason='OWNER_TEST_JOB_START_FAILED'))
+    assert setup.retire_plan(s.store,s.commission,s.binding,s.plan['id'])['preview_only']
+    assert s.store.meta(direct.AUTH)['state']=='FINISHED' and not s.broker.writes
 
 
 @pytest.mark.parametrize('failure',[False,True,'timeout'])
