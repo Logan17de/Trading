@@ -90,6 +90,7 @@ async function command(body) {
   try {
     const response=await fetch('/api/live-setup',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':token},body:JSON.stringify(body),cache:'no-store'});
     const result=await response.json(); current=result;savedOnly=false;
+    if(result.status==='PRIOR_TEST_RETIRED')$('#plan-form').reset();
     const elapsed=((Date.now()-startedAt)/1000).toFixed(1);
     const note = result.broker_write_outcome==='ACCEPTED' ? 'Broker accepted the request. Acceptance does not mean filled. Read broker evidence for current state.' : result.broker_write_outcome==='UNCERTAIN' ? 'The broker result is uncertain. Refresh the saved test; do not submit another order.' :
       result.reason ? 'The check is blocked. Review the reason above.' : 'Setup check completed.';

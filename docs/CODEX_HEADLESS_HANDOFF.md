@@ -1,5 +1,55 @@
 # Current Trading handoff
 
+## October 8 verified rollout · protected owner setup
+
+Deployed immutable Oracle engine release
+`0f58f2501b700519ece653c8d07ca9db8311e685`, updated the protected PC connection,
+and restarted only the observer and local viewer. Actual heartbeat advanced on
+the new boot and the PC reported HEALTHY. Global Algo remains Off, Normal Off,
+Research On (the existing owner selection), paper mode and both pause markers
+intact. All four shared Qwen/mail/tunnel services retained their original main
+PIDs and activation times. No broker write or live activation occurred.
+
+Verified a private 1,224,351,744-byte SQLite backup before rollout. The VM's
+bounded verification attempts did not complete under observed CPU/memory
+pressure. A private copy on the owner PC passed full `PRAGMA integrity_check`;
+its SHA-256 matched a separate hash of the Oracle copy. Private paths/digest
+are in `.agent-state/protected-setup-verified-backup.json`. Only the identified
+backup verifier helper was stopped during this recovery; original journals and
+shared services were preserved. This is a verified backup, not an automatic
+restore or proof that the future nightly backup has run.
+
+The complete local suite passed: 811 passed, six Windows platform skips (817
+collected). On the installed Oracle release, 88 synthetic tests passed including
+protected commissioning, broker shapes, report/backup isolation and the Linux
+runner/timeout cases skipped on Windows. JavaScript/config checks and the
+two-job offline demo passed; its replay email was not sent. A subsequent
+PC-only form-clear improvement passed syntax checks and six setup-page tests;
+it does not modify Oracle's immutable source or transfer activation evidence.
+
+Used the deployed GET-only retire action through the owner Edge page. Two dated
+broker reads confirmed the old exact parent inactive and test symbol flat.
+Its original record is now CANCELLED_FLAT, with the old binding unchanged and
+no filled entry/exit claimed. The desktop archived its prior pending form and
+now opens a blank protected plan. No new contract/prices were chosen. Edge
+shows both stop-loss inputs and Paper mode / Algo Off. Page opening reads saved
+local status only; explicit broker reconciliation still took 18–41 seconds in
+these observed checks. Broker/network/VM latency is not a five-second guarantee.
+
+Actual Oracle authentication, positions, funds and NIFTY reads returned HTTP200.
+Research archive is SYNCED, original campaign preserved. Email preview returned
+200 with capital and Self/Algo sections. Today's 19:30 JST email is configured,
+not yet a completed send; no new provider/inbox delivery is claimed. The separate
+backup thread no longer occupies the report scheduling thread.
+
+Remaining owner step: choose a fresh, non-expiry-day one-lot contract and exact
+prices, preview, then personally submit BUY, attach protection after its fill,
+and close/reconcile the exit. Actual protected trade/child/fill evidence is
+still unverified. Only a completed protected test can prepare live mode, followed
+by a separate owner Start. Research remains monitoring only. Keep all execution
+gates and original private ownership records intact.
+
+
 ## October 8 protected owner commissioning update
 
 New owner previews use a v2 plan with declared stop trigger and stop limit.
