@@ -8,8 +8,10 @@ by maintenance, and a successful synthetic test is not provider evidence.
 
 The test creates one explicitly chosen long option through a GTT BUY. After its
 fill, the owner attaches a declared SELL DOWN stop-loss GTT. Exit uses either its
-exact generated child or a separate explicit LIMIT SELL after stop cancellation. Purchase debit is limited
-to INR 1,000 before fees. It does not sell a naked option, choose an instrument,
+exact generated child or a separate explicit LIMIT SELL after stop cancellation.
+There is no fixed INR purchase cap for this owner-chosen one-lot test. The quoted
+purchase amount must fit the actual Groww option-buy balance; keep charges available
+as well. It does not sell a naked option, choose an instrument,
 change the owner's prices to force a fill, or use a pre-existing manual position.
 Only NIFTY/SENSEX FNO NRML, one current-master lot and a non-expiry-day contract
 are accepted. Keep the purchase amount and charges available. A test may remain
@@ -31,7 +33,12 @@ monitors that GTT. A stop-limit can remain unfilled after a price gap. The closi
 limit is used only by the separate owner **Close test long** action.
 
 1. Enter the exact current contract, one-lot quantity, tick size, your trigger and
-   limit prices, stop trigger/limit, plan deadline and existing Oracle IPv4 approved in Groww.
+   limit prices, stop trigger/limit and existing Oracle IPv4 approved in Groww.
+   The desktop sets a 30-minute BUY submission window when you click Preview;
+   there is no date/time field to fill for that window. The reviewed deadline
+   stays fixed. Renewing an unsubmitted preview does not resubmit a BUY, change
+   accepted instructions or cancel any broker order. Contract expiry remains
+   required and must be after today for this test.
 2. Click **Preview · no order**, then review the exact values displayed.
 3. Check the owner confirmation and click **Submit real BUY GTT** only when ready.
 4. Use **Read broker evidence** for the actual parent and fill observations. Each
@@ -66,7 +73,7 @@ required fields are:
 | `contract.tick_size` | Current instrument-master tick size |
 | `quantity` | Exactly one lot |
 | `trigger_price` | Your BUY UP trigger, above the current ask |
-| `buy_limit_price` | At/above trigger, on tick; quantity times price <=1,000 |
+| `buy_limit_price` | At/above trigger, on tick; purchase amount within actual option-buy balance |
 | `sell_limit_price` | Your explicit test closing LIMIT price, on tick |
 | `stop_trigger_price` | SELL DOWN trigger below BUY trigger and actual entry |
 | `stop_limit_price` | SELL limit at/below stop trigger, on tick |

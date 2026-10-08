@@ -1,5 +1,44 @@
 # Current Trading handoff
 
+## October 8 owner-requested broker-test purchase cap removal
+
+The owner explicitly removed the fixed INR 1,000 purchase cap for the supervised
+one-lot broker test. Both desktop and Oracle commissioning validators now accept
+the exact owner-entered purchase amount without that arbitrary cap. Actual Groww
+option-buy balance, exact lot/contract/prices, stop protection and explicit owner
+confirmation still apply. This changes commissioning only; Normal strategy risk
+bounds and its loss policy remain unchanged. Date restrictions are unchanged.
+Synthetic checks cover purchases above the old cap for both indexes, insufficient
+broker funds, exact-price confirmation and no orders during Preview. Deployment
+and actual read-only verification are recorded below when complete.
+
+## October 8 desktop setup simplification
+
+Follow-up: reproduced the owner's Preview click. It rejected today's expiry,
+but showed the reason only in the separate verification panel; Refresh status
+with no saved plan then misleadingly said Setup check completed. Added a focused
+inline result beside Preview, visible elapsed progress/button state, native field
+validation feedback and explicit no-preview-yet status wording. The owner Edge
+now brings the exact block into view on click. The latest draft was preserved.
+All six setup tests and JS syntax checks passed, including delayed responses and
+rejection feedback. These remain PC asset changes with no Oracle/broker write.
+
+Removed the manual plan date/time input from the PC setup page. Each explicit
+new Preview supplies a 30-minute BUY submission window; the reviewed deadline
+is displayed as Submit BUY before. Reloading/restoring a saved plan does not
+renew it, and no accepted broker instruction is cancelled or resubmitted.
+The current backend non-expiry-day test restriction remains unchanged. The
+desktop now explains that restriction before an Oracle call, separately from
+the automatic submission window. It does not select a different contract.
+
+All six setup HTTP/interaction tests and JavaScript syntax checks passed,
+including automatic window renewal only on explicit preview, preservation of
+prices, and rejection of today's contract without a remote request. Refreshed
+the actual owner Edge page, restored the owner's exact draft and verified the
+new message through Preview. These assets are served directly by the PC app;
+no Oracle release, service, journal, pause, mode or owner intent was changed.
+No real order was sent. The same-day contract remains ineligible for this test.
+
 ## October 8 verified rollout · protected owner setup
 
 Deployed immutable Oracle engine release

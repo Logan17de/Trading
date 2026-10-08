@@ -89,8 +89,6 @@ def _spec(value, now):
         raise SetupValidationError('COMMISSIONING_PRICE_NOT_ON_TICK')
     if prices['buy_limit_price'] < prices['trigger_price']:
         raise SetupValidationError('COMMISSIONING_BUY_LIMIT_BELOW_TRIGGER')
-    if prices['buy_limit_price'] * value['quantity'] > 1000:
-        raise SetupValidationError('COMMISSIONING_PURCHASE_DEBIT_EXCEEDS_1000')
     if not prices['stop_limit_price'] <= prices['stop_trigger_price'] < prices['trigger_price']:
         raise SetupValidationError('COMMISSIONING_STOP_PRICE_ORDER_INVALID')
     result = copy.deepcopy(value)

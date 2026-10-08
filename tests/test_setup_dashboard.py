@@ -32,6 +32,9 @@ def test_setup_page_only_reads_and_injects_protected_local_token(app):
         assert state.token in page and '__LOCAL_TOKEN__' not in page
         assert 'frame-ancestors' in response.headers['Content-Security-Policy']
         assert response.headers['Cache-Control']=='no-store'
+        assert 'type="datetime-local"' not in page
+        assert '30 minutes to submit the BUY' in page
+        assert 'aria-describedby="preview-feedback"' in page
     for asset in ('live-setup.js','live-setup.css'):
         with urlopen(url+'/'+asset) as response:assert response.status==200
     assert calls==[]
@@ -92,12 +95,14 @@ def test_setup_ui_never_autosubmits_and_binds_explicit_click_to_exact_hash():
     script=r"""
 const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
 const elements=new Map(),calls=[];
-function element(){return {events:{},dataset:{},content:'TOKEN',checked:false,addEventListener(k,fn){this.events[k]=fn;},replaceChildren(){},append(){}};}
+function element(){return {events:{},dataset:{},content:'TOKEN',checked:false,addEventListener(k,fn){this.events[k]=fn;},replaceChildren(){},append(){},focus(){this.focused=true;},scrollIntoView(){this.scrolled=true;}};}
 function get(key){if(!elements.has(key))elements.set(key,element());return elements.get(key);}
 const writes=['submit','close','cancel','arm'].map(action=>Object.assign(element(),{dataset:{write:action}}));
 const reads=['capture','arm-preview'].map(action=>Object.assign(element(),{dataset:{read:action}}));
 let response={status:'OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT',plan_hash:'a'.repeat(64),allowed_actions:['submit','status','preview']};
-const c=vm.createContext({Intl,Date,Number,Set,setInterval,clearInterval,setTimeout,FormData:class{},document:{querySelector:get,
+let now=Date.parse('2026-10-08T05:00:00Z');
+class Clock extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
+const c=vm.createContext({Intl,Date:Clock,Number,Set,setInterval,clearInterval,setTimeout,FormData:class{constructor(fields){this.fields=fields;}get(key){return this.fields[key];}},document:{querySelector:get,
  querySelectorAll:s=>s==='[data-write]'?writes:reads,createElement:element},fetch:async(url,args)=>{
  if(url==='/api/dashboard')return {json:async()=>({live_setup:{mode:'paper'},control:{algo:{desired_enabled:false}}})};
  if(!args.method)return {json:async()=>response};
@@ -118,6 +123,46 @@ vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),c);
  await vm.runInContext('command({action:"capture"})',c);
  assert.equal(writes.every(b=>b.hidden),true);assert.equal(calls.length,2);
  assert.match(get('#command-note').textContent,/No automatic retry/);
+ // User-supplied prices stay exact. Only an explicit new preview creates a
+ // deadline; loading the page/restoring a saved plan cannot renew it or trade.
+ const previews=[];
+ c.fetch=async(url,args)=>{
+   if(url==='/api/dashboard')return {json:async()=>({})};
+   const body=JSON.parse(args.body);assert.equal(body.action,'preview');previews.push(body);
+   return {json:async()=>({status:'TEST_PREVIEW',allowed_actions:['preview','status'],plan_spec:body.spec})};
+ };
+ vm.runInContext('current={allowed_actions:["preview","status"]};savedOnly=true;render()',c);
+ const form={symbol:'SENSEX26O0871700PE',index:'SENSEX',expiry:'2026-10-08',lot_size:'20',tick_size:'0.05',
+   trigger_price:'28',buy_limit_price:'28.5',sell_limit_price:'30',stop_trigger_price:'24',stop_limit_price:'23.8',egress_ip:'8.8.8.8'};
+ const preview=()=>get('#plan-form').events.submit({preventDefault(){},currentTarget:form});
+ preview();await new Promise(setImmediate);assert.equal(previews.length,0);
+ assert.match(get('#setup-reason').textContent,/expiring after today/);
+ assert.match(get('#preview-feedback').textContent,/Preview blocked:.*2026-10-08/);
+ assert.equal(get('#preview-feedback').hidden,false);assert.equal(get('#preview-feedback').dataset.kind,'error');
+ assert.equal(get('#preview-feedback').focused,true);assert.equal(get('#preview-feedback').scrolled,true);
+ get('#plan-form').events.input();assert.equal(get('#preview-feedback').hidden,true);
+ form.expiry='2026-10-15';form.symbol='SENSEX26O1571700PE';
+ preview();await new Promise(setImmediate);assert.equal(previews.length,1);
+ assert.equal(previews[0].spec.valid_until,'2026-10-08T05:30:00.000Z');
+ assert.equal(previews[0].spec.buy_limit_price,28.5);assert.equal(previews[0].spec.stop_limit_price,23.8);
+ now+=120000;
+ vm.runInContext('restoreForm(current.plan_spec);render()',c);
+ assert.equal(previews.length,1);assert.equal(previews[0].spec.valid_until,'2026-10-08T05:30:00.000Z');
+ preview();await new Promise(setImmediate);assert.equal(previews.length,2);
+ assert.equal(previews[1].spec.valid_until,'2026-10-08T05:32:00.000Z');
+ assert.equal(calls.length,2);
+ let finish;
+ c.fetch=async(url,args)=>url==='/api/dashboard'?{json:async()=>({})}:new Promise(resolve=>{finish=resolve;});
+ preview();assert.equal(get('#preview-button').disabled,true);assert.equal(get('#preview-button').textContent,'Checking preview…');
+ assert.match(get('#preview-feedback').textContent,/Checking preview/);
+ finish({json:async()=>({status:'OWNER_SETUP_BLOCKED',reason:'COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET',allowed_actions:['preview','status']})});
+ await new Promise(setImmediate);assert.match(get('#preview-feedback').textContent,/current ask/);
+ assert.equal(get('#preview-button').disabled,false);
+ c.fetch=async()=>({json:async()=>({status:'NOT_STARTED',allowed_actions:['preview','status']})});
+ await vm.runInContext('command({action:"status"})',c);
+ assert.match(get('#command-note').textContent,/No test has been previewed/);
+ get('#plan-form').events.invalid({target:{labels:[{textContent:'BUY limit ₹'}],validationMessage:'Please fill out this field.'}});
+ assert.match(get('#preview-feedback').textContent,/Check BUY limit/);
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
     result=subprocess.run([node,'-e',script,str(source)],capture_output=True,text=True,timeout=10)

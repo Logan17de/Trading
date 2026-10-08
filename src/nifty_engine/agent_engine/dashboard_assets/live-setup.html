@@ -17,9 +17,8 @@
 <label>Close SELL limit ₹<input name="sell_limit_price" type="number" min="0.01" step="0.01" required></label>
 <label>Stop-loss trigger ₹<input name="stop_trigger_price" type="number" min="0.01" step="0.01" required></label>
 <label>Stop-loss SELL limit ₹<input name="stop_limit_price" type="number" min="0.01" step="0.01" required></label>
-<label class="setup-wide">Plan expires (your PC time)<input name="valid_until" type="datetime-local" required></label>
 <label class="setup-wide">Oracle IPv4 approved in Groww<input name="egress_ip" required autocomplete="off" inputmode="decimal" placeholder="Existing whitelisted IPv4"></label>
-</div></fieldset><p class="setup-muted">One lot only. Purchase debit ≤ ₹1,000 before fees. BUY trigger must be above the current ask; BUY limit must cover the trigger. Prices are never changed automatically to force a fill.</p><button class="button primary" type="submit" id="preview-button">Preview · no order</button></form></section>
+</div></fieldset><p class="setup-muted">Preview automatically gives you 30 minutes to submit the BUY. This does not cancel an accepted Groww order.</p><p class="setup-muted">One lot. Purchase amount is checked against your available Groww option-buy balance. BUY trigger must be above the current ask; BUY limit must cover the trigger. Prices are never changed automatically to force a fill.</p><button class="button primary" type="submit" id="preview-button" aria-describedby="preview-feedback">Preview · no order</button><div id="preview-feedback" class="setup-feedback" role="status" aria-live="polite" aria-atomic="true" tabindex="-1" hidden></div></form></section>
 <section class="card setup-panel setup-progress"><div class="setup-title"><h2>Broker verification</h2><button class="button" id="refresh-status" type="button">Refresh status</button></div>
 <div id="setup-state" role="status" aria-live="polite">Loading saved setup…</div><p id="setup-reason" class="setup-muted"></p>
 <dl id="review-plan" class="setup-review" hidden></dl>

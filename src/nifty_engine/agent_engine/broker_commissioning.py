@@ -120,8 +120,6 @@ def validate_plan(plan, binding, now, *, expired=False):
         value[name] = format(price, 'f')
     if _decimal(value['buy_limit_price']) < _decimal(value['trigger_price']):
         fail('COMMISSIONING_BUY_LIMIT_BELOW_TRIGGER')
-    if _decimal(value['buy_limit_price']) * value['quantity'] > 1000:
-        fail('COMMISSIONING_PURCHASE_DEBIT_EXCEEDS_1000')
     if value['format'] == protection.FORMAT and not (_decimal(value['stop_limit_price']) <=
             _decimal(value['stop_trigger_price']) < _decimal(value['trigger_price'])):
         fail('COMMISSIONING_STOP_PRICE_ORDER_INVALID')

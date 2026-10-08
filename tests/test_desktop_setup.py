@@ -105,7 +105,7 @@ def test_tampered_transport_never_invokes_process(app,field,value):
 
 @pytest.mark.parametrize('mutate',[
     lambda p:p.update(api_key='PRIVATE'),lambda p:p.update(quantity=130),
-    lambda p:p['contract'].update(symbol='NIFTY;rmCE'),lambda p:p.update(buy_limit_price='999'),
+    lambda p:p['contract'].update(symbol='NIFTY;rmCE'),lambda p:p.update(buy_limit_price='0'),
     lambda p:p.update(trigger_price='NaN'),lambda p:p.update(egress_ip='127.0.0.1'),
     lambda p:p.update(valid_until='2026-10-06T00:00:00Z')])
 def test_invalid_or_extra_private_spec_never_invokes_process(app,mutate):
@@ -379,7 +379,6 @@ def test_saved_status_is_local_and_does_not_wait_for_remote_action(app):
 
 
 @pytest.mark.parametrize('changes,reason',[
-    ({'buy_limit_price':'20.00'},'COMMISSIONING_PURCHASE_DEBIT_EXCEEDS_1000'),
     ({'buy_limit_price':'9.00'},'COMMISSIONING_BUY_LIMIT_BELOW_TRIGGER'),
     ({'buy_limit_price':'10.03'},'COMMISSIONING_PRICE_NOT_ON_TICK'),
     ({'valid_until':NOW.isoformat()},'COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG')])
@@ -389,6 +388,16 @@ def test_form_errors_are_precise_and_never_call_oracle(app,changes,reason):
     result=ctl.command({'action':'preview','spec':value})
     assert result['reason']==reason and result['status']=='INVALID_OWNER_SETUP_COMMAND'
     assert calls==[] and store.meta(KEY) is None
+
+
+def test_one_lot_above_old_purchase_cap_reaches_oracle_preview_unchanged(app):
+    ctl,store,calls,cfg=app
+    value=spec();value.update(trigger_price='25.00',buy_limit_price='25.50')
+    result=ctl.command({'action':'preview','spec':value})
+    assert result['status']==PREVIEW
+    sent=json.loads(calls[0][1]['input'])
+    assert sent['quantity']==65 and sent['buy_limit_price']=='25.50'
+    assert len(calls)==1 and ' preview-stdin ' in calls[0][0][-1]
 
 
 def test_rejected_price_preview_is_editable_but_still_checks_original_plan(app):

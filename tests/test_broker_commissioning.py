@@ -181,7 +181,7 @@ def test_preview_does_not_write_journal_or_broker(tmp_path):
     assert s.store.read('SELECT * FROM meta') == before and s.broker.writes == []
 
 
-@pytest.mark.parametrize('fault', ['hash', 'live', 'unpaused', 'on', 'manual_position', 'open_order', 'wrong_account', 'master', 'budget', 'quantity', 'tick'])
+@pytest.mark.parametrize('fault', ['hash', 'live', 'unpaused', 'on', 'manual_position', 'open_order', 'wrong_account', 'master', 'price_changed', 'quantity', 'tick'])
 def test_submission_rejects_unreviewed_or_unsafe_plan(tmp_path, fault):
     s = Session(tmp_path); value = s.commission.preview(s.plan)
     plan_hash = value['plan_hash']
@@ -193,12 +193,32 @@ def test_submission_rejects_unreviewed_or_unsafe_plan(tmp_path, fault):
     elif fault == 'open_order': s.broker.orders['manual'] = dict(groww_order_id='manual', trading_symbol=s.plan['contract']['symbol'], order_status='OPEN')
     elif fault == 'wrong_account': s.broker.profile['ucc'] = 'other-private-account'
     elif fault == 'master': s.commission.master = lambda: 'bad,csv\n'
-    elif fault == 'budget': s.plan['buy_limit_price'] = '20.00'
+    elif fault == 'price_changed': s.plan['buy_limit_price'] = '20.00'
     elif fault == 'quantity': s.plan['quantity'] += 1
     elif fault == 'tick': s.plan['buy_limit_price'] = '10.01'
     with pytest.raises((ValueError, PermissionError)):
         s.commission.submit(s.plan, plan_hash)
     assert s.broker.writes == []
+
+
+@pytest.mark.parametrize('index', ['NIFTY', 'SENSEX'])
+def test_explicit_one_lot_above_old_cap_uses_real_buy_balance(tmp_path, index):
+    s=Session(tmp_path,index)
+    s.plan.update(trigger_price='79.00',buy_limit_price='80.00')
+    debit=s.plan['quantity']*80
+    assert debit>1000
+    s.broker.get_available_margin_details=lambda **kw:dict(fno_margin_details=dict(option_buy_balance_available=debit-1))
+    with pytest.raises(ValueError,match='COMMISSIONING_INSUFFICIENT_PURCHASE_BALANCE'):
+        s.commission.preview(s.plan)
+    assert s.broker.writes==[]
+    s.broker.get_available_margin_details=lambda **kw:dict(fno_margin_details=dict(option_buy_balance_available=debit+500))
+    preview=s.commission.preview(s.plan)
+    assert s.broker.writes==[]
+    result=s.commission.submit(s.plan,preview['plan_hash'])
+    assert result['broker_write_outcome']=='ACCEPTED'
+    assert len(s.broker.writes)==1
+    assert s.broker.writes[0][2]['quantity']==s.plan['quantity']
+    assert s.broker.writes[0][2]['order']['price']=='80.00'
 
 
 def test_http_capability_rejects_changed_request(tmp_path):
