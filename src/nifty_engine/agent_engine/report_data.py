@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import itertools
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 
 from .contracts import EXCHANGES, identity, number, stamp
@@ -237,21 +238,26 @@ class ReportData:
         books=[]
         check=dict(expiry=expiry,signed_greek_contracts=len(candidates),sampled_quotes=len(wanted),
             available_books=0,missing_depth=0,invalid_books=0,read_failures=0,broker_writes=False)
-        for row in list(wanted.values())[:8]:
+        def quote(row):
             try:
                 raw=self.call(self.market.groww.get_quote,exchange=EXCHANGES[index],segment='FNO',trading_symbol=row['symbol'])
                 at=self.clock();q=quote_summary(raw,at)
                 if any(q.get(k) is None or q[k]<=0 for k in ('bid_price','offer_price','bid_quantity','offer_quantity')):
-                    check['missing_depth']+=1
-                    continue
+                    return 'missing_depth',None
                 # Contract validation is deliberately strict. Greeks have their
                 # own receipt clock and must not enter the book-only schema.
                 base={k:row[k] for k in ('symbol','index','expiry','strike','lot_size','tick_size')}
                 book=leg(dict(base,bid=q['bid_price'],ask=q['offer_price'],bid_quantity=q['bid_quantity'],ask_quantity=q['offer_quantity'],received_at=at.isoformat()))
-                books.append(dict(book,delta=row['delta'],iv=row['iv'],iv_unit=row['iv_unit'],greeks_received_at=greek_at,
-                    **{k:row[k] for k in ('theta','theta_unit') if k in row}))
-            except (ValueError,TypeError,KeyError):check['invalid_books']+=1
-            except Exception:check['read_failures']+=1
+                return 'available',dict(book,delta=row['delta'],iv=row['iv'],iv_unit=row['iv_unit'],greeks_received_at=greek_at,
+                    **{k:row[k] for k in ('theta','theta_unit') if k in row})
+            except (ValueError,TypeError,KeyError):return 'invalid_books',None
+            except Exception:return 'read_failures',None
+        # Bound independent GET concurrency. Each request still waits on the
+        # collector's shared limiter and keeps its own actual response time.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            for status,book in pool.map(quote,list(wanted.values())[:8]):
+                if book is not None:books.append(book)
+                else:check[status]+=1
         check.update(available_books=len(books),checked_at=self.clock().isoformat())
         self.book_checks[(index,expiry)]=check
         if not fresh(master_at,self.clock(),3600):raise ValueError('CURRENT_INSTRUMENT_MASTER_REQUIRED')
@@ -324,17 +330,26 @@ class ReportData:
                 if self.normal_cfg:
                     lo,hi=self.normal_cfg['short_dte']
                     normal_dates=[d for d in expiry['expiries'] if lo<=(date.fromisoformat(d)-day).days<=hi][:1]
+                # Publish Normal's dated inputs before slower research expiries
+                # and margin comparisons can age them out. Never reuse Normal
+                # timestamps to make research quotes appear fresh.
+                normal_books=[]
+                if self.normal_cfg:
+                    for d in normal_dates:
+                        normal_books.extend(self.books(index,d,set(b['protected_symbols'])))
+                    normal_margins=self.margins(index,normal_books,self.normal_cfg)
+                    self.store.set_meta('normal-theta-contracts-'+index,dict(contracts=normal_books,margins=normal_margins))
+                    connect_snapshot(self.store,self.snapshot_reader() if self.snapshot_reader else snapshot,
+                        self.cfg,self.clock(),self.normal_cfg)
                 books=[]
-                all_books=[]
-                for d in dict.fromkeys(normal_dates+chosen):all_books.extend(self.books(index,d,set(b['protected_symbols'])))
-                books=[r for r in all_books if r['expiry'] in chosen]
+                for d in dict.fromkeys(chosen):
+                    shared=[r for r in normal_books if r['expiry']==d]
+                    if shared and all(fresh(r['received_at'],self.clock()) and fresh(r['greeks_received_at'],self.clock()) for r in shared):
+                        books.extend(shared)
+                    else:books.extend(self.books(index,d,set(b['protected_symbols'])))
                 margins=self.margins(index,books)
                 # Separate worker cache avoids overwriting a simultaneous collector refresh.
                 self.store.set_meta('report-contracts-'+index,dict(contracts=books,margins=margins))
-                if self.normal_cfg:
-                    normal_books=[r for r in all_books if r['expiry'] in normal_dates]
-                    normal_margins=self.margins(index,normal_books,self.normal_cfg)
-                    self.store.set_meta('normal-theta-contracts-'+index,dict(contracts=normal_books,margins=normal_margins))
                 if not chosen:faults.append('LISTED_30_45_OR_60_90_DTE_CONTRACTS_UNAVAILABLE')
                 elif not books:faults.append('CURRENT_SIGNED_GREEKS_AND_BOOKS_REQUIRED')
                 elif not margins:faults.append('CURRENT_AFFORDABLE_BASKET_MARGIN_UNAVAILABLE')

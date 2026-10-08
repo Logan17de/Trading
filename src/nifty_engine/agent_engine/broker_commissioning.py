@@ -13,6 +13,7 @@ import ipaddress
 import json
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -284,33 +285,43 @@ class Commissioning:
         fail('COMMISSIONING_ORDER_LIST_INCOMPLETE')
 
     def _smart_active(self, plan):
-        """Scan full automatic GTT validity, not only the default current day."""
+        """Scan full validity with two bounded GET readers and the shared limiter."""
         end = self.clock().astimezone(IST).replace(tzinfo=None)
-        found = {}
-        for kind in ('GTT', 'OCO'):
-            for offset in range(0, 392, 28):
-                stop = end - timedelta(days=offset)
-                start = stop - timedelta(days=28)
-                for page in range(4):
-                    body = self._read('get_smart_order_list', segment='FNO', smart_order_type=kind,
-                                      status='ACTIVE', page=page, page_size=50,
-                                      start_date_time=start.isoformat(), end_date_time=stop.isoformat())
-                    rows = body.get('orders')
-                    if not isinstance(rows, list) or len(rows) > 50 or any(not isinstance(r, dict) for r in rows):
-                        fail('COMMISSIONING_SMART_LIST_INCOMPLETE')
-                    for item in rows:
-                        key = _id(item.get('smart_order_id'))
-                        if key not in found:
-                            if len(found) >= 100:
-                                fail('COMMISSIONING_SMART_LIST_TOO_LARGE')
-                            full = self._read('get_smart_order', segment='FNO', smart_order_type=kind, smart_order_id=key)
-                            if full.get('smart_order_id') != key or not full.get('trading_symbol'):
-                                fail('COMMISSIONING_SMART_IDENTITY_UNKNOWN')
-                            found[key] = full
-                    if len(rows) < 50:
-                        break
-                else:
+        def window(job):
+            kind, offset = job
+            stop = end - timedelta(days=offset)
+            start = stop - timedelta(days=28)
+            identifiers = []
+            for page in range(4):
+                body = self._read('get_smart_order_list', segment='FNO', smart_order_type=kind,
+                                  status='ACTIVE', page=page, page_size=50,
+                                  start_date_time=start.isoformat(), end_date_time=stop.isoformat())
+                rows = body.get('orders')
+                if not isinstance(rows, list) or len(rows) > 50 or any(not isinstance(r, dict) for r in rows):
                     fail('COMMISSIONING_SMART_LIST_INCOMPLETE')
+                identifiers.extend(_id(r.get('smart_order_id')) for r in rows)
+                if len(rows) < 50:
+                    return kind, identifiers
+            fail('COMMISSIONING_SMART_LIST_INCOMPLETE')
+
+        # Independent date windows overlap; pagination within each remains serial.
+        # No write capability is passed to these workers. Every window must pass.
+        jobs = [(kind, offset) for kind in ('GTT', 'OCO') for offset in range(0, 392, 28)]
+        identifiers = {}
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            for kind, keys in pool.map(window, jobs):
+                for key in keys:
+                    if key in identifiers and identifiers[key] != kind:
+                        fail('COMMISSIONING_SMART_IDENTITY_UNKNOWN')
+                    identifiers[key] = kind
+                    if len(identifiers) > 100:
+                        fail('COMMISSIONING_SMART_LIST_TOO_LARGE')
+        found = {}
+        for key, kind in identifiers.items():
+            full = self._read('get_smart_order', segment='FNO', smart_order_type=kind, smart_order_id=key)
+            if full.get('smart_order_id') != key or not full.get('trading_symbol'):
+                fail('COMMISSIONING_SMART_IDENTITY_UNKNOWN')
+            found[key] = full
         return [r for r in found.values() if r['trading_symbol'] == plan['contract']['symbol']
                 and r.get('status') == 'ACTIVE']
 

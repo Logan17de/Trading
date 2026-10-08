@@ -250,7 +250,6 @@ class Runtime:
         from .dashboard import load_json
         next_network_check = 0
         while not self.stop.wait(5):
-            self.connect_research_snapshot()
             if time.monotonic() < next_network_check: continue
             next_network_check = time.monotonic() + 60
             preparer=self.preparer
@@ -270,12 +269,12 @@ class Runtime:
                         "reason":"PREPARATION_INPUT_UNAVAILABLE","at":datetime.now(timezone.utc).isoformat(),
                         "execution_enabled":False,"broker_writes":False,"selected":None})
 
-    def connect_research_snapshot(self):
+    def connect_research_snapshot(self, value=None):
         """Derived research writes run off the account collector/heartbeat path."""
         from .dashboard import load_json
         from .report_data import connect_snapshot
         try:
-            value = load_json(self.output, 8_000_000)
+            if value is None: value = load_json(self.output, 8_000_000)
             if not isinstance(value, dict) or not value.get('execution_observation'): return
             connect_snapshot(self.state.pnl_lines.store, value, self.research_catalog,
                              datetime.now(timezone.utc), self.normal_catalog)
@@ -314,6 +313,11 @@ class Runtime:
             except Exception as exc:self.execution_failed(exc,'SNAPSHOT_STATUS_WRITE')
             return
         try:
+            # Always bridge this collected snapshot immediately before evaluation.
+            # Slow calendar/history/chain reads in preparation must not freeze
+            # funds, spot or manual-position evidence. Keep original timestamps.
+            if getattr(self, 'research_catalog', None):
+                self.connect_research_snapshot(snapshot)
             executor.tick(obs,store.meta('premium-preparation',{}))
         except Exception as exc:
             self.execution_failed(exc,'EXECUTOR_TICK')

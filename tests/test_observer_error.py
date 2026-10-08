@@ -48,24 +48,23 @@ def test_background_research_keeps_snapshot_timestamps_and_unavailable_stays_unk
     assert store.meta('report-data-status-NIFTY')['reason'] == 'RESEARCH_SNAPSHOT_UNAVAILABLE'
 
 
-def test_preparation_keeps_five_second_connections_and_sixty_second_network_budget(tmp_path, monkeypatch):
+def test_research_preparation_keeps_sixty_second_network_budget(tmp_path, monkeypatch):
     from nifty_engine.agent_engine import oracle_runtime
     runtime = Runtime.__new__(Runtime)
     runtime.root = tmp_path
     runtime.output = tmp_path/'snapshot.json'
     runtime.output.write_text(json.dumps({'execution_observation':{'complete':True}}))
-    connected, network, waits = [], [], []
+    network, waits = [], []
     class Stop:
         def wait(self, seconds):
             waits.append(seconds)
             return len(waits) > 2
     runtime.stop = Stop()
-    runtime.connect_research_snapshot = lambda: connected.append(True)
     runtime.report_data = SimpleNamespace(check=lambda source: network.append(source))
     runtime.preparer = None
     monkeypatch.setattr(oracle_runtime.time, 'monotonic', lambda:0)
     runtime.preparation_loop()
-    assert waits == [5,5,5] and len(connected) == 2 and len(network) == 1
+    assert waits == [5,5,5] and len(network) == 1
 
 
 def test_busy_journal_during_failure_status_does_not_kill_research_retry(tmp_path, monkeypatch):

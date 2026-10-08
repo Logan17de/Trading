@@ -1,5 +1,28 @@
 # Current Trading handoff
 
+## October 8 execution-input timing and setup latency
+
+Found a real input-timing fault: the five-second strategy snapshot bridge shared
+the slow research network loop. Oracle cash could be current in the dashboard
+while Normal's copied balances and manual-position evidence aged past policy.
+The executor now connects the latest collected snapshot immediately before its
+evaluation, independently of research requests. Original response timestamps and
+failed-read unknowns remain intact. Normal books/margins publish before other
+research expiry/margin comparisons; option quote GETs use two bounded readers
+on the existing shared limiter.
+
+The owner setup's 392-day GTT/OCO scan now overlaps two independent date-window
+GETs. All 28 windows, bounded pagination, deduplication, exact parent readback
+and existing-position protection remain required. One failed window blocks the
+result. Writes stay serial, explicit owner actions; no retries or order submission
+were added. Authentication, network and VM load can still extend response times.
+
+The latest owner test observed before this update was CANCELLED_FLAT: accepted
+and persistent GTT, inactive parent and confirmed flat position. No generated BUY
+fill, stop attachment/persistence or SELL fill was recorded. This is not completed
+live commissioning. No source upgrade may transfer that record into new-release
+activation evidence. Normal's policy/risk bounds and Research's study are unchanged.
+
 ## October 8 owner-requested broker-test purchase cap removal
 
 The owner explicitly removed the fixed INR 1,000 purchase cap for the supervised
