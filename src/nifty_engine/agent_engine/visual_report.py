@@ -74,7 +74,7 @@ def build(view, day):
     status=f'Algo {"ON · ready" if permitted else "ON · blocked" if algo.get("desired_enabled") else "OFF"} · Broker writes {"permitted" if permitted else "OFF"}'
     closure=view.get('execution_controller',{}).get('last_external_close',{})
     if closure.get('label'): status+=' · '+closure['label']
-    body=f'''<!doctype html><html><body style="margin:0;background:#edf6f4;font-family:Arial,sans-serif;color:#18334b"><table role="presentation" width="100%"><tr><td align="center"><table role="presentation" width="680" style="max-width:100%;background:white"><tr><td style="padding:24px;background:#18334b;color:white"><div style="font-size:25px;font-weight:bold">Options Trader</div><div style="margin-top:8px;font-size:13px">{esc(day)} · 19:30 JST report</div></td></tr><tr><td style="padding:16px">{capital_html}<table width="100%"><tr>{cards}</tr><tr>{split}</tr><tr>{cells}</tr></table><div style="padding:10px;background:#f4faf8;font-size:12px">{esc(status)}<br>Observed: {esc(view.get("as_of") or "Unknown")}</div>{images}<table width="100%"><tr>{markets}</tr></table><h2 style="font-size:16px">Open positions</h2><table width="100%" style="font-size:12px">{''.join(positions) or '<tr><td>No confirmed open positions</td></tr>'}</table><h2 style="font-size:16px">Strategies · net results</h2><table width="100%" style="font-size:12px">{strategies}</table><div style="margin-top:20px;color:#718096;font-size:10px">Gross P&amp;L excludes charges. Net results require the reviewed ledger. Gaps = missing reads. Manual positions protected. No guaranteed profit.</div></td></tr></table></td></tr></table></body></html>'''
+    body=f'''<!doctype html><html><body style="margin:0;background:#edf6f4;font-family:Arial,sans-serif;color:#18334b"><table role="presentation" width="100%"><tr><td align="center"><table role="presentation" width="680" style="max-width:100%;background:white"><tr><td style="padding:24px;background:#18334b;color:white"><div style="font-size:25px;font-weight:bold">Options Trader</div><div style="margin-top:8px;font-size:13px">{esc(day)} · Daily summary · next-session delivery</div></td></tr><tr><td style="padding:16px">{capital_html}<table width="100%"><tr>{cards}</tr><tr>{split}</tr><tr>{cells}</tr></table><div style="padding:10px;background:#f4faf8;font-size:12px">{esc(status)}<br>Observed: {esc(view.get("as_of") or "Unknown")}</div>{images}<table width="100%"><tr>{markets}</tr></table><h2 style="font-size:16px">Open positions</h2><table width="100%" style="font-size:12px">{''.join(positions) or '<tr><td>No confirmed open positions</td></tr>'}</table><h2 style="font-size:16px">Strategies · net results</h2><table width="100%" style="font-size:12px">{strategies}</table><div style="margin-top:20px;color:#718096;font-size:10px">Gross P&amp;L excludes charges. Net results require the reviewed ledger. Gaps = missing reads. Manual positions protected. No guaranteed profit.</div></td></tr></table></td></tr></table></body></html>'''
     return {"mode":"OBSERVE","day":day,"observed_at":view.get("as_of"),"mail":{
         "subject":"Options Trader · "+day,"html":body,"text":"Options Trader · "+day+"\n"+status+"\nToday gross: "+money(pnl.get("total_inr")),"attachments":attachments}}
 
@@ -83,21 +83,28 @@ class DailyMail:
     def __init__(self,store):self.store=store
 
     def tick(self,view,now, *, send=None,fetch=None):
+        from .mail_window import status as mail_window, regular_day
         local=now.astimezone(JST);day=local.date().isoformat()
-        # Begin one minute before the owner's deadline; provider/inbox delays
-        # still cannot be guaranteed. Freeze only when the due attempt is made.
-        if local.time()<time(19,29):return {"status":"SCHEDULED_BY_1930_JST","provider_accepted":False,"inbox_verified":False}
-        report_id=identity([day,"oracle-visual-eod-v1"])
-        with self.store.transaction() as db:
-            if not db.execute("SELECT 1 FROM reports WHERE id=?",(report_id,)).fetchone():
-                db.execute("INSERT INTO reports(id,day,payload) VALUES(?,?,?)",(report_id,day,dumps(build(view,day))))
+        # Freeze the dated EOD report after the session; delivery waits for the
+        # next regular session. Morning ticks must also drain the durable outbox.
+        if local.time()>=time(19,29) and regular_day(now):
+            report_id=identity([day,"oracle-visual-eod-v1"])
+            with self.store.transaction() as db:
+                if not db.execute("SELECT 1 FROM reports WHERE id=?",(report_id,)).fetchone():
+                    db.execute("INSERT INTO reports(id,day,payload) VALUES(?,?,?)",(report_id,day,dumps(build(view,day))))
+        window=mail_window(now)
+        if window!='OPEN':return {"status":window,"provider_accepted":False,"inbox_verified":False}
+        pending=self.store.read("SELECT id,day FROM reports WHERE (status='QUEUED' OR (status='SENDING' AND lease<=?)) AND next_attempt<=? ORDER BY day LIMIT 1",(now.timestamp(),now.timestamp()))
         delivery=deliver_once(self.store,now,**({"send":send} if send else {}))
+        latest=pending or self.store.read("SELECT id,day FROM reports ORDER BY day DESC LIMIT 1")
+        if not latest:return {"status":"EOD_PREPARED_AFTER_CLOSE_SENT_NEXT_SESSION","provider_accepted":False,"inbox_verified":False}
+        report_id=latest[0]['id'];report_day=latest[0]['day']
         rows=self.store.read("SELECT status FROM reports WHERE id=?",(report_id,))
-        receipt={"status":delivery,"provider_accepted":bool(rows and rows[0]["status"]=="ACCEPTED"),"inbox_verified":False}
+        receipt={"status":delivery,"report_day":report_day,"provider_accepted":bool(rows and rows[0]["status"]=="ACCEPTED"),"inbox_verified":False}
         if receipt["provider_accepted"]:
             checked=self.store.meta("receipt:"+report_id,{})
             if not checked.get("checked_at") or (now-stamp(checked["checked_at"])).total_seconds()>=300:
                 checked=reconcile_receipt(self.store,report_id,now,**({"fetch":fetch} if fetch else {}))
             receipt.update(status=checked.get("status","ACCEPTED"),recipient_server_accepted=checked.get("status")=="RECIPIENT_SERVER_ACCEPTED")
-        self.store.set_meta("visual-mail-"+day,receipt)
+        self.store.set_meta("visual-mail-"+report_day,receipt)
         return receipt

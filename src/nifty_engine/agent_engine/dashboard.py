@@ -1116,7 +1116,7 @@ def handler(state):
                 import base64
                 from .visual_report import build
                 bundle=build(state.read(),datetime.now(JST).date().isoformat())
-                content=bundle["mail"]["html"].replace("19:30 JST report","Visual email preview · current observations")
+                content=bundle["mail"]["html"].replace("Daily summary · next-session delivery","Visual email preview · current observations")
                 content=content.replace('<html><body','<html><head><title>Options Trader · Email preview</title></head><body',1)
                 end=content.index('>',content.index('<body'))+1
                 content=content[:end]+'<div style="padding:12px;text-align:center"><a href="/">← Dashboard</a></div>'+content[end:]

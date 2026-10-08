@@ -201,6 +201,9 @@ function readRuntime(){return fetch('/api/dashboard',{cache:'no-store'}).then(r=
     current={...current,status:'OWNER_TEST_FAILED',reason:setup.owner_test.reason};
     $('#command-note').textContent='Oracle stopped this test. Check the reported reason and Groww before another action.';render();
   }
+  if(!busy && current.plan_hash && setup?.owner_test?.plan_hash===current.plan_hash && setup.owner_test.attention){
+    $('#command-note').textContent='Target SELL is still pending and the stop is inactive. The position remains open. Check Groww; Oracle will not send a duplicate SELL.';
+  }
 }).catch(()=>{$('#runtime-status').textContent='Oracle status unavailable';}).finally(()=>{
   clearTimeout(runtimeTimer);runtimeTimer=setTimeout(readRuntime,3000);
 });}

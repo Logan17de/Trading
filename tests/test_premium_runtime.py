@@ -144,7 +144,7 @@ def model():
     protocol=json.loads((ROOT/'config/owner_strategies.json').read_text())
     return view_model(None,protocol,now=NOW)
 
-def test_visual_mail_only_due_at_1930_daily_frozen_retry_never_changes_intent(tmp_path,monkeypatch):
+def test_visual_mail_freezes_after_close_and_sends_next_session_without_changing_intent(tmp_path,monkeypatch):
     store=PcJournal(tmp_path/'j.sqlite3').store
     p.set_intent(store,True,NOW)
     monkeypatch.setenv('RESEND_API_KEY','fake-test-key')
@@ -152,21 +152,25 @@ def test_visual_mail_only_due_at_1930_daily_frozen_retry_never_changes_intent(tm
     monkeypatch.setenv('TRADING_REPORT_TO','owner@example.test')
     mail=DailyMail(store);view=model();calls=[]
     due=NOW.replace(hour=19,minute=29)
-    assert mail.tick(view,due-timedelta(seconds=1))['status']=='SCHEDULED_BY_1930_JST'
+    assert mail.tick(view,due-timedelta(seconds=1))['status']=='WAIT_MARKET_SESSION'
     def failure(payload,key,rid):calls.append(copy.deepcopy(payload));raise TimeoutError('private')
-    assert mail.tick(view,due,send=failure)['status']=='RETRY_PENDING'
+    assert mail.tick(view,due,send=failure)['status']=='WAIT_MARKET_SESSION'
+    assert not calls
+    opening=(due+timedelta(days=1)).replace(hour=12,minute=45)
+    assert mail.tick(view,opening,send=failure)['status']=='RETRY_PENDING'
     changed=model();changed['markets'][0]['price']=99999
     def success(payload,key,rid):calls.append(copy.deepcopy(payload));return 'fake-receipt'
     fetch=lambda rid,key:{'id':rid,'from':'sender@example.test','to':['owner@example.test'],'last_event':'delivered'}
-    r=mail.tick(changed,due+timedelta(seconds=61),send=success,fetch=fetch)
+    r=mail.tick(changed,opening+timedelta(seconds=61),send=success,fetch=fetch)
     assert r['provider_accepted'] and r['recipient_server_accepted'] and not r['inbox_verified']
     assert calls[0]==calls[1] and p.intent(store)['enabled']
-    mail.tick(changed,due+timedelta(seconds=120),send=success,fetch=fetch)
+    mail.tick(changed,opening+timedelta(seconds=120),send=success,fetch=fetch)
     assert len(calls)==2
     assert 'private' not in json.dumps(store.read('SELECT error FROM reports'))
-    # Calendar days, including a weekend, receive an honest no-current-data report.
+    # No weekend sends or fabricated reports for a closed session.
     weekend=due+timedelta(days=5)
-    assert mail.tick(view,weekend,send=success,fetch=fetch)['provider_accepted']
+    assert mail.tick(view,weekend,send=success,fetch=fetch)['status']=='WAIT_MARKET_SESSION'
+    assert len(calls)==2
 
 def test_visual_report_has_only_active_strategies_real_curves_and_unknowns():
     v=model();bundle=build(v,'2026-10-05')

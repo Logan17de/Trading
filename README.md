@@ -33,7 +33,8 @@ online. Oracle collection and scheduled reporting run independently.
   **Record withdrawal** for money already withdrawn, with amount and JST date.
   Both are bookkeeping; neither transfers money or changes Groww cash/P&L.
 - Oracle observation targets 12:40–19:45 JST weekdays. The visual daily email
-  targets 19:30 JST every calendar day; configured timing and inbox delivery are
+  is prepared after close and sent during the next regular session. Trading email
+  sends run only 12:45–19:00 JST; configured timing and inbox delivery are
   reported separately.
 
 See [app setup and operations](docs/LOCAL_HEADLESS.md#local-options-dashboard).

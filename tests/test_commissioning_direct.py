@@ -146,3 +146,38 @@ def test_partial_buy_is_explicitly_unprotected_and_needs_review(tmp_path):
     result=tick(s)
     assert result['reason']=='COMMISSIONING_PARTIAL_BUY_REQUIRES_REVIEW'
     assert not result['facts']['stop_order_write'] and len(s.broker.writes)==1
+
+
+def test_partial_terminal_stop_exit_needs_attention_without_another_sell(tmp_path):
+    s=session(tmp_path);tick(s);tick(s);stop_trigger(s)
+    row=next(r for r in s.broker.orders.values() if r['transaction_type']=='SELL')
+    row.update(order_status='CANCELLED',filled_quantity=5)
+    s.broker.quantity=s.plan['quantity']-5
+    with pytest.raises(ValueError,match='COMMISSIONING_EXIT_REMAINDER_REQUIRES_REVIEW'):tick(s)
+    assert len(s.broker.writes)==2
+
+
+def test_stop_cancelled_outside_target_path_alerts_for_unprotected_position(tmp_path):
+    s=session(tmp_path);tick(s);tick(s)
+    next(iter(s.broker.parents.values()))['status']='CANCELLED'
+    with pytest.raises(ValueError,match='COMMISSIONING_STOP_INACTIVE_WITH_OPEN_POSITION'):tick(s)
+    assert len(s.broker.writes)==2
+
+
+def test_unfilled_target_order_is_monitored_without_resubmission(tmp_path):
+    s=session(tmp_path);tick(s);tick(s)
+    s.market.quote=lambda *a,**k:dict(last_price=12.1,bid_price=12.05,offer_price=12.1,last_trade_time=s.now.timestamp())
+    tick(s)
+    def pending(**args):
+        body={k:v for k,v in args.items() if k!='timeout'}
+        s.broker._write('POST','/v1/order/create',body)
+        identifier='sell-'+args['order_reference_id']
+        s.broker.orders[identifier]=dict(body,groww_order_id=identifier,filled_quantity=0,
+            order_status='OPEN',average_fill_price=0)
+        return dict(groww_order_id=identifier,order_reference_id=args['order_reference_id'])
+    s.broker.place_order=pending
+    assert tick(s)['status']=='CLOSE_PENDING_OR_PARTIAL'
+    result=tick(s)
+    assert result['status']=='CLOSE_PENDING_OR_PARTIAL'
+    assert result['attention']=='COMMISSIONING_TARGET_LIMIT_PENDING_WITHOUT_STOP'
+    assert len(s.broker.writes)==4

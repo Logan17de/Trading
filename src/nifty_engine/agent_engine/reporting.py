@@ -148,6 +148,8 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def resend(payload, key, report_id):
+    from .mail_window import require_open
+    require_open()
     request = Request("https://api.resend.com/emails", data=dumps(payload).encode(), headers={
         "Content-Type": "application/json", "Authorization": "Bearer " + key, "Idempotency-Key": report_id,
         "User-Agent": "GrowingTrader-Headless/1.0"})
@@ -197,6 +199,9 @@ def reconcile_receipt(store, report_id, now, *, fetch=receipt_status):
 
 
 def deliver_once(store, now, *, send=resend):
+    from .mail_window import status as mail_window
+    window=mail_window(now)
+    if window!='OPEN':return window
     key, sender, recipient = (os.getenv(name, "").strip() for name in ("RESEND_API_KEY", "TRADING_REPORT_FROM", "TRADING_REPORT_TO"))
     if not all((key, sender, recipient)):
         return "MAIL_NOT_CONFIGURED"
@@ -229,6 +234,12 @@ def deliver_once(store, now, *, send=resend):
             db.execute("UPDATE reports SET status='ACCEPTED',provider_id=?,token=NULL WHERE id=? AND token=?", (receipt, row["id"], token))
         return "ACCEPTED"  # Provider acceptance is not proof of inbox delivery.
     except Exception as exc:
+        from .mail_window import MailWindowClosed
+        if isinstance(exc,MailWindowClosed):
+            with store.transaction() as db:
+                db.execute("UPDATE reports SET status='QUEUED',token=NULL,attempts=?,first_attempt=?,next_attempt=? WHERE id=? AND token=?",
+                    (row['attempts'],row['first_attempt'],row['next_attempt'],row['id'],token))
+            return str(exc)
         with store.transaction() as db:
             db.execute("UPDATE reports SET status='QUEUED',error=?,token=NULL,next_attempt=? WHERE id=? AND token=?", (type(exc).__name__, now.timestamp() + min(3600, 60 * 2 ** row["attempts"]), row["id"], token))
         return "RETRY_PENDING"

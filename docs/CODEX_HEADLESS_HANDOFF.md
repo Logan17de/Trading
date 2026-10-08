@@ -1,5 +1,23 @@
 # Current Trading handoff
 
+## October 8 Trading email quiet hours — rollout pending
+
+Owner requested no Oracle email after market close. Reports, incident alerts
+and PC outage emails now share a 12:45 inclusive–19:00 exclusive JST send window
+on reviewed regular trading days; weekends, reviewed 2026 NSE F&O holidays and
+unreviewed calendar years stay quiet. This conservative notification schedule
+does not infer exchange halts or change trading hours. Monitoring continues.
+Final provider POST checks the actual clock again; quiet hours consume no
+attempts and do not change the trading journal's accounting or owner intent.
+Already provider-accepted emails may arrive later.
+
+Visual reports freeze after 19:29 on regular trading days and wait in the durable
+outbox for the next session, keeping the original report date. Recovered incidents
+are not emailed next morning; unresolved ones remain eligible. The prior 19:30
+send schedule is superseded. Existing approved mail identities are preserved.
+See FAILURE_ALERTS.md. Deployment and actual after-hours status verification
+are pending; synthetic tests have made no provider send or broker write.
+
 ## October 8 simpler owner test — implementation in progress
 
 Owner asked to replace the cumbersome multi-action test with a reviewed Buy click.

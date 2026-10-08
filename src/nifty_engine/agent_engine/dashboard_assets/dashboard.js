@@ -179,7 +179,7 @@ function renderControl() {
   $("monitor-status").textContent=data.demo?"Sample preview":on?(writesPermitted?'On · execution permitted':'On · trading blocked'):"Algo Off";
   $("engine-heading").textContent=data.runtime?.host==='ORACLE'?"Oracle engine":"Trading engine";
   $("vm-status").textContent=data.vm?`VM: ${data.vm.status} · independent PC monitor${data.vm.alert_status?` · alert ${data.vm.alert_status}`:''}`:"";
-  $("email-status").textContent=data.daily_email?`Daily visual email · 19:30 JST · ${data.daily_email.status} · inbox ${data.daily_email.inbox_verified?'verified':'not verified'}`:"Daily visual email · 19:30 JST";
+  $("email-status").textContent=data.daily_email?`Daily report · next session · mail 12:45–19:00 JST · ${data.daily_email.status} · inbox ${data.daily_email.inbox_verified?'verified':'not verified'}`:"Daily report · next session · mail 12:45–19:00 JST";
   $("everyday-rule").textContent="NIFTY call ₹20 · SENSEX call ₹80";
   $("slot-policy").textContent="1 algo basket · maximum 2 lots · margin required";
   $("monitor-schedule").textContent="14:00–19:00 JST · expiry strategy at 18:00";

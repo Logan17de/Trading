@@ -53,6 +53,13 @@ stop child can supply that proof. An unfilled cancelled test is **CANCELLED_FLAT
 Synthetic tests do not substitute for provider evidence. Live preparation and
 Algo Start remain separate owner actions after complete verification.
 
+After verified stop cancellation, the target LIMIT SELL can remain unfilled.
+The page then explicitly shows that the position remains open without its stop,
+and the watchdog records an incident while the job continues read-only checks.
+It does not resubmit or reprice the SELL. A terminal partial exit or unexpected
+inactive stop requires owner review. Trading email is held outside the regular
+12:45–19:00 JST window; the app and Groww remain the immediate status views.
+
 The job is a resource-capped transient systemd service pinned to the reviewed
 Oracle release. Each pass waits five seconds after its reads complete; network
 delays extend this cadence. Attempts and references persist before writes.

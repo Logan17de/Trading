@@ -26,7 +26,7 @@ def record_status(plan_id, result):
         row=db.execute('SELECT body FROM meta WHERE key=?',(AUTH,)).fetchone()
         value=json.loads(row[0]) if row else {}
         if value.get('plan_id')!=plan_id:raise setup.SetupError('EXACT_OWNER_TEST_AUTHORIZATION_REQUIRED')
-        value.update(checked_at=datetime.now(timezone.utc).isoformat(),status=result['status'],reason=result.get('reason'))
+        value.update(checked_at=datetime.now(timezone.utc).isoformat(),status=result['status'],reason=result.get('reason'),attention=result.get('attention'))
         if result.get('reason') or result['status'] in ('RECONCILIATION_REQUIRED','CHILD_TERMINAL_WITH_REMAINDER'):
             value['state']='ERROR'
         elif result['status'] in FINAL:value['state']='FINISHED'

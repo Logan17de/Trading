@@ -84,6 +84,7 @@ def faults(view, now, health='HEALTHY'):
     runtime = view.get('runtime', {})
     test=view.get('live_setup',{}).get('owner_test',{})
     if test.get('state')=='ERROR':add('OWNER_TEST_FAILED',{'stage':test.get('reason') or test.get('status')},True)
+    elif test.get('attention'):add('OWNER_TEST_FAILED',{'stage':test['attention']},True)
     elif test.get('state')=='RUNNING':
         try:stale=(now-stamp(test.get('checked_at'))).total_seconds()>240
         except (ValueError,TypeError):stale=True
@@ -182,6 +183,10 @@ class Monitor:
         self.save()
 
     def deliver(self, now, env, *, send=resend):
+        from .mail_window import status as mail_window
+        self.state['mail_window']=mail_window(now)
+        if self.state['mail_window']!='OPEN':
+            self.save();return
         # One frozen email per incident. A timeout retries the same envelope/key.
         rows = sorted(self.state['incidents'].values(), key=lambda r:(not r['immediate'], r['detected_at']))
         for row in rows:
@@ -193,6 +198,7 @@ class Monitor:
             row['next_attempt']=now.timestamp()+300
             if not all(env.get(k) for k in ('RESEND_API_KEY','TRADING_REPORT_FROM','TRADING_REPORT_TO')):
                 row['mail_status']='MAIL_CONFIGURATION_MISSING'; self.save(); return
+            previous_first=row.get('first_attempt')
             row.setdefault('envelope', envelope(row, env['TRADING_REPORT_FROM'], env['TRADING_REPORT_TO']))
             row.setdefault('first_attempt', now.timestamp())
             row['attempts']+=1; row['mail_status']='SENDING'; self.save()
@@ -202,6 +208,11 @@ class Monitor:
                     raise ValueError('INVALID_PROVIDER_RECEIPT')
                 row.update(mail_status='ACCEPTED',provider_id=provider_id,accepted_at=now.isoformat())
             except Exception as exc:
+                from .mail_window import MailWindowClosed
+                if isinstance(exc,MailWindowClosed):
+                    row.update(mail_status='RETRY' if row['attempts']>1 else 'PENDING',attempts=row['attempts']-1,next_attempt=0)
+                    if previous_first is None:row.pop('first_attempt',None)
+                    self.state['mail_window']=str(exc);self.save();return
                 row.update(mail_status='RETRY',send_error=diagnostics({'error_type':type(exc).__name__}))
             self.save(); return
 
@@ -224,7 +235,7 @@ class Monitor:
         fields=('id','code','component','message','details','state','detected_at','last_seen_at',
             'recovered_at','mail_status','attempts','accepted_at','provider_event','recipient_server_accepted','inbox_verified')
         return dict(format='trading-failure-monitor-v1',checked_at=self.state.get('checked_at'),
-            health=self.state.get('health'),broker_writes=False,
+            health=self.state.get('health'),mail_window=self.state.get('mail_window'),broker_writes=False,
             incidents=[{k:r[k] for k in fields if k in r} for r in self.state['incidents'].values()])
 
 

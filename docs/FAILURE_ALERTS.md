@@ -6,7 +6,27 @@ write is notification email through the existing approved Resend configuration.
 It cannot call Groww order endpoints, prepare live mode, change Algo intent,
 restart the executor, or modify a trading position.
 
-## What it reports
+## Email quiet hours
+
+The owner disabled after-market Trading email on October 8. All report, incident
+and PC outage sends/retries use **12:45 inclusive–19:00 exclusive JST**, weekdays
+excluding the reviewed 2026 NSE F&O holidays. This is a conservative notification
+window, not a real-time exchange-halt feed. Special evening/weekend sessions are
+not opted in; unreviewed calendar years stay quiet until reviewed. The calendar
+source is recorded in `mail_window.py`.
+
+Collection, incident/recovery recording and read-only provider receipt checks
+continue after hours. Pending unresolved incidents can send next session;
+recovered incidents do not. Quiet hours consume no delivery attempts. The final
+provider transport checks the clock again, including on retry. A message already
+accepted by the provider before close can still arrive later.
+
+The visual daily report is frozen after 19:29 JST on regular trading days and
+queued for the next eligible session, preserving its original date and contents.
+The previous 19:30 send schedule is retired. These changes do not alter trading
+state, owner intent, broker protection or unrelated shared mail services.
+
+## Reported failures
 
 - Unreachable/stuck observer and malformed heartbeat.
 - Collector exceptions, dated stale snapshots, unavailable funds/positions/orders.

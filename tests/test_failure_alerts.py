@@ -17,7 +17,7 @@ def view(now=NOW):
         positions_status='AVAILABLE',orders_status='AVAILABLE',
         control={'algo':{'desired_enabled':False}},execution_controller={'phase':'IDLE',
             'blockers':['OWNER_ALGO_OFF','REPOSITORY_PAUSED','LIVE_ENVIRONMENT_NOT_ACTIVATED']},
-        live_setup={'mode':'paper','paused':True},daily_email={'status':'SCHEDULED_BY_1930_JST'})
+        live_setup={'mode':'paper','paused':True},daily_email={'status':'WAIT_MARKET_SESSION'})
 
 
 def broken(now=NOW):
@@ -45,6 +45,13 @@ def test_owner_test_failures_are_visible_even_when_algo_off(state,age,expected):
         assert found['OWNER_TEST_FAILED']['details']['stage']==expected
     else:assert 'OWNER_TEST_FAILED' not in found
     assert 'SECRET' not in str(found)
+
+
+def test_pending_target_without_stop_reports_attention_while_still_monitored():
+    v=view();v['live_setup']['owner_test']=dict(state='RUNNING',checked_at=NOW.isoformat(),
+        attention='COMMISSIONING_TARGET_LIMIT_PENDING_WITHOUT_STOP')
+    found=faults(v,NOW)['OWNER_TEST_FAILED']
+    assert found['immediate'] and found['details']['stage']=='COMMISSIONING_TARGET_LIMIT_PENDING_WITHOUT_STOP'
 
 
 @pytest.mark.parametrize('field,code',[

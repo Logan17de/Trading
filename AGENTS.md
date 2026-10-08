@@ -132,8 +132,12 @@
   validation gates. Maintenance never creates activation proof. Generated-child
   reference linkage is synthetically tested, not verified against real fills;
   unknown create/cancel/modify/child states freeze further writes.
-- Visual daily email at 19:30 JST every calendar day, minimal words, existing
-  approved sender/recipient. Retry frozen content without changing trading state.
+- Owner October 8: Trading emails send only 12:45 inclusive–19:00 exclusive JST
+  on reviewed regular trading days. All sends and retries use mail_window.py;
+  unknown calendar years stay quiet. Monitoring continues outside this window.
+  Freeze the visual daily report after close and send at the next eligible
+  session, preserving its original date. Existing approved sender/recipient.
+  Retry frozen content without changing trading state. See FAILURE_ALERTS.md.
   Distinguish provider acceptance, recipient-server acceptance and inbox evidence.
 - At 12:00 JST weekdays use owner's Edge to check existing Codex API key. Approve
   only if Expired; verify Approved and retest reads. Never create/rotate keys,

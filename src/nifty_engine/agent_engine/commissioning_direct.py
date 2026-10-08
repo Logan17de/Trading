@@ -159,6 +159,15 @@ def advance(tool, plan):
     if result.get('reason') or result['status'] in FINAL:
         return result
     record = tool._load(plan['id']); child = record.get('child', {}).get('order', {})
+    remaining=record.get('last_observation',{}).get('quantity',0)
+    if remaining>0 and record.get('stop') and protection.settled(record):
+        if any(o['order_status'] not in TERMINAL for o in protection.exit_orders(record)):
+            return dict(result,attention='COMMISSIONING_TARGET_LIMIT_PENDING_WITHOUT_STOP')
+        if (protection.sold(record)>0 or record['closes']) and all(
+                o['order_status'] in TERMINAL for o in protection.exit_orders(record)):
+            fail('COMMISSIONING_EXIT_REMAINDER_REQUIRES_REVIEW')
+        if not auth.get('exit_requested'):
+            fail('COMMISSIONING_STOP_INACTIVE_WITH_OPEN_POSITION')
     if child.get('order_status') == 'EXECUTED' and child.get('filled_quantity') == plan['quantity'] and not record.get('stop') and not record['closes']:
         # Persist an attempt separately from the broker record. Restart/repeated
         # polling cannot resend even a gate-denied/unknown protection request.

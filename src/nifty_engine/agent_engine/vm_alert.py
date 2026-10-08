@@ -6,6 +6,11 @@ from .contracts import identity
 from .reporting import resend
 
 def main():
+    from datetime import datetime,timezone
+    from .mail_window import status
+    window=status(datetime.now(timezone.utc))
+    if window!='OPEN':
+        print(json.dumps({'status':window,'inbox_verified':False}));return
     raw=sys.stdin.read(16385)
     if len(raw)>16384:raise ValueError("bounded mail input required")
     v=json.loads(raw)

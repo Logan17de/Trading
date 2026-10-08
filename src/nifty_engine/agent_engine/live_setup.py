@@ -45,7 +45,7 @@ def public(store, gate):
     from .commissioning_direct import AUTH
     owner_test=store.meta(AUTH,{})
     return dict(format='trading-live-setup-v1',
-                owner_test={k:owner_test.get(k) for k in ('state','status','reason','checked_at','plan_hash')},
+                owner_test={k:owner_test.get(k) for k in ('state','status','reason','attention','checked_at','plan_hash')},
                 supports_direct_test=True,
                 mode=gate.mode, paused=gate.pause_file.exists() or gate.pause_file.is_symlink(),
                 provider_verified=evidence is not None,
