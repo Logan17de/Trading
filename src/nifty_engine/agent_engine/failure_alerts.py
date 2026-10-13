@@ -109,9 +109,9 @@ def faults(view, now, health='HEALTHY', *, auth_probe=None):
     reason=execution.get('reason','')
     if (view.get('live_setup',{}).get('mode')=='live'
             and isinstance(reason,str)
-            and ('ORDER_RESULT_UNKNOWN' in reason or 'ENTRY_RECONCILIATION_REQUIRED' in reason
-                 or 'EXIT_RECONCILIATION_REQUIRED' in reason
-                 or 'ORDER_SUBMISSION_FAILED' in reason)):
+            and any(marker in reason for marker in
+                    ('RECONCILIATION_REQUIRED','RESULT_UNKNOWN',
+                     '_REJECTED','_FAILED','TERMINAL_EMPTY'))):
         add('TRADE_SUBMISSION_FAILED', {'stage':reason}, True)
     if (view.get('live_setup',{}).get('mode')=='live'
             and execution.get('phase') in ('MONITORING','REPORT_MONITORING')
