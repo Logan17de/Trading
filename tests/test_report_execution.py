@@ -240,8 +240,8 @@ def test_local_switch_endpoint_requires_owner_token_and_rejects_order_payloads(t
 
 
 @pytest.mark.parametrize('regime,sid',[('BULLISH','bull_put'),('BEARISH','bear_call'),('RANGE','iron_condor')])
-def test_start_button_through_desktop_rpc_selects_only_enabled_replay_strategy(tmp_path,monkeypatch,regime,sid):
-    """Full control path, isolated simulated broker; no real activation receipt."""
+def test_start_button_refuses_uncommissioned_replay_strategy(tmp_path,monkeypatch,regime,sid):
+    """Even a valid simulated strategy must not authorize real broker entry."""
     import json,threading
     from types import SimpleNamespace
     from http.server import ThreadingHTTPServer
@@ -259,6 +259,10 @@ def test_start_button_through_desktop_rpc_selects_only_enabled_replay_strategy(t
         intent=policy.set_intent(s.journal.store,enabled,s.now)
         return dict(owner_intent=intent,broker_writes=False)
     runtime.state=SimpleNamespace(algo_set=save,pnl_lines=SimpleNamespace(store=s.journal.store))
+    runtime.gate=SimpleNamespace(account_fingerprint=None,
+        blockers=lambda *a,**kw:['LIVE_ENVIRONMENT_NOT_ACTIVATED','OWNER_ALGO_OFF'])
+    runtime.executor=None;runtime.error=None;runtime.execution_error=None
+    runtime.output=tmp_path/'missing-real-broker-snapshot.json'
     def read():
         enabled=policy.intent(s.journal.store)['enabled']
         blocked=s.gate.blockers(s.observation())
@@ -290,12 +294,13 @@ def test_start_button_through_desktop_rpc_selects_only_enabled_replay_strategy(t
         s.tick();assert not s.broker.writes
         for _ in range(2):
             result=post('/api/algo/start')
-            assert result['desired_enabled'] and result['owner_intent']['enabled']
+            assert result['status']=='START_REFUSED'
+            assert result['desired_enabled'] is False and result['owner_intent']['enabled'] is False
+            assert 'LIVE_ENVIRONMENT_NOT_ACTIVATED' in result['blockers']
             assert not result['broker_writes'] and not s.broker.writes
         reopened=PcJournal(tmp_path/'journal.sqlite3')
-        assert policy.intent(reopened.store)['enabled']
+        assert policy.intent(reopened.store)['enabled'] is False
         assert [i for i,v in controls.read(reopened.store)['enabled'].items() if v]==[sid]
-        s.monitoring();assert s.executor._state()['strategy']==sid
         before=len(s.broker.writes)
         result=post('/api/algo/stop');assert result['status']=='OFF'
         s.tick();assert len(s.broker.writes)==before
