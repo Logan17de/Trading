@@ -108,6 +108,7 @@ def run(*,install=False,confirm=None):
             checked_at=now.isoformat())
     if confirm!=CONFIRM:raise ValueError('EXACT_SAFETY_OWNER_CONFIRMATION_REQUIRED')
     # Never write an observer-owned SQLite WAL as root; relinquish privileges.
+    import pwd
     observer=pwd.getpwnam('trading-observer')
     os.setgroups([])
     os.setgid(observer.pw_gid)
