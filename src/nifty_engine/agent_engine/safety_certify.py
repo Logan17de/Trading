@@ -12,6 +12,8 @@ import argparse
 import json
 import os
 import re
+import subprocess
+import sys
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -107,6 +109,19 @@ def run(*,install=False,confirm=None):
             status='EVIDENCE_READY_FOR_EXPLICIT_OWNER_INSTALL',broker_writes=False,
             checked_at=now.isoformat())
     if confirm!=CONFIRM:raise ValueError('EXACT_SAFETY_OWNER_CONFIRMATION_REQUIRED')
+    # Re-run the reviewed synthetic failure/alert/start checks from this exact
+    # immutable release with no broker, Supabase or mail credentials.
+    release_root=Path(__file__).resolve().parents[3]
+    checked=subprocess.run([sys.executable,'-I','-m','pytest','-q',
+                            str(release_root/'tests/test_safety_alerts.py'),
+                            str(release_root/'tests/test_safety_heartbeat.py'),
+                            str(release_root/'tests/test_live_start.py')],
+                           cwd=release_root,stdin=subprocess.DEVNULL,
+                           capture_output=True,text=True,timeout=300,
+                           env={k:v for k,v in os.environ.items()
+                                if k in ('PATH','LANG','LC_ALL','HOME','TMPDIR')})
+    if checked.returncode:
+        raise ValueError('EXACT_RELEASE_SAFETY_TESTS_FAILED')
     # Never write an observer-owned SQLite WAL as root; relinquish privileges.
     import pwd
     observer=pwd.getpwnam('trading-observer')
