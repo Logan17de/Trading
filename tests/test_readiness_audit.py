@@ -226,3 +226,27 @@ def test_pc_audit_only_uses_fixed_read_command(tmp_path, capsys, monkeypatch):
     assert commands == [{"action": "read"}]
     assert by_id(result)["deployed_source_identity"]["status"] == "OBSERVED"
     assert result["authorizes_execution"] is False
+
+
+def test_pc_timeout_is_sanitized(tmp_path, capsys, monkeypatch):
+    import subprocess
+    from nifty_engine.agent_engine import oracle_link
+    state = tmp_path / ".agent-state"
+    state.mkdir()
+    config = {
+        "format": "trading-oracle-viewer-v1", "host": "example.invalid",
+        "user": "ubuntu", "identity_file": str(tmp_path / "existing-key"),
+        "python": "/opt/growing-trader/releases/" + SHA + "/venv/bin/python",
+        "root": "/var/lib/trading-observer",
+    }
+    (state / "oracle-viewer.json").write_text(json.dumps(config), encoding="utf-8")
+
+    def timed_out(config, command):
+        raise subprocess.TimeoutExpired("PRIVATE_PATH", 18)
+
+    monkeypatch.setattr(oracle_link, "request", timed_out)
+    monkeypatch.setattr("sys.argv", ["readiness_audit", "--root", str(tmp_path)])
+    assert readiness_audit.main() == 2
+    output = capsys.readouterr().out
+    assert "PRIVATE_PATH" not in output
+    assert json.loads(output)["error"] == "TimeoutExpired"
