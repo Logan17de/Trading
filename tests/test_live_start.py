@@ -21,7 +21,7 @@ def ready_alert_evidence(store, *, at=NOW, release=RELEASE):
     store.set_meta(live_start.KEY, {
         "format":live_start.KEY,"release":release,"owner_verified":True,
         "critical_transport_tested":True,"independent_cloud_outage_tested":True,
-        "api_checkpoint_tested":True,"provider_acceptance_at":at.isoformat(),
+        "api_checkpoint_code_tested":True,"provider_acceptance_at":at.isoformat(),
         "reviewed_at":at.isoformat(),
     })
 
