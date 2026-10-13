@@ -113,7 +113,14 @@ function render(){
  }}
 }
 function populate(spec){
- if(!spec)return;
+ if(!spec)return false;
+ if(spec.entry_mode!=='LIMIT' || !Number.isFinite(Date.parse(spec.valid_until)) || Date.parse(spec.valid_until)<=Date.now()){
+  // Historical GTTs and expired plans belong to Advanced setup, not the new
+  // three-button direct BUY form. Never silently rebind their target/SL values.
+  verified=null;
+  el('contract').textContent='Previous test is expired or a different entry type. Enter a new symbol and load the exact contract.';
+  return false;
+ }
  const x=spec.contract||{},data={
  index:x.index,symbol:x.symbol,expiry:x.expiry,qty:spec.quantity,tick:x.tick_size,
  'egress-ip':spec.egress_ip,'buy-price':spec.buy_limit_price,'sell-price':spec.sell_limit_price,
@@ -121,14 +128,15 @@ function populate(spec){
  for(const [k,v] of Object.entries(data))if(v!=null&&el(k))el(k).value=v;
  // A persisted draft is not fresh live instrument master confirmation.
  verified=null;
- el('contract').textContent='Saved plan loaded. Press Load exact contract to verify it before another BUY.';
+ el('contract').textContent='Saved direct test loaded. Press Load exact contract to verify it before another BUY.';
+ return true;
 }
 async function initial(){
  try{
   const r=await fetch('/api/live-setup',{cache:'no-store'});
   if(!r.ok)throw Error('Cannot load saved test');
-  saved=await r.json();populate(saved.plan_spec||saved.draft_spec);
-  message(saved.plan_spec?'Saved broker test loaded. Refresh broker status before further action.':'Ready. Enter the trading symbol and load the exact contract.');
+  saved=await r.json();const restored=populate(saved.plan_spec||saved.draft_spec);
+  message(saved.plan_spec && !restored ? 'A prior GTT or expired plan exists in Advanced setup. It was not copied into this new manual order. Enter a new symbol and load its contract.' : restored ? 'Saved direct test loaded. Check the original broker status before further action.' : 'Ready. Enter the trading symbol and load the exact contract.');
  }catch{message('Local setup status unavailable. No order can be submitted.','error');}
  render();
  refreshRuntime();

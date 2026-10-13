@@ -81,6 +81,64 @@ def test_new_release_can_archive_only_a_reconciled_cancelled_test(app):
     assert store.meta(KEY+'-archive-'+old['plan_id'])['pending_action']=='submit'
 
 
+@pytest.mark.parametrize('unsafe', [
+    'authorized', 'attempted', 'pending', 'uncertain', 'submitted_status',
+])
+def test_obsolete_missing_preview_local_retire_never_erases_order_evidence(app,unsafe):
+    ctl,store,calls,cfg=app
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET',broker_writes=False)
+    assert ctl.command({'action':'preview','spec':spec()})['status']=='OWNER_SETUP_BLOCKED'
+    saved=store.meta(KEY)
+    if unsafe=='authorized':saved['plan_hash']=HASH
+    elif unsafe=='attempted':saved['attempted_writes']=['submit']
+    elif unsafe=='pending':saved['pending_action']='submit'
+    elif unsafe=='uncertain':saved['uncertain']=True
+    elif unsafe=='submitted_status':saved['result']['status']='BUY_ACCEPTED'
+    store.set_meta(KEY,saved)
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='PREVIEW_PLAN_FIRST')
+    result=ctl.command({'action':'retire'})
+    assert result['status']=='OWNER_SETUP_BLOCKED'
+    assert result['reason']=='PREVIEW_PLAN_FIRST'
+    assert store.meta(KEY)==saved
+    assert store.meta(KEY+'-archive-'+saved['plan_id']) is None
+
+
+def test_obsolete_rejected_preview_archived_only_after_oracle_confirms_missing(app):
+    ctl,store,calls,cfg=app
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET',broker_writes=False)
+    assert ctl.command({'action':'preview','spec':spec()})['status']=='OWNER_SETUP_BLOCKED'
+    old=store.meta(KEY)
+    assert old['attempted_writes']==[] and old.get('plan_hash') is None
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='PREVIEW_PLAN_FIRST')
+    result=ctl.command({'action':'retire'})
+    assert result['status']=='PRIOR_TEST_RETIRED'
+    assert result['reason']=='ORPHANED_UNSUBMITTED_PREVIEW'
+    assert result['broker_writes'] is False
+    assert result['allowed_actions']==['status','preview']
+    assert store.meta(KEY)=={}
+    archive=store.meta(KEY+'-archive-'+old['plan_id'])
+    assert archive['spec']==old['spec']
+    assert archive['retirement']['remote_reason']=='PREVIEW_PLAN_FIRST'
+    assert archive['retirement']['broker_writes'] is False
+
+
+def test_orphaned_preview_refusal_if_remote_broker_write_possible(app):
+    ctl,store,calls,cfg=app
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='COMMISSIONING_CURRENT_MASTER_MISMATCH')
+    ctl.command({'action':'preview','spec':spec()})
+    original=store.meta(KEY)
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='PREVIEW_PLAN_FIRST',broker_writes=True)
+    result=ctl.command({'action':'retire'})
+    assert result['status']=='OWNER_SETUP_BLOCKED'
+    assert store.meta(KEY)==original
+
+
 def test_fixed_preview_stdin_returns_only_owner_spec_and_hash(app):
     ctl,store,calls,cfg=app
     result=preview(app)

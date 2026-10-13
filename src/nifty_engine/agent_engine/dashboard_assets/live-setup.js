@@ -30,6 +30,7 @@ const money = value => value != null && Number.isFinite(Number(value)) ? new Int
 const words = value => String(value || '').replaceAll('_',' ').toLowerCase().replace(/^./,s=>s.toUpperCase());
 const reasons = {
   TURN_ALGO_OFF_BEFORE_SETUP:'Oracle requires global Algo Off for real trade preview. Turn Algo Off in Options Trader, then retry. Contract lookup remains read-only.',
+  PREVIEW_PLAN_FIRST:'That earlier preview is no longer present on Oracle. Check the original broker status; a new preview does not place an order.',
   COMMISSIONING_PRICE_NOT_ON_TICK:'Each price must be a multiple of the contract’s tick size.',
   COMMISSIONING_BUY_LIMIT_BELOW_TRIGGER:'BUY limit must be at least the BUY trigger.',
   COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG:'The test window expired, the contract already expired, or an expiry-day LIMIT test is outside the early-session safety cutoff (BUY by 13:00 IST, review before 12:30 IST). GTT BUY requires a later expiry.',
@@ -50,6 +51,26 @@ function previewFeedback(message, kind='info', focus=false) {
   const notice=$('#preview-feedback');notice.textContent=message;notice.dataset.kind=kind;notice.hidden=false;
   if(focus){notice.focus({preventScroll:true});notice.scrollIntoView({block:'nearest'});}
 }
+function sameSavedPlanAsForm(spec) {
+  if(!spec || !spec.contract)return false;
+  const value=name=>String($('[name="'+name+'"]')?.value ?? '').trim();
+  const number=name=>Number(value(name));
+  const c=spec.contract;
+  return c.index===value('index') && c.symbol===value('symbol') &&
+    c.expiry===value('expiry') && c.lot_size===number('lot_size') &&
+    Number(c.tick_size)===number('tick_size') &&
+    (spec.entry_mode||'GTT')===value('entry_mode') &&
+    Number(spec.buy_limit_price)===number('buy_limit_price') &&
+    Number(spec.sell_limit_price)===number('sell_limit_price') &&
+    Number(spec.stop_trigger_price)===number('stop_trigger_price') &&
+    Number(spec.stop_limit_price)===number('stop_limit_price') &&
+    (!spec.egress_ip || spec.egress_ip===value('egress_ip')) &&
+    (spec.entry_mode==='LIMIT' || Number(spec.trigger_price)===number('trigger_price'));
+}
+function savedPlanIsOutdated(spec){
+  return !!spec && (!sameSavedPlanAsForm(spec) ||
+    (Number.isFinite(Date.parse(spec.valid_until)) && Date.parse(spec.valid_until)<=Date.now()));
+}
 function render() {
   const allowed = new Set(current.allowed_actions || []);
   $('#setup-state').textContent = words(current.status || 'SETUP_STATUS_UNKNOWN');
@@ -67,12 +88,21 @@ function render() {
   for (const button of document.querySelectorAll('[data-write]')) {
     const action = button.dataset.write;
     button.hidden = !allowed.has(action); writes ||= !button.hidden;
-    button.disabled = busy || savedOnly || (action!=='buy-protect' && !$('#confirm-action').checked) || !(action==='arm' ? current.evidence_digest : current.plan_hash);
+    button.disabled = busy || savedOnly || (action!=='buy-protect' && !$('#confirm-action').checked) || !(action==='arm' ? current.evidence_digest : current.plan_hash) ||
+      (['buy-protect','submit'].includes(action) && savedPlanIsOutdated(current.plan_spec));
   }
   $('#write-actions').hidden = !writes;
   $('#confirm-row').hidden = allowed.has('buy-protect');
   $('#confirm-label').textContent = allowed.has('arm') ? 'I reviewed the verified test. Prepare real trading with Algo Off; I will start it separately.' : 'I reviewed the exact contract, quantity and prices above. The selected action sends a real broker request.';
   const spec = current.plan_spec;
+  const outdated=savedPlanIsOutdated(spec);
+  $('#saved-plan-notice').hidden=!outdated;
+  $('#saved-plan-label').hidden=!spec;
+  if(outdated){
+    const expired=Number.isFinite(Date.parse(spec.valid_until)) && Date.parse(spec.valid_until)<=Date.now();
+    $('#saved-plan-notice').textContent=(expired?'Expired saved test. ':'Earlier saved test. ')+
+      'These prices and broker-evidence entries are from an earlier test, NOT the prices entered on the left. No old order is resubmitted. Use the simple BUY / SET SL / SELL screen for a new test.';
+  }
   $('#review-plan').replaceChildren(); $('#review-plan').hidden = !spec; $('#test-effect').hidden = !spec;
   if (spec) {
     const rows = [['Contract',spec.contract.symbol,'wide'],['Quantity',`${spec.quantity} · one lot`],['Expiry',spec.contract.expiry],...(spec.entry_mode==='LIMIT'?[]:[['BUY trigger',money(spec.trigger_price)]]),['BUY limit',money(spec.buy_limit_price)],['Target / SELL limit',money(spec.sell_limit_price)],['Stop-loss trigger',money(spec.stop_trigger_price)],['Stop-loss limit',money(spec.stop_limit_price)],['Maximum purchase debit before charges',money(spec.quantity*spec.buy_limit_price)],['Submit BUY before',new Date(spec.valid_until).toLocaleString(),'wide']];
@@ -221,6 +251,7 @@ function contractFieldChanged(event){
   // Public master lookup has no verified egress IPv4. Allow the owner to enter
   // it afterward; Oracle independently validates it during real preview.
   document.querySelector('#preview-feedback').hidden=true;
+  render(); // Keep the saved-old-plan warning synchronized with form edits.
 }
 document.querySelector('#plan-form').addEventListener('input',contractFieldChanged);
 document.querySelector('#plan-form').addEventListener('change',contractFieldChanged);

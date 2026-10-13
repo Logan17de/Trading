@@ -187,6 +187,27 @@ vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),c);
  await vm.runInContext('readRuntime()',c);
  assert.match(get('#setup-state').textContent,/Owner test failed/);
  assert.match(get('#setup-reason').textContent,/could not confirm/);
+ // Reproduce a historical October 8 GTT saved plan beside a new ₹1.70 limit form.
+ const oldPlan={contract:{symbol:'NIFTY26O1321850PE',index:'NIFTY',
+   expiry:'2026-10-13',lot_size:65,tick_size:.05},quantity:65,
+   buy_limit_price:'30.5',sell_limit_price:'33',stop_trigger_price:'27',
+   stop_limit_price:'27',trigger_price:'30',egress_ip:'193.123.166.128',
+   valid_until:'2026-10-08T08:32:19.294Z'};
+ c.oldPlan=oldPlan;now=Date.parse('2026-10-13T07:00:00Z');
+ vm.runInContext('current={plan_spec:oldPlan,plan_hash:"c".repeat(64),status:"OWNER_SETUP_BLOCKED",reason:"COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET",allowed_actions:["preview","buy-protect","status"]};savedOnly=false;restoreForm(oldPlan);render()',c);
+ assert.match(get('#saved-plan-notice').textContent,/Expired saved test/);
+ assert.equal(get('#saved-plan-notice').hidden,false);
+ assert.equal(get('[name="buy_limit_price"]').value,'30.5');
+ get('[name="buy_limit_price"]').value='1.7';
+ get('[name="sell_limit_price"]').value='1.9';
+ get('[name="stop_trigger_price"]').value='1.5';
+ get('[name="stop_limit_price"]').value='1.5';
+ get('[name="entry_mode"]').value='LIMIT';
+ get('#plan-form').events.input({target:{name:'buy_limit_price',matches:()=>false}});
+ assert.match(get('#saved-plan-notice').textContent,/NOT the prices entered on the left/);
+ assert.equal(writes[4].disabled,true);
+ assert.equal(get('#review-plan').hidden,false); // Old broker evidence remains visible with warning.
+ assert.equal(calls.length,3); // Editing and render never submit to Groww.
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
     result=subprocess.run([node,'-e',script,str(source)],capture_output=True,text=True,timeout=10)

@@ -303,6 +303,42 @@ class OwnerSetupController:
                     return self._view(saved,status='OWNER_SETUP_BINDING_CHANGED',reason='REVIEW_EXISTING_PLAN_ON_ORACLE')
             if action == 'retire' and saved:
                 remote = self._remote(cfg, 'retire', saved)
+                # Older Oracle releases refuse a retire request for a preview
+                # that never reached their plan store. Archive its LOCAL stub
+                # only when all durable PC facts prove no broker write was ever
+                # authorized or attempted, AND the exact Oracle plan is missing.
+                preview_only = (
+                    remote.get('status') == 'OWNER_SETUP_BLOCKED'
+                    and remote.get('reason') == 'PREVIEW_PLAN_FIRST'
+                    and saved.get('result',{}).get('status') == 'OWNER_SETUP_BLOCKED'
+                    and saved.get('result',{}).get('reason') in (
+                        'COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET',
+                        'COMMISSIONING_CURRENT_MASTER_MISMATCH',
+                        'COMMISSIONING_RECENT_OPTION_QUOTE_REQUIRED',
+                        'COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG',
+                        'PREVIEW_PLAN_FIRST',
+                    )
+                    and not saved.get('plan_hash')
+                    and not saved.get('evidence_digest')
+                    and not saved.get('attempted_writes')
+                    and not saved.get('writes_since_capture')
+                    and not saved.get('pending_action')
+                    and not saved.get('uncertain')
+                    and not remote.get('broker_write_attempted')
+                    and not remote.get('broker_writes')
+                )
+                if preview_only:
+                    from datetime import datetime, timezone
+                    retirement={'status':'PRIOR_TEST_RETIRED','reason':'ORPHANED_UNSUBMITTED_PREVIEW',
+                                'broker_writes':False,'preview_only':True,
+                                'checked_at':self.clock().isoformat(),
+                                'remote_status':remote['status'],'remote_reason':remote['reason']}
+                    self.store.set_meta(KEY+'-archive-'+saved['plan_id'],
+                                        dict(saved,retirement=retirement))
+                    self._save({})
+                    return self._view({},status='PRIOR_TEST_RETIRED',
+                                      reason='ORPHANED_UNSUBMITTED_PREVIEW',
+                                      broker_writes=False)
                 if remote['status'] == 'PRIOR_TEST_RETIRED':
                     self.store.set_meta(KEY + '-archive-' + saved['plan_id'], dict(saved, retirement=remote))
                     self._save({})

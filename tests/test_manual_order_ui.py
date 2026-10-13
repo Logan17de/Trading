@@ -107,6 +107,13 @@ vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),ctx);
  assert.equal(calls.filter(x=>x.action==='manual-buy').length,1);
  assert.equal(calls.filter(x=>x.action==='close').length,1);
  assert(prompts.length>=4);
+ // Expired legacy GTT must not silently populate a new direct BUY form.
+ get('symbol').value='';get('buy-price').value='';get('sell-price').value='';
+ vm.runInContext('populate({contract:{symbol:"NIFTY26O1321850PE",index:"NIFTY",expiry:"2026-10-13",lot_size:65,tick_size:.05},quantity:65,buy_limit_price:30.5,sell_limit_price:33,stop_trigger_price:27,stop_limit_price:27,valid_until:"2026-10-08T08:32:19.294Z"})',ctx);
+ assert.equal(get('symbol').value,'');
+ assert.equal(get('buy-price').value,'');
+ assert.match(get('contract').textContent,/Previous test is expired or a different entry type/);
+ assert.equal(calls.filter(x=>x.action==='manual-buy').length,1);
 })().catch(error=>{console.error(error);process.exitCode=1;});
 """
     result=subprocess.run([node,'-e',script,str(source)],capture_output=True,text=True,timeout=15)
