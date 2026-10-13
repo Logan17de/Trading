@@ -162,14 +162,22 @@ def main():
     parser.add_argument("--expected-release", help="Expected 40-character lowercase release SHA")
     args = parser.parse_args()
     try:
+        expected_release = args.expected_release
         if args.snapshot:
             view = _read_file(args.snapshot)
         else:
             from .oracle_link import request, settings
             config = settings(_read_file(args.root / ".agent-state" / "oracle-viewer.json"))
+            # The pinned client release and the running Oracle release must agree.
+            # The client path alone cannot certify the currently running process.
+            if expected_release is None:
+                pinned = re.fullmatch(
+                    r"/opt/growing-trader/releases/([a-f0-9]{40})/venv/bin/python",
+                    config["python"])
+                expected_release = pinned.group(1) if pinned else None
             view = request(config, {"action": "read"})
         monitor = _read_file(args.monitor) if args.monitor else None
-        result = assess(view, monitor=monitor, expected_release=args.expected_release)
+        result = assess(view, monitor=monitor, expected_release=expected_release)
         print(json.dumps(result, sort_keys=True))
     except (OSError, ValueError, TypeError, KeyError, ConnectionError) as exc:
         # Never print exception bodies: SSH/provider exceptions may contain identities.
