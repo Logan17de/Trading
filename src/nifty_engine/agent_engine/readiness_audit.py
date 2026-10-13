@@ -129,7 +129,10 @@ def assess(view, *, now=None, monitor=None, expected_release=None):
         else "CURRENT_ARCHIVE_RECEIPTS_NOT_VERIFIED")
 
     monitor = _obj(monitor)
-    monitor_ok = monitor.get("format") == "trading-incident-watch-v1" and monitor.get("broker_writes") is False and monitor.get("monitor_status") == "CURRENT"
+    monitor_ok = (monitor.get("format") == "trading-incident-watch-v1"
+                  and monitor.get("broker_writes") is False
+                  and monitor.get("monitor_status") == "CURRENT"
+                  and _current(_obj(monitor.get("oracle")).get("checked_at"), now, 180))
     add("oracle_failure_watchdog", "OBSERVED" if monitor_ok else "UNKNOWN",
         "CURRENT_MONITOR_STATUS_REPORTED" if monitor_ok else "CURRENT_MONITOR_STATUS_NOT_SUPPLIED")
     add("independent_full_vm_outage_alert", "UNKNOWN",
