@@ -271,6 +271,13 @@ class RemoteViewer:
         if type(enabled) is not bool:raise ValueError("explicit owner boolean required")
         result=request(self.config,{"action":"intent","enabled":enabled})
         intent=result.get('owner_intent') if isinstance(result,dict) else None
+        if (enabled and isinstance(result,dict) and result.get('status')=='START_REFUSED'
+                and result.get('broker_writes') is False
+                and result.get('execution_enabled') is False
+                and result.get('desired_enabled') is False
+                and isinstance(result.get('owner_intent'),dict)
+                and result['owner_intent'].get('enabled') is False):
+            return result
         if (not isinstance(result,dict) or result.get('desired_enabled') is not enabled
                 or not isinstance(intent,dict) or intent.get('enabled') is not enabled
                 or result.get('status') not in (('ON_BLOCKED','ON_READY') if enabled else ('OFF',))):
