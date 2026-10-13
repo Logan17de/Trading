@@ -395,7 +395,24 @@ class Runtime:
                     at=now.isoformat(),error_type=type(exc).__name__))
                 except Exception:pass
 
+    def safety_heartbeat_loop(self):
+        """Independent cloud liveness signal; never touches broker permissions."""
+        from .safety_heartbeat import publish
+        while not self.stop.is_set():
+            now=datetime.now(timezone.utc)
+            try:
+                result=publish(self.read(),now)
+            except Exception:
+                result='UPLOAD_UNAVAILABLE'
+            try:
+                self.state.pnl_lines.store.set_meta('safety-heartbeat-status',
+                    {'status':result,'checked_at':now.isoformat(),'broker_writes':False})
+            except Exception:
+                pass
+            self.stop.wait(30)
+
     def run(self):
+        threading.Thread(target=self.safety_heartbeat_loop,daemon=True).start()
         self.research_archive.start()
         threading.Thread(target=self.report_loop,daemon=True).start()
         threading.Thread(target=self.backup_loop,daemon=True).start()
