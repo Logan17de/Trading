@@ -32,6 +32,26 @@ def load(root):
     return cfg
 
 
+def confirmed_trend(cfg, index, bundle, now):
+    """Directional prefilter before any strategy option-margin request.
+
+    Unknown/old market features never authorize searching a bullish or
+    bearish basket. Entry window and margin/position gates run separately.
+    """
+    if index not in cfg['indices']: return 'UNKNOWN'
+    try:
+        spot=research._feature(bundle,'spot','index_points',now)
+        ma20=research._feature(bundle,'ma20','index_points',now,daily=True,sessions=20)
+        ma50=research._feature(bundle,'ma50','index_points',now,daily=True,sessions=50)
+        adx=research._feature(bundle,'adx14','index_score',now,daily=True,sessions=28)
+        if not 0<=adx<=100 or adx<cfg['trend_adx_min']:return 'UNKNOWN'
+        if spot>ma20>ma50:return 'BULLISH'
+        if spot<ma20<ma50:return 'BEARISH'
+    except (KeyError,ValueError,TypeError):
+        pass
+    return 'UNKNOWN'
+
+
 def evaluate(cfg, index, bundle, now, *, occupied=False):
     result = dict(id=ID, index=index, at=now.isoformat(), config_sha256=identity(cfg),
         status='WAIT', reasons=[], candidate=None, execution_enabled=False,
@@ -115,16 +135,21 @@ def evaluate(cfg, index, bundle, now, *, occupied=False):
                 prepared_at=now.isoformat(),normal_policy_sha256=identity(cfg),
                 execution_enabled=False,broker_writes=False))
     if candidates:
+        # Owner preference: highest *net* quoted max expiry profit that has
+        # already passed explicit Groww margin, cash and maximum-loss gates.
+        # Margin efficiency breaks ties; this is not an expected-return claim.
         result.update(status='CANDIDATE',candidate=max(candidates,key=lambda c:(
-            c['net_max_expiry_profit_inr']/c['worst_case_loss_inr'],-c['basket_requirement_inr'],c['key'])))
+            c['net_max_expiry_profit_inr'],-c['basket_requirement_inr'],
+            -c['worst_case_loss_inr'],c['key'])))
     else:result.update(status='NO_TRADE',reasons=['POSITIVE_THETA_LIQUID_HEDGED_BASKET_WITHIN_RISK_REQUIRED'])
     return result
 
 
 def update(store,cfg,now,*,persist=True):
     occupied=bool(store.read("SELECT 1 FROM pc_orders WHERE state<>'CLOSED' LIMIT 1"))
-    value=dict(at=now.isoformat(),policy=cfg,indices={i:evaluate(cfg,i,
-        store.meta('normal-theta-evidence-'+i,{}),now,occupied=occupied) for i in cfg['indices']},
-        execution_enabled=False,broker_writes=False)
+    value=dict(at=now.isoformat(),policy=cfg,indices={i:dict(
+        evaluate(cfg,i,store.meta('normal-theta-evidence-'+i,{}),now,occupied=occupied),
+        basket_scan=store.meta('normal-theta-contracts-'+i,{}).get('scan',{})
+    ) for i in cfg['indices']},execution_enabled=False,broker_writes=False)
     if persist: store.set_meta(KEY,value)
     return value

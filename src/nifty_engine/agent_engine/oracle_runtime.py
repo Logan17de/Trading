@@ -183,6 +183,23 @@ class Runtime:
                 from .strategy_controls import set_switch
             return set_switch(self.state.pnl_lines.store,value['switch'],datetime.now(timezone.utc))
         if isinstance(value,dict) and set(value)=={"action","enabled"} and value["action"]=="intent" and type(value["enabled"]) is bool:
+            # The sole executable strategy in this release is Normal theta.
+            # Algo Start is the owner's explicit instruction to select it.
+            # Without this, an On acknowledgment can silently leave the only
+            # executor switched Off, even when the owner expects a live check.
+            # Selecting a route NEVER changes execution mode, pause, activation,
+            # margin/contract evidence or bypasses any broker-write gate.
+            if value["enabled"] and getattr(self,"normal_catalog",None):
+                from .strategy_groups import read as read_groups, set_switch
+                group = read_groups(self.state.pnl_lines.store)
+                if not group['enabled']['normal_theta']:
+                    selection = set_switch(self.state.pnl_lines.store,dict(
+                        id='normal_theta',enabled=True,revision=group['revision']),
+                        datetime.now(timezone.utc))
+                    if selection['status'] not in ('SAVED','UNCHANGED'):
+                        return dict(status='STRATEGY_SELECTION_CONFLICT',
+                                    reason='RECHECK_STRATEGY_SELECTION',
+                                    broker_writes=False,execution_enabled=False)
             result=self.state.algo_set(value["enabled"])
             current=self.read().get('control',{}).get('algo')
             if current: result.update(current)

@@ -37,7 +37,8 @@ class NormalExecution(ReportExecution):
             else:reasons.extend(value['reasons'])
         if state is None and self.e.journal.slot_status()['new_entry_blocked']:
             candidates=[];reasons.append('SINGLE_BASKET_OCCUPIED')
-        selected=max(candidates,key=lambda c:c['net_max_expiry_profit_inr']/c['worst_case_loss_inr']) if candidates else None
+        selected=max(candidates,key=lambda c:(c['net_max_expiry_profit_inr'],
+            -c['basket_requirement_inr'],-c['worst_case_loss_inr'],c['key'])) if candidates else None
         return dict(status='PREPARED' if selected else 'WAIT',selected=selected,
             reasons=list(dict.fromkeys(reasons)),broker_writes=False,
             reason='NORMAL_THETA_BASKET_PREPARED' if selected else 'NORMAL_THETA_INPUTS_REQUIRED')

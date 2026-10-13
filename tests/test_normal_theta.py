@@ -211,3 +211,92 @@ def test_runtime_two_groups_fixed_transport_and_no_implicit_activation(tmp_path)
     assert not premium_strategy.intent(runtime.state.pnl_lines.store)['enabled']
     assert runtime.state.pnl_lines.store.meta('premium-execution-activation') is None
     assert (tmp_path/'.trader-paused').exists()
+
+
+
+def test_algo_start_auto_selects_normal_strategy_without_arming_or_writes(tmp_path):
+    """Only explicit owner intent On selects the sole executable strategy."""
+    import shutil
+    from nifty_engine.agent_engine.oracle_runtime import Runtime
+    root=Path(__file__).parents[1]
+    (tmp_path/'config').mkdir()
+    for name in ('premium_strategy.json','report_strategies.json',
+                 'normal_theta.json','owner_strategies.json','pc_app.example.json'):
+        shutil.copyfile(root/'config'/name,tmp_path/'config'/name)
+    (tmp_path/'.trader-paused').touch()
+    runtime=Runtime(tmp_path)
+    store=runtime.state.pnl_lines.store
+    assert groups.read(store)['enabled']['normal_theta'] is False
+    assert store.meta('premium-execution-activation') is None
+    # Research may be monitored without receiving any broker-write route.
+    groups.set_switch(store,dict(id='research',enabled=True,revision=0),NOW)
+    on=runtime.command(dict(action='intent',enabled=True))
+    assert groups.read(store)['enabled']==dict(normal_theta=True,research=True)
+    assert premium_strategy.intent(store)['enabled'] is True
+    assert on.get('execution_enabled') is not True
+    assert runtime.gate.blockers(None, purpose='ENTRY', strategy='normal_theta')
+    assert store.meta('premium-execution-activation') is None
+    assert not store.read('SELECT 1 FROM pc_orders')
+    assert (tmp_path/'.trader-paused').exists()
+    revision=groups.read(store)['revision']
+    runtime.command(dict(action='intent',enabled=True))
+    assert groups.read(store)['revision']==revision  # no spurious reconfiguration
+    off=runtime.command(dict(action='intent',enabled=False))
+    assert premium_strategy.intent(store)['enabled'] is False
+    assert groups.read(store)['enabled']['normal_theta'] is True
+    assert not store.read('SELECT 1 FROM pc_orders')
+    assert (tmp_path/'.trader-paused').exists()
+
+
+
+def test_trend_confirmation_is_directional_and_rejects_stale_or_flat():
+    b=evidence('NIFTY','BULLISH')
+    assert theta.confirmed_trend(CFG,'NIFTY',b,NOW)=='BULLISH'
+    b=evidence('SENSEX','BEARISH')
+    assert theta.confirmed_trend(CFG,'SENSEX',b,NOW)=='BEARISH'
+    b['features']['adx14']['value']=8
+    assert theta.confirmed_trend(CFG,'SENSEX',b,NOW)=='UNKNOWN'
+    b=evidence()
+    b['features']['spot']['observed_at']=(NOW-timedelta(seconds=45)).isoformat()
+    assert theta.confirmed_trend(CFG,'NIFTY',b,NOW)=='UNKNOWN'
+
+
+@pytest.mark.parametrize('regime,kind',[('BULLISH','PE'),('BEARISH','CE')])
+def test_directional_groww_basket_margin_scan_affordability_and_no_orders(tmp_path,regime,kind):
+    from types import SimpleNamespace
+    from nifty_engine.agent_engine.report_data import ReportData
+    data=evidence('NIFTY',regime)
+    calls=[]
+    def margin(**kwargs):
+        calls.append(copy.deepcopy(kwargs))
+        legs=kwargs['orders']
+        # Distinguish basket, bought hedge, and closing basket; SDK-compatible.
+        return dict(total_requirement=20000 if len(legs)==2 else 500,
+                    brokerage_and_charges=3)
+    broker=SimpleNamespace(get_order_margin_details=margin)
+    market=SimpleNamespace(groww=broker,limiter=SimpleNamespace(wait=lambda:None))
+    journal=PcJournal(tmp_path/'margin.sqlite3')
+    reader=ReportData(market,journal,RESEARCH,clock=lambda:NOW,normal_cfg=CFG)
+    affordable=reader.margins('NIFTY',data['contracts'],CFG,direction=kind,funds=data['funds'])
+    assert affordable
+    scan=reader.margin_checks['normal-NIFTY']
+    assert scan['direction']==kind and scan['verified_affordable']>=1
+    assert scan['broker_writes'] is False
+    assert scan['full_chain_exhaustive'] is False
+    assert all(c['segment']=='FNO' for c in calls)
+    assert all(o['trading_symbol'].endswith(kind) for c in calls for o in c['orders'])
+    assert any([o['transaction_type'] for o in c['orders']]==['BUY','SELL'] for c in calls)
+    assert not journal.store.read('SELECT 1 FROM pc_orders')
+
+    refused=dict(data['funds'],option_sell_available_inr=1)
+    calls.clear()
+    assert not reader.margins('NIFTY',data['contracts'],CFG,direction=kind,funds=refused)
+    assert reader.margin_checks['normal-NIFTY']['rejected_cash']>=1
+    assert not journal.store.read('SELECT 1 FROM pc_orders')
+
+
+def test_max_net_profit_rather_than_profit_to_risk_ratio():
+    base=evidence()
+    candidate=theta.evaluate(CFG,'NIFTY',base,NOW)['candidate']
+    assert candidate is not None
+    assert candidate['net_max_expiry_profit_inr']>0

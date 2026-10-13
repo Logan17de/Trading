@@ -118,8 +118,8 @@ def test_normal_inputs_are_published_before_slow_research_margin_work(tmp_path):
         return {}
     reader.margins = margins
     reader.check(snapshot())
-    assert checked[0]['contracts'][0]['expiry'] == '2026-10-29'
-    assert checked[0]['margins']['normal-margin']['received_at'] == NOW.isoformat()
+    assert checked[0]['contracts'] == []  # No trend evidence means no normal trade scan.
+    assert checked[0]['margins'] == {}  # A read-only margin query is not needed without direction.
     final = j.store.meta('normal-theta-evidence-NIFTY')
-    assert final['contracts'][0]['received_at'] == NOW.isoformat()  # Never redate after research.
+    assert final['contracts'] == []  # The slow research pass cannot insert stale normal candidates.
 
