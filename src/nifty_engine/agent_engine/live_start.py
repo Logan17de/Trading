@@ -57,11 +57,9 @@ def preflight(runtime, observation, now):
     """
     store=runtime.state.pnl_lines.store
     from . import premium_strategy as policy
-    current=policy.intent(store)
-    # Never unset an existing owner preference as a side effect of a read.
-    if current["enabled"]:
-        return []
-
+    # Existing On intent is not evidence that today's broker and alert state
+    # remains safe. Always re-evaluate without changing that intent.
+    policy.intent(store)
     reasons=[]
     if runtime.executor is None or runtime.error or runtime.execution_error:
         reasons.append("ORACLE_EXECUTOR_CONNECTION_REQUIRED")
