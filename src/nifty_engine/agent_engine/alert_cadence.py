@@ -47,7 +47,10 @@ def position_risk(view, now):
         for market in markets:
             if not isinstance(market, dict):
                 continue
-            for option in market.get("options", []):
+            options=market.get("options", [])
+            if not isinstance(options,list):
+                continue
+            for option in options:
                 if isinstance(option, dict):
                     q = option.get("quantity")
                     if type(q) in (int, float) and q != 0:
