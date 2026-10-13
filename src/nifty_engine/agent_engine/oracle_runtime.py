@@ -397,11 +397,19 @@ class Runtime:
 
     def safety_heartbeat_loop(self):
         """Independent cloud liveness signal; never touches broker permissions."""
-        from .safety_heartbeat import publish
+        from .safety_heartbeat import publish, minimal
+        from .dashboard import load_json
+        from .premium_executor import KEY as BASKET_KEY
+        from .commissioning_direct import AUTH as OWNER_TEST_KEY
         while not self.stop.is_set():
             now=datetime.now(timezone.utc)
             try:
-                result=publish(self.read(),now)
+                store=self.state.pnl_lines.store
+                try: raw=load_json(self.output,8_000_000)
+                except (OSError,ValueError): raw={}
+                view=minimal(raw,store.meta(BASKET_KEY,{}),
+                             store.meta(OWNER_TEST_KEY,{}),now)
+                result=publish(view,now)
             except Exception:
                 result='UPLOAD_UNAVAILABLE'
             try:
