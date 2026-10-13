@@ -37,12 +37,16 @@ To include a **saved** incident-watch diagnostic:
 .\\.venv\\Scripts\\python.exe -I -m nifty_engine.agent_engine.readiness_audit --snapshot .agent-state\\my-dashboard-view.json --monitor .agent-state\\my-monitor-view.json
 ```
 
-The optional `--expected-release <40-character SHA>` reports `OBSERVED` only
-when the dashboard includes a **matching** runtime release SHA. Existing runtime
-snapshots do not yet expose that field, so the audit honestly says
-`RUNTIME_RELEASE_ID_NOT_VERIFIED` until a separate reviewed code change or
-out-of-band attestation provides it. A pinned SSH executable path alone does
-not prove which release the currently running Oracle process uses.
+During live PC reads, the expected SHA comes from the reviewed pinned
+SSH interpreter path and is compared with the **running** Oracle process release
+reported by `oracle_runtime.py`. The optional
+`--expected-release <40-character SHA>` overrides the pinned SHA, or can be
+used for offline snapshots.
+
+This PR adds the read-only runtime release field. Until that exact code release
+is independently deployed to Oracle, older Oracle snapshots do **not** supply
+the field and the audit honestly says `RUNTIME_RELEASE_ID_NOT_VERIFIED`.
+A pinned SSH executable path alone does not prove which release a process uses.
 
 The command writes one JSON object to stdout. It emits **only static evidence
 codes**, timestamps and statuses. It does not echo raw broker quotes, balances,
