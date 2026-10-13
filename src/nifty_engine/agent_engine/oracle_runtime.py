@@ -55,7 +55,7 @@ class Runtime:
         self.stop=threading.Event();self.collector=None;self.next_auth=0;self.token_day=None
         self.boot_id=uuid.uuid4().hex;self.sequence=1;self.at=datetime.now(timezone.utc).isoformat();self.error=None
         self.mail=DailyMail(self.state.pnl_lines.store);self.next_mail=0
-        self.mail_state={"status":"EOD_PREPARED_AFTER_CLOSE_SENT_NEXT_SESSION","provider_accepted":False,"inbox_verified":False}
+        self.mail_state={"status":"DISABLED_OWNER_SAFETY_ALERTS_ONLY","provider_accepted":False,"inbox_verified":False}
         self.output=self.state.directory/"market-check-oracle-live.json"
         self.preparer=None
         self.report_data=None
@@ -100,6 +100,10 @@ class Runtime:
         view["runtime"]={"host":"ORACLE","boot_id":self.boot_id,"heartbeat_sequence":self.sequence,
             "heartbeat_at":self.at,"error":self.error,"orders_enabled":execution["execution_enabled"],"collector_host":"ORACLE"}
         view["execution_controller"]=execution
+        # Only the fixed, nonsecret auth diagnostic is published.
+        probe=self.state.pnl_lines.store.meta('groww-auth-probe-v1',{})
+        view['auth_probe']={k:probe.get(k) for k in
+                            ('slot','status','checked_at','provider_code')}
         from .live_setup import public as live_setup_public
         view['live_setup']=live_setup_public(self.state.pnl_lines.store,self.gate)
         view['premium_impulse']=self.impulse.public()
@@ -243,6 +247,27 @@ class Runtime:
         self.impulse.attach(market)
         self.token_day=now.date()
 
+    def auth_probe_tick(self, now):
+        """Run only at 12:00 / 15:00 JST, never place orders or change LIVE mode."""
+        from .auth_probe import run_once
+        from .alert_cadence import auth_slot
+        if auth_slot(now) is None:
+            return
+        store=self.state.pnl_lines.store
+        if store.meta('groww-auth-probe-v1',{}).get('slot')==auth_slot(now):
+            return
+
+        def profile():
+            from growwapi import GrowwAPI
+            from ..brokers.groww_data import GrowwMarketData
+            if self.collector is not None:
+                return self.collector.market.groww.get_user_profile(timeout=5)
+            token=GrowwAPI.get_access_token(
+                api_key=os.environ['GROWW_OBSERVER_API_KEY'],
+                secret=os.environ['GROWW_OBSERVER_API_SECRET'])
+            return GrowwMarketData(token).groww.get_user_profile(timeout=5)
+        run_once(store,now,profile)
+
     def preparation_loop(self):
         # Analytical margin POSTs share the process's read-only HTTP guard. They
         # cannot place, cancel, modify or arm broker orders. Never stall collection.
@@ -348,7 +373,10 @@ class Runtime:
                 if self.normal_catalog:
                     from .normal_theta import update as update_normal
                     update_normal(self.state.pnl_lines.store,self.normal_catalog,now)
-                self.mail_state=self.mail.tick(self.read(),now)
+                # Owner explicitly permits safety fault alerts only.
+                # Do not send or queue EOD/research notification emails.
+                self.mail_state={"status":"DISABLED_OWNER_SAFETY_ALERTS_ONLY",
+                                 "provider_accepted":False,"inbox_verified":False}
             except Exception as exc:self.mail_state={"status":"REPORT_"+type(exc).__name__,"provider_accepted":False,"inbox_verified":False}
 
     def backup_loop(self):
@@ -367,7 +395,32 @@ class Runtime:
                     at=now.isoformat(),error_type=type(exc).__name__))
                 except Exception:pass
 
+    def safety_heartbeat_loop(self):
+        """Independent cloud liveness signal; never touches broker permissions."""
+        from .safety_heartbeat import publish, minimal
+        from .dashboard import load_json
+        from .premium_executor import KEY as BASKET_KEY
+        from .commissioning_direct import AUTH as OWNER_TEST_KEY
+        while not self.stop.is_set():
+            now=datetime.now(timezone.utc)
+            try:
+                store=self.state.pnl_lines.store
+                try: raw=load_json(self.output,8_000_000)
+                except (OSError,ValueError): raw={}
+                view=minimal(raw,store.meta(BASKET_KEY,{}),
+                             store.meta(OWNER_TEST_KEY,{}),now)
+                result=publish(view,now)
+            except Exception:
+                result='UPLOAD_UNAVAILABLE'
+            try:
+                self.state.pnl_lines.store.set_meta('safety-heartbeat-status',
+                    {'status':result,'checked_at':now.isoformat(),'broker_writes':False})
+            except Exception:
+                pass
+            self.stop.wait(30)
+
     def run(self):
+        threading.Thread(target=self.safety_heartbeat_loop,daemon=True).start()
         self.research_archive.start()
         threading.Thread(target=self.report_loop,daemon=True).start()
         threading.Thread(target=self.backup_loop,daemon=True).start()
@@ -380,6 +433,11 @@ class Runtime:
                 while not self.stop.is_set():
                     started=time.monotonic();now=datetime.now(timezone.utc)
                     try:
+                        try:
+                            self.auth_probe_tick(now)
+                        except Exception:
+                            # Failure to probe is UNKNOWN, not a fake 401/403.
+                            pass
                         if collection_window(now) and now.timestamp()>=self.next_auth:
                             if self.collector is None or self.token_day!=now.date():
                                 if self.collector:self.collector.close()

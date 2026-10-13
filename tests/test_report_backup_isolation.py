@@ -13,7 +13,7 @@ class OneTick:
         return self.calls>1
 
 
-def test_blocked_backup_cannot_prevent_daily_email(tmp_path,monkeypatch):
+def test_blocked_backup_does_not_reenable_forbidden_daily_email(tmp_path,monkeypatch):
     now=datetime(2026,10,8,10,30,tzinfo=timezone.utc)
     monkeypatch.setattr(runtime,'datetime',SimpleNamespace(now=lambda tz:now))
     from nifty_engine.agent_engine import report_strategies
@@ -36,7 +36,7 @@ def test_blocked_backup_cannot_prevent_daily_email(tmp_path,monkeypatch):
         assert entered.wait(2)
         obj.stop=OneTick()
         obj.report_loop()
-        assert sent==[now] and obj.mail_state['status']=='ACCEPTED'
+        assert sent==[] and obj.mail_state['status']=='DISABLED_OWNER_SAFETY_ALERTS_ONLY'
         assert store.meta('oracle-backup-2026-10-08') is None
     finally:
         release.set();worker.join(3)

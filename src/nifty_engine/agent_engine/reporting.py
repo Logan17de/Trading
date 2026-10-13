@@ -148,8 +148,22 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def resend(payload, key, report_id):
+    """Ordinary visual mail remains inside the owner's quiet-hour window."""
     from .mail_window import require_open
     require_open()
+    return _post_resend(payload, key, report_id)
+
+
+def resend_safety_alert(payload, key, alert_id):
+    """Only dedicated incident monitors call this critical-mail transport.
+
+    Emergency notification is separate from ordinary reports; this function
+    does not interact with broker credentials or trading state.
+    """
+    return _post_resend(payload, key, alert_id)
+
+
+def _post_resend(payload, key, report_id):
     request = Request("https://api.resend.com/emails", data=dumps(payload).encode(), headers={
         "Content-Type": "application/json", "Authorization": "Bearer " + key, "Idempotency-Key": report_id,
         "User-Agent": "GrowingTrader-Headless/1.0"})

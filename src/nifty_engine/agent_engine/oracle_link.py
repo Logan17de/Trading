@@ -119,6 +119,9 @@ class RemoteViewer:
         self.alert_status=saved.get("alert_status") if self.incident else None
         self.incident_details=saved.get('details',{})
         self.incident_code=saved.get('alert_code',saved.get('status'))
+        self.last_exposure=saved.get('risk_state','UNKNOWN')
+        self.alert_round=saved.get('delivery_round',0)
+        self.last_accepted_at=saved.get('accepted_at')
         self.bad_reads=0;self.healthy_since=None
         self.impulse=None;self.impulse_at=None
         self.failure_details={}
@@ -166,6 +169,10 @@ class RemoteViewer:
             state,self.previous,self.progress_at=health(view.get("runtime",{}),now,
                 previous=self.previous,progress_at=self.progress_at)
             with self.lock:self.cache=view
+            from .alert_cadence import position_risk
+            measured=position_risk(view,now)
+            if measured in ('ACTIVE','FLAT'):
+                self.last_exposure=measured
             self.failed_since=None
             self.failure_details={k:view.get('runtime',{}).get(k) for k in ('heartbeat_at','heartbeat_sequence')}
         except Exception as exc:
@@ -182,20 +189,39 @@ class RemoteViewer:
             if self.incident is None:
                 self.incident="oracle-"+str(int(now.timestamp()))
                 self.last_attempt=0
+                self.alert_round=0
+                self.last_accepted_at=None
                 from .failure_alerts import diagnostics
                 self.incident_details=dict(diagnostics(self.failure_details),detected_at=now.isoformat())
                 self.incident_code=state
-            if now.timestamp()-self.last_attempt>=300 and self.alert_status not in ('ACCEPTED','DELIVERY_UNKNOWN'):
+            from .alert_cadence import category, may_send
+            kind=category('OBSERVER_UNREACHABLE',self.last_exposure)
+            accepted=self.alert_status=='ACCEPTED'
+            due=may_send(self.incident_code,kind,now,self.last_accepted_at,
+                         initial=not accepted and self.last_accepted_at is None)
+            # Flip this only after the independently scheduled cloud watchdog
+            # has verified a real email receipt. Prevent duplicate outage mail.
+            if os.environ.get('TRADING_CLOUD_VM_ALERTS_PRIMARY')=='1':
+                due=False
+                self.alert_status='DELEGATED_TO_CLOUD'
+            if due and now.timestamp()-self.last_attempt>=300:
+                if accepted:
+                    self.alert_round+=1
+                    self.alert_status=None
                 self.last_attempt=now.timestamp()
-                # Freeze context so a retry keeps the provider idempotency payload.
-                if now.timestamp()-int(self.incident.split('-')[1])>=23*3600:
-                    self.alert_status='DELIVERY_UNKNOWN'
-                else:
-                    try:self.alert_status=alert(self.root,self.incident_code,self.incident,self.incident_details)
-                    except Exception:self.alert_status='ALERT_FAILED'
+                try:
+                    suffix='-'+str(self.alert_round) if self.alert_round else ''
+                    self.alert_status=alert(self.root,self.incident_code,
+                                            self.incident+suffix,self.incident_details)
+                except Exception:
+                    self.alert_status='ALERT_FAILED'
+                if self.alert_status=='ACCEPTED':
+                    self.last_accepted_at=now.isoformat()
             self.store.set_meta("vm-incident",{"id":self.incident,"status":state,"at":now.isoformat(),
                 "details":self.incident_details,"alert_code":self.incident_code,
-                "alert_status":self.alert_status,"inbox_verified":False})
+                "alert_status":self.alert_status,"inbox_verified":False,
+                "risk_state":self.last_exposure,"delivery_round":self.alert_round,
+                "accepted_at":self.last_accepted_at})
         elif state=="HEALTHY":
             self.bad_reads=0
             self.healthy_since=self.healthy_since or now.timestamp()
@@ -203,6 +229,7 @@ class RemoteViewer:
                 self.store.set_meta("vm-recovery",{"id":self.incident,"at":now.isoformat()})
                 self.store.set_meta("vm-incident",{"id":self.incident,"status":"RECOVERED","at":now.isoformat()})
                 self.incident=None; self.alert_status=None
+                self.alert_round=0;self.last_accepted_at=None
         else:
             self.bad_reads=0;self.healthy_since=None
         self.status=state
