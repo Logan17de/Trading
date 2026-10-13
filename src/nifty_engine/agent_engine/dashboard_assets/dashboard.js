@@ -231,7 +231,7 @@ function renderControl() {
   const refusedReasons=(last?.blockers||[]).map(k=>labels[k]||k).join('; ');
   $("algo-start-result").textContent=algoStartPending?"Checking live-trading readiness…":refused?
     `Algo Start refused. Trading remains Off. Fix: ${refusedReasons||'verified live setup is required'}.`:
-$("algo-start-result").textContent=algoStartPending?"Saving owner setting…":last?.status==='TRANSPORT_FAILED'?"Oracle did not confirm the setting. Read the On/Off state before retrying.":selection+(on?(writesPermitted?"Algo On. Oracle may place real orders for these strategies when their entry checks pass; one basket at a time.":`On is saved until you click Algo Off. Trading blocked: ${blockers||'readiness not confirmed'}.`):`Algo Off. Start saves On on Oracle; orders require live readiness.${blockers?` Currently blocked: ${blockers}.`:''}`);
+    last?.status==='TRANSPORT_FAILED'?"Oracle did not confirm the setting. Read the On/Off state before retrying.":selection+(on?(writesPermitted?"Algo On. Oracle may place real orders for these strategies when their entry checks pass; one basket at a time.":`On is saved until you click Algo Off. Trading blocked: ${blockers||'readiness not confirmed'}.`):`Algo Off. After verified commissioning, Start can authorize live entries.${blockers?` Currently blocked: ${blockers}.`:''}`);
   const execution=data.execution_controller;
   const setup=data.live_setup;
   if($("live-setup-status"))$("live-setup-status").textContent=setup?
