@@ -17,7 +17,9 @@ from pathlib import Path
 
 from .contracts import dumps, identity, stamp
 from .pc_control import collection_window
-from .reporting import resend, receipt_status
+from .reporting import resend, resend_safety_alert, receipt_status
+from .alert_cadence import (position_risk, category, interval_seconds, may_send,
+                            auth_slot, expected_auth_failure)
 from .store import Store
 
 KEY = 'failure-monitor-v1'
@@ -38,6 +40,9 @@ MESSAGES = {
     'RESEARCH_ARCHIVE_FAILED': ('Research archive', 'The one-way research archive reported a synchronization failure.'),
     'ALERT_TEST': ('Alert transport test', 'This is a requested notification test. No broker order was sent.'),
     'OWNER_TEST_FAILED': ('Owner broker test', 'The owner test needs attention. Check its entry, stop-loss and remaining position in Groww.'),
+    'API_AUTH_FAILED': ('Groww authentication', 'Groww rejected the authentication check. Verify account/API credentials without posting keys in messages.'),
+    'STOP_PROTECTION_FAILED': ('Stop-loss protection', 'An active engine-owned basket does not have current verified protection. Inspect the exact order and GTT in Groww.'),
+    'TRADE_SUBMISSION_FAILED': ('Trade entry or exit', 'An intended broker order is failed or uncertain. Reconcile existing orders before retrying.'),
 }
 SETUP_BLOCKERS = {'LIVE_ENVIRONMENT_NOT_ACTIVATED', 'REPOSITORY_PAUSED',
     'REVIEWED_LIVE_ACTIVATION_REQUIRED', 'ALL_EXECUTABLE_STRATEGIES_OFF'}
@@ -73,11 +78,14 @@ def diagnostics(value):
     return result
 
 
-def faults(view, now, health='HEALTHY'):
+def faults(view, now, health='HEALTHY', *, auth_probe=None):
     found = {}
     def add(code, detail=None, immediate=False):
         found[code] = dict(code=code, component=MESSAGES[code][0], message=MESSAGES[code][1],
             details=diagnostics(detail or {}), immediate=immediate)
+    if expected_auth_failure(auth_probe, now):
+        add('API_AUTH_FAILED', {'stage':'SCHEDULED_AUTH_CHECK',
+                                'code':auth_probe['provider_code']}, True)
     if view is None:
         add('OBSERVER_UNREACHABLE', {'stage':'LOCAL_SOCKET_READ'})
         return found
@@ -97,6 +105,18 @@ def faults(view, now, health='HEALTHY'):
     if failure: add('EXECUTOR_WORKER_FAILED', failure, True)
     if blockers & RECONCILIATION_BLOCKERS - {'EXECUTOR_WORKER_RECONCILIATION_REQUIRED'} or 'RECONCILIATION_REQUIRED' in execution.get('phase', ''):
         add('ORDER_RECONCILIATION_REQUIRED', execution, True)
+    # Do not treat normal no-trade, owner Off or paper mode as a failed entry.
+    reason=execution.get('reason','')
+    if (view.get('live_setup',{}).get('mode')=='live'
+            and isinstance(reason,str)
+            and ('ORDER_RESULT_UNKNOWN' in reason or 'ENTRY_RECONCILIATION_REQUIRED' in reason
+                 or 'EXIT_RECONCILIATION_REQUIRED' in reason
+                 or 'ORDER_SUBMISSION_FAILED' in reason)):
+        add('TRADE_SUBMISSION_FAILED', {'stage':reason}, True)
+    if (view.get('live_setup',{}).get('mode')=='live'
+            and execution.get('phase') in ('MONITORING','REPORT_MONITORING')
+            and execution.get('protection')!='VERIFIED_ACTIVE'):
+        add('STOP_PROTECTION_FAILED', {'protection':execution.get('protection')}, True)
     owner_on = view.get('control', {}).get('algo', {}).get('desired_enabled') is True
     if owner_on and blockers & SETUP_BLOCKERS:
         add('OWNER_ON_EXECUTION_BLOCKED', dict(view.get('live_setup', {}), owner_on=True))
@@ -125,8 +145,10 @@ def faults(view, now, health='HEALTHY'):
 def envelope(incident, sender, recipient):
     detail = html.escape(json.dumps(incident['details'], indent=2))
     label = 'Alert test' if incident['code']=='ALERT_TEST' else 'Needs attention'
+    round_number=incident.get('delivery_round',0)
+    suffix=f" · reminder {round_number}" if round_number else ""
     return {'from':sender, 'to':[recipient],
-        'subject':f"Options Trader · {incident['code']}",
+        'subject':f"Options Trader · {incident['code']}{suffix}",
         'html':("<div style='font-family:Arial,sans-serif;max-width:680px;margin:auto;padding:24px;color:#183247'>"
             f"<div style='color:#c55220;font-weight:bold'>{label}</div>"
             f"<h2>{html.escape(incident['component'])}</h2><p><b>{incident['code']}</b></p>"
@@ -134,7 +156,7 @@ def envelope(incident, sender, recipient):
             f"<p>UTC {incident['detected_at']}<br>Incident {incident['id']}</p>"
             f"<pre style='padding:16px;background:#f1f6f5;white-space:pre-wrap'>{detail}</pre>"
             "<p>Check Options Trader and Groww. The monitor has not placed, cancelled or modified orders.</p>"
-            "<p>Codex incident checks are scheduled; this email does not confirm a wake-up or repair.</p></div>")}
+            "<p>No automatic repair or broker order was attempted by this alert.</p></div>")}
 
 
 class Monitor:
@@ -152,7 +174,13 @@ class Monitor:
                 previous=tuple(self.state['previous']) if self.state.get('previous') else None,
                 progress_at=self.state.get('progress_at'))
             self.state.update(previous=previous, progress_at=progress)
-        found = faults(view, now, state)
+        exposure=position_risk(view,now)
+        if exposure in ('ACTIVE','FLAT'):
+            self.state['last_exposure']=exposure
+        else:
+            exposure=self.state.get('last_exposure','UNKNOWN')
+        found = faults(view, now, state,
+                       auth_probe=self.store.meta('groww-auth-probe-v1',{}))
         if read_error is not None and 'OBSERVER_UNREACHABLE' in found:
             found['OBSERVER_UNREACHABLE']['details']=diagnostics(dict(read_error,stage='LOCAL_SOCKET_READ'))
         self.record(found, now, complete=view is not None and state=='HEALTHY')
@@ -171,7 +199,9 @@ class Monitor:
             if row is None or row['state']=='RECOVERED':
                 row = rows[key] = dict(fault, id=uuid.uuid4().hex, state='OPEN',
                     detected_at=now.isoformat(), last_seen_at=now.isoformat(),
-                    mail_status='PENDING', attempts=0, next_attempt=0, inbox_verified=False)
+                    mail_status='PENDING', attempts=0, next_attempt=0,
+                    inbox_verified=False,delivery_round=0)
+            row['risk_state']=self.state.get('last_exposure','UNKNOWN')
             row['last_seen_at'] = now.isoformat()
             row.pop('healthy_since', None)
         if complete:
@@ -182,39 +212,87 @@ class Monitor:
                     row.update(state='RECOVERED', recovered_at=now.isoformat())
         self.save()
 
-    def deliver(self, now, env, *, send=resend):
-        from .mail_window import status as mail_window
+    def deliver(self, now, env, *, send=None):
+        """Only authorized safety categories may generate email.
+
+        Accepted round receipts use new idempotency keys for each 20m / 2h
+        reminder. Failed or timed-out attempts reuse the exact same envelope/key.
+        Never send background alerts for routine research, funds or EOD reports.
+        """
+        from .mail_window import status as mail_window, MailWindowClosed
+        send=send or resend_safety_alert
         self.state['mail_window']=mail_window(now)
-        if self.state['mail_window']!='OPEN':
-            self.save();return
-        # One frozen email per incident. A timeout retries the same envelope/key.
-        rows = sorted(self.state['incidents'].values(), key=lambda r:(not r['immediate'], r['detected_at']))
+        rows=sorted(self.state['incidents'].values(),
+                    key=lambda r:(not r['immediate'],r['detected_at']))
         for row in rows:
-            if row['state']!='OPEN' or row['mail_status'] in ('ACCEPTED','DELIVERY_UNKNOWN') or row.get('healthy_since'): continue
-            if not row['immediate'] and (now-stamp(row['detected_at'])).total_seconds()<60: continue
-            if row['next_attempt']>now.timestamp(): continue
+            if row['state']!='OPEN' or row.get('healthy_since'):
+                continue
+            kind=category(row['code'],row.get('risk_state','UNKNOWN'))
+            if kind=='ROUTINE':
+                continue
+            if kind=='API':
+                slot=auth_slot(now)
+                if not slot or row.get('auth_slots_sent',{}).get(slot):
+                    continue
+                if row.get('details',{}).get('stage')!='SCHEDULED_AUTH_CHECK':
+                    continue
+            if row.get('mail_status')=='DELIVERY_UNKNOWN':
+                continue
+            # A completed round can be followed by a new round at the interval.
+            accepted=row.get('mail_status')=='ACCEPTED'
+            first=not accepted and row.get('delivery_round',0)==0
+            if not may_send(row['code'],kind,now,row.get('accepted_at'),
+                            initial=first):
+                continue
+            if accepted:
+                row['delivery_round']=row.get('delivery_round',0)+1
+                row['mail_status']='PENDING'
+                row['attempts']=0
+                row['next_attempt']=0
+                row.pop('first_attempt',None)
+                row.pop('envelope',None)
+                row.pop('provider_id',None)
+                row.pop('receipt_attempt',None)
+                row.pop('recipient_server_accepted',None)
+                row.pop('provider_event',None)
+            if row['next_attempt']>now.timestamp():
+                continue
             if row.get('first_attempt') and now.timestamp()-row['first_attempt']>=23*3600:
-                row['mail_status']='DELIVERY_UNKNOWN'; self.save(); continue
+                row['mail_status']='DELIVERY_UNKNOWN'
+                self.save()
+                continue
             row['next_attempt']=now.timestamp()+300
             if not all(env.get(k) for k in ('RESEND_API_KEY','TRADING_REPORT_FROM','TRADING_REPORT_TO')):
-                row['mail_status']='MAIL_CONFIGURATION_MISSING'; self.save(); return
+                row['mail_status']='MAIL_CONFIGURATION_MISSING'
+                self.save()
+                return
             previous_first=row.get('first_attempt')
-            row.setdefault('envelope', envelope(row, env['TRADING_REPORT_FROM'], env['TRADING_REPORT_TO']))
-            row.setdefault('first_attempt', now.timestamp())
-            row['attempts']+=1; row['mail_status']='SENDING'; self.save()
+            row.setdefault('envelope',envelope(row,env['TRADING_REPORT_FROM'],env['TRADING_REPORT_TO']))
+            row.setdefault('first_attempt',now.timestamp())
+            row['attempts']+=1
+            row['mail_status']='SENDING'
+            self.save()
             try:
-                provider_id=send(row['envelope'],env['RESEND_API_KEY'],identity(['trading-failure-v1',row['id']]))
+                provider_id=send(row['envelope'],env['RESEND_API_KEY'],
+                                 identity(['trading-safety-v2',row['id'],row['delivery_round']]))
                 if not isinstance(provider_id,str) or not re.fullmatch(r'[A-Za-z0-9-]{1,80}',provider_id):
                     raise ValueError('INVALID_PROVIDER_RECEIPT')
-                row.update(mail_status='ACCEPTED',provider_id=provider_id,accepted_at=now.isoformat())
+                row.update(mail_status='ACCEPTED',provider_id=provider_id,
+                           accepted_at=now.isoformat())
+                if kind=='API':
+                    row.setdefault('auth_slots_sent',{})[auth_slot(now)]=True
             except Exception as exc:
-                from .mail_window import MailWindowClosed
                 if isinstance(exc,MailWindowClosed):
-                    row.update(mail_status='RETRY' if row['attempts']>1 else 'PENDING',attempts=row['attempts']-1,next_attempt=0)
-                    if previous_first is None:row.pop('first_attempt',None)
-                    self.state['mail_window']=str(exc);self.save();return
-                row.update(mail_status='RETRY',send_error=diagnostics({'error_type':type(exc).__name__}))
-            self.save(); return
+                    row.update(mail_status='RETRY' if row['attempts']>1 else 'PENDING',
+                               attempts=row['attempts']-1,next_attempt=0)
+                    if previous_first is None: row.pop('first_attempt',None)
+                    self.state['mail_window']=str(exc)
+                    self.save()
+                    return
+                row.update(mail_status='RETRY',
+                           send_error=diagnostics({'error_type':type(exc).__name__}))
+            self.save()
+            return
 
     def reconcile(self, now, key, *, fetch=receipt_status):
         for row in self.state['incidents'].values():
