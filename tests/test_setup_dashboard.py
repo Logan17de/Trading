@@ -27,7 +27,7 @@ def app():
 
 def test_setup_page_only_reads_and_injects_protected_local_token(app):
     url,state,calls=app
-    with urlopen(url+'/live-setup') as response:
+    with urlopen(url+'/advanced-setup') as response:
         page=response.read().decode('utf-8-sig')
         assert state.token in page and '__LOCAL_TOKEN__' not in page
         assert 'frame-ancestors' in response.headers['Content-Security-Policy']
@@ -187,6 +187,70 @@ vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),c);
  await vm.runInContext('readRuntime()',c);
  assert.match(get('#setup-state').textContent,/Owner test failed/);
  assert.match(get('#setup-reason').textContent,/could not confirm/);
+})().catch(e=>{console.error(e);process.exitCode=1;});
+"""
+    result=subprocess.run([node,'-e',script,str(source)],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stderr
+
+
+def test_public_master_lookup_is_usable_before_review():
+    """A blocked Oracle lookup must never trap Review in stale-contract warnings."""
+    node=shutil.which('node')
+    if not node:pytest.skip('Node required for setup interaction replay')
+    source=Path(__file__).parents[1]/'src/nifty_engine/agent_engine/dashboard_assets/live-setup.js'
+    script=r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const elements=new Map(), calls=[];
+function elem(){return {events:{},dataset:{},value:'',content:'TOKEN',checked:false,
+ addEventListener(k,fn){this.events[k]=fn;},replaceChildren(){},append(){},
+ focus(){},scrollIntoView(){}};}
+function get(key){if(!elements.has(key))elements.set(key,elem());return elements.get(key);}
+get('meta[name="local-token"]').content='test-token';
+const values={index:'SENSEX',symbol:'SENSEX26O1576000CE',egress_ip:'193.123.166.128',
+  buy_limit_price:'4',sell_limit_price:'4.10',stop_trigger_price:'3.90',stop_limit_price:'3.90'};
+for(const [key,value] of Object.entries(values))get('[name="'+key+'"]').value=value;
+let prevented=0;
+const fallback={status:'OWNER_CONTRACT_FOUND',source:'GROWW_PUBLIC_INSTRUMENT_MASTER',
+  quote_available:false,egress_ip:null,quote:{},checked_at:'2026-10-13T06:00:00Z',
+  contract:{index:'SENSEX',symbol:'SENSEX26O1576000CE',expiry:'2026-10-15',
+            lot_size:20,tick_size:0.05},broker_writes:false};
+const ctx=vm.createContext({Intl,Date,Number,Set,
+ setInterval:()=>0,clearInterval:()=>{},setTimeout:()=>0,clearTimeout:()=>{},
+ FormData:class{get(key){return get('[name="'+key+'"]').value}},
+ document:{querySelector:get,querySelectorAll:()=>[],createElement:elem},
+ fetch:async(url,args={})=>{
+   if(url==='/api/dashboard')return {json:async()=>({live_setup:{mode:'paper',supports_direct_test:true},
+     control:{algo:{desired_enabled:true}}})};
+   if(!args.method)return {json:async()=>({status:'NOT_STARTED',allowed_actions:['preview','status']})};
+   const body=JSON.parse(args.body);calls.push(body);
+   if(body.action==='lookup')return {json:async()=>fallback};
+   if(body.action==='preview')return {json:async()=>({
+       status:'OWNER_SETUP_BLOCKED',reason:'TURN_ALGO_OFF_BEFORE_SETUP',
+       allowed_actions:['preview','status']})};
+   throw Error('unexpected broker action: '+body.action);
+ }});
+vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),ctx);
+(async()=>{
+ await new Promise(setImmediate);
+ assert.equal(get('[name="expiry"]').value,'');
+ get('#preview-button').events.click({preventDefault(){prevented++}});
+ await new Promise(setImmediate);
+ assert.equal(prevented,1);
+ assert.deepEqual(calls.map(x=>x.action),['lookup']);
+ assert.equal(get('[name="expiry"]').value,'2026-10-15');
+ assert.equal(Number(get('[name="lot_size"]').value),20);
+ assert.equal(get('[name="egress_ip"]').value,'193.123.166.128');
+ assert.match(get('#contract-summary').textContent,/public master/);
+ assert.match(get('#contract-summary').textContent,/Live quote unavailable/);
+ get('#plan-form').events.input({target:{name:'egress_ip',matches:()=>false}});
+ assert.equal(vm.runInContext('verifiedContract!==null',ctx),true);
+ get('#plan-form').events.submit({preventDefault(){},currentTarget:get('#plan-form')});
+ await new Promise(setImmediate);
+ assert.deepEqual(calls.map(x=>x.action),['lookup','preview']);
+ assert.equal(calls[1].spec.contract.expiry,'2026-10-15');
+ assert.equal(calls[1].spec.quantity,20);
+ assert.match(get('#preview-feedback').textContent,/Algo Off/);
+ assert.equal(calls.filter(x=>x.action==='buy-protect'||x.action==='submit').length,0);
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
     result=subprocess.run([node,'-e',script,str(source)],capture_output=True,text=True,timeout=10)

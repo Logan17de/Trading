@@ -22,8 +22,8 @@ from .contracts import dumps, identity, stamp
 from .oracle_link import settings
 
 KEY = 'desktop-owner-setup-v1'
-ACTIONS = {'lookup','buy-protect','preview', 'status', 'capture', 'submit', 'close', 'cancel', 'protect', 'cancel-stop', 'retire', 'arm-preview', 'arm'}
-WRITES = {'buy-protect','submit', 'close', 'cancel', 'protect', 'cancel-stop', 'arm'}
+ACTIONS = {'lookup','manual-buy','buy-protect','preview', 'status', 'capture', 'submit', 'close', 'cancel', 'protect', 'cancel-stop', 'retire', 'arm-preview', 'arm'}
+WRITES = {'manual-buy','buy-protect','submit', 'close', 'cancel', 'protect', 'cancel-stop', 'arm'}
 TERMINAL = {'COMPLETE', 'CANCELLED_FLAT', 'ABORTED_BEFORE_WRITE','CLOSED_UNVERIFIED'}
 PREVIEW = 'OWNER_PLAN_READY_FOR_EXPLICIT_SUBMIT'
 REMOTE_STATUSES = TERMINAL | {PREVIEW,'OWNER_CONTRACT_FOUND','OWNER_TEST_RUNNING','BUY_SUBMITTING','BUY_ACCEPTED','BUY_PENDING_OR_PARTIAL','BUY_RESULT_UNKNOWN', 'OWNER_SETUP_BLOCKED', 'GTT_SUBMITTING', 'GTT_ACCEPTED',
@@ -207,8 +207,11 @@ class OwnerSetupController:
                         or unsubmitted_rejected and not attempts):
                     value['allowed_actions'].append('preview')
                 buy_action='buy-protect' if saved.get('spec',{}).get('entry_mode')=='LIMIT' else 'submit'
-                if value['status']==PREVIEW and saved.get('plan_hash') and buy_action not in attempts:
+                if (value['status']==PREVIEW and saved.get('plan_hash') and
+                        buy_action not in attempts and 'manual-buy' not in attempts):
                     value['allowed_actions'].append(buy_action)
+                    if buy_action=='buy-protect' and 'manual-buy' not in attempts:
+                        value['allowed_actions'].append('manual-buy')
                 if saved.get('plan_hash'):
                     for action in ('close','cancel','protect','cancel-stop'):
                         if action in value.get('broker_actions',[]) and action not in recent:
@@ -238,6 +241,28 @@ class OwnerSetupController:
             return value
         except Exception: return {'status':'OWNER_SETUP_LOCAL_STATE_UNAVAILABLE','allowed_actions':['status']}
 
+    def _master_only_lookup(self, spec):
+        """Unprivileged fixed-URL contract metadata when old Oracle lookup refuses.
+
+        This neither authenticates nor provides a broker quote/egress verification.
+        Preview and ALL broker-writing actions still go through Oracle.
+        """
+        from .dashboard import download_instrument_text
+        from .execution_data import metadata_catalog
+        catalog = metadata_catalog(download_instrument_text())
+        matched = [row for (index, _expiry), contracts in catalog.items()
+                   if index == spec['index']
+                   for symbol, row in contracts.items() if symbol == spec['symbol']]
+        if len(matched) != 1:
+            return {'status':'OWNER_SETUP_BLOCKED',
+                    'reason':'COMMISSIONING_CURRENT_MASTER_MISMATCH',
+                    'broker_writes':False}
+        contract = {k:v for k,v in matched[0].items() if k != 'strike'}
+        return {'status':'OWNER_CONTRACT_FOUND', 'contract':contract,
+                'egress_ip':None, 'quote':{}, 'quote_available':False,
+                'source':'GROWW_PUBLIC_INSTRUMENT_MASTER',
+                'checked_at':self.clock().isoformat(), 'broker_writes':False}
+
     def command(self, body):
         if not self.lock.acquire(blocking=False):
             return {'status':'OWNER_SETUP_BUSY','allowed_actions':['status']}
@@ -256,7 +281,15 @@ class OwnerSetupController:
                 spec=body['spec']
                 if (not isinstance(spec,dict) or set(spec)!={'index','symbol'} or spec['index'] not in ('NIFTY','SENSEX') or
                         not isinstance(spec['symbol'],str) or not re.fullmatch('[A-Z0-9]{8,50}(?:CE|PE)',spec['symbol'])):raise ValueError()
-                return self._remote(cfg,'lookup',dict(plan_id=uuid.uuid4().hex,spec=spec))
+                answer=self._remote(cfg,'lookup',dict(plan_id=uuid.uuid4().hex,spec=spec))
+                if answer.get('status')=='OWNER_SETUP_BLOCKED' and answer.get('reason')=='TURN_ALGO_OFF_BEFORE_SETUP':
+                    try:
+                        return self._master_only_lookup(spec)
+                    except Exception:
+                        # A public master outage must leave Oracle's original blocked
+                        # reason visible. Never invent contract metadata or a quote.
+                        pass
+                return answer
             if saved and saved.get('config_hash') != identity(cfg) and action != 'retire':
                 if action=='preview' and not saved.get('attempted_writes') and saved.get('pending_action') in (None,'preview'):
                     # Explicit Review may archive an unused preview only after

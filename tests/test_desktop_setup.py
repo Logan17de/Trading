@@ -94,6 +94,22 @@ def test_fixed_preview_stdin_returns_only_owner_spec_and_hash(app):
     assert {'submit','status','capture'}<=set(result['allowed_actions'])
 
 
+def test_manual_buy_attempt_blocks_both_manual_and_automatic_buy_paths(app):
+    ctl,store,calls,cfg=app
+    value=dict(spec(),entry_mode='LIMIT',trigger_price='10.05',sell_limit_price='12.00')
+    ready=ctl.command({'action':'preview','spec':value})
+    assert {'manual-buy','buy-protect'}<=set(ready['allowed_actions'])
+    saved=store.meta(KEY)
+    # Even if a remote response still describes the old PREVIEW, the durable
+    # original manual BUY attempt must block the alternate BUY+protect entry.
+    saved['attempted_writes']=['manual-buy']
+    store.set_meta(KEY,saved)
+    public=ctl.public()
+    assert 'manual-buy' not in public['allowed_actions']
+    assert 'buy-protect' not in public['allowed_actions']
+    assert len(calls)==1
+
+
 def test_direct_buy_is_owner_click_only_and_not_repeated_after_restart(app):
     ctl,store,calls,cfg=app
     value=dict(spec(),entry_mode='LIMIT',trigger_price='10.05',sell_limit_price='12.00')
@@ -119,6 +135,60 @@ def test_contract_lookup_is_read_only_and_filters_private_fields(app):
     result=ctl.command({'action':'lookup','spec':{'index':'NIFTY','symbol':spec()['contract']['symbol']}})
     assert result['contract']==spec()['contract'] and result['quote']['offer_price']==10
     assert store.meta(KEY)==before and 'PRIVATE' not in str(result)
+
+
+@pytest.mark.parametrize('remote_reason,should_fallback', [
+    ('TURN_ALGO_OFF_BEFORE_SETUP',True),
+    ('COMMISSIONING_CURRENT_MASTER_MISMATCH',False),
+])
+def test_lookup_falls_back_to_public_master_only_for_algo_intent_block(app, monkeypatch, remote_reason, should_fallback):
+    from nifty_engine.agent_engine import dashboard
+    ctl, store, calls, cfg = app
+    before=store.meta(KEY)
+    fetched=[]
+    csv_text=('trading_symbol,underlying_symbol,segment,exchange,expiry_date,lot_size,tick_size,strike_price\n'
+              'SENSEX26O1576000CE,SENSEX,FNO,BSE,2026-10-15,20,0.05,76000\n')
+    monkeypatch.setattr(dashboard,'download_instrument_text',lambda: (fetched.append(True),csv_text)[1])
+    ctl.run=lambda *args,**kw:response('OWNER_SETUP_BLOCKED',reason=remote_reason,broker_writes=False)
+    result=ctl.command({'action':'lookup','spec':{'index':'SENSEX','symbol':'SENSEX26O1576000CE'}})
+    if should_fallback:
+        assert result['status']=='OWNER_CONTRACT_FOUND'
+        assert result['contract']['expiry']=='2026-10-15'
+        assert result['contract']['lot_size']==20
+        assert result['egress_ip'] is None and result['quote']=={}
+        assert result['source']=='GROWW_PUBLIC_INSTRUMENT_MASTER'
+        assert result['broker_writes'] is False
+        assert fetched
+    else:
+        assert result['status']=='OWNER_SETUP_BLOCKED' and result['reason']==remote_reason
+        assert not fetched
+    assert store.meta(KEY)==before
+
+
+def test_public_master_fallback_rejects_missing_contract_without_fabrication(app,monkeypatch):
+    from nifty_engine.agent_engine import dashboard
+    ctl, store, calls, cfg = app
+    monkeypatch.setattr(dashboard,'download_instrument_text',
+                        lambda:'trading_symbol,underlying_symbol,segment,exchange,expiry_date,lot_size,tick_size,strike_price\n')
+    ctl.run=lambda *args,**kw:response('OWNER_SETUP_BLOCKED',reason='TURN_ALGO_OFF_BEFORE_SETUP')
+    result=ctl.command({'action':'lookup','spec':{'index':'SENSEX','symbol':'SENSEX26O1576000CE'}})
+    assert result['status']=='OWNER_SETUP_BLOCKED'
+    assert result['reason']=='COMMISSIONING_CURRENT_MASTER_MISMATCH'
+    assert 'contract' not in result
+    assert store.meta(KEY) is None
+
+
+def test_public_master_fetch_failure_preserves_real_oracle_block_reason(app,monkeypatch):
+    from nifty_engine.agent_engine import dashboard
+    ctl,store,calls,cfg=app
+    def unavailable():
+        raise TimeoutError('synthetic master outage')
+    monkeypatch.setattr(dashboard,'download_instrument_text',unavailable)
+    ctl.run=lambda *args,**kw:response('OWNER_SETUP_BLOCKED',reason='TURN_ALGO_OFF_BEFORE_SETUP')
+    result=ctl.command({'action':'lookup','spec':{'index':'SENSEX','symbol':'SENSEX26O1576000CE'}})
+    assert result['reason']=='TURN_ALGO_OFF_BEFORE_SETUP'
+    assert result['status']=='OWNER_SETUP_BLOCKED'
+    assert store.meta(KEY) is None
 
 
 def test_archived_draft_survives_page_restart_without_broker_request(app):

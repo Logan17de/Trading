@@ -1,5 +1,31 @@
 # Owner setup for real trading
 
+## Simple BUY / SELL / SL test
+
+The default PC page at `http://127.0.0.1:8765/live-setup` now shows three
+explicit actions (BUY, SET SL, SELL). Advanced commissioning/recovery is at
+`/advanced-setup`.
+
+- Load the exact contract and choose BUY, SELL and SL limit prices. A public
+  master lookup provides only expiry/lot/tick; Oracle independently validates
+  quote, account, IP, price and available funds at the real order preview.
+- First BUY click produces a read-only broker preview. A separate owner-confirmed
+  BUY issues **one** ordinary DAY LIMIT long option purchase. It has no automatic
+  target watcher or auto stop submission.
+- After a verified **full fill**, explicit SET SL attaches an independent Groww
+  SELL DOWN stop-limit GTT. Until acknowledged, the long is unprotected.
+- SELL never opens a naked short. If an SL is active, SELL first cancels it and
+  requires broker readback; press SELL again only after the SL is confirmed
+  inactive to submit the exact saved closing LIMIT SELL. It can remain unfilled.
+- No retry after uncertain broker responses, partial fills or unconfirmed stops.
+  Refresh/check the original order in Groww before proceeding.
+- The original owner test/production release gates remain intact. Global Algo
+  intent must be Off, runtime must be in paper/paused mode, and the owner must
+  confirm each real broker write. This UI is not permission to enable the strategy.
+- An expiry-day direct test has the previously reviewed early-session deadline.
+  The maximum loss on a purchased option can include its entire premium plus
+  fees, and neither SL nor exit execution is guaranteed.
+
 The normal executor and desktop Start control are installed. One-time broker
 commissioning verifies the actual provider behavior before preparing live mode.
 These actions are for the owner to run. Only an explicit **Buy + protect** starts

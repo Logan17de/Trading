@@ -214,6 +214,34 @@ def authorize_test(store, tool, current, plan, confirmation):
     return dict(status='OWNER_TEST_RUNNING',plan_id=plan['id'],plan_hash=identity(plan),broker_writes=False)
 
 
+def submit_manual_buy(store, tool, current, plan, confirmation):
+    """One explicitly authorized direct BUY. Never starts the SL/target worker.
+
+    A persisted owner authorization and the exact plan are required, and the
+    direct broker submit writes its durable attempt before contacting Groww.
+    A lost response must be reconciled, never retried with another BUY.
+    """
+    from .commissioning_stop import DIRECT_FORMAT
+    if plan.get('format') != DIRECT_FORMAT:
+        raise SetupError('EXACT_DIRECT_LIMIT_BUY_REQUIRED')
+    authorize_test(store, tool, current, plan, confirmation)
+    from .commissioning_direct import AUTH
+    auth=store.meta(AUTH,{})
+    store.set_meta(AUTH,dict(auth,manual_only=True))
+    return tool.submit(plan, confirmation)
+
+
+def finish_manual_buy_when_settled(store, plan_id, status):
+    """No background worker exists in manual mode; finish after verified flatness."""
+    from .commissioning_direct import AUTH
+    auth=store.meta(AUTH,{})
+    if (auth.get('manual_only') is True and auth.get('plan_id')==plan_id and
+            auth.get('state')=='RUNNING' and
+            status.get('status') in ('COMPLETE','CLOSED_UNVERIFIED','CANCELLED_FLAT','ABORTED_BEFORE_WRITE')):
+        store.set_meta(AUTH,dict(auth,state='FINISHED',completed_at=status.get('checked_at')))
+    return status
+
+
 def start_test_job(args, values):
     result=run_worker('authorize-test',args,values)
     try:
@@ -342,6 +370,8 @@ def worker(payload):
             if not plan: raise SetupError('PREVIEW_PLAN_FIRST')
             if action=='authorize-test':
                 return authorize_test(store,tool,current,plan,payload['confirm'])
+            if action=='manual-buy':
+                return submit_manual_buy(store,tool,current,plan,payload['confirm'])
             if action=='advance-test':
                 from .commissioning_direct import advance
                 return advance(tool,plan)
@@ -350,9 +380,11 @@ def worker(payload):
             if action=='protect':return tool.protect(plan_id,payload['confirm'])
             if action=='cancel-stop':return tool.cancel_stop(plan_id,payload['confirm'])
             if action=='retire':return retire_plan(store,tool,current,plan_id)
-            if action=='capture':return tool.capture(plan_id)
+            if action=='capture':
+                return finish_manual_buy_when_settled(store,plan_id,tool.capture(plan_id))
             if action=='status':
-                return arm_recovery_status(store,tool,current,plan_id,plan_status(store,tool,current,plan_id))
+                return finish_manual_buy_when_settled(store,plan_id,
+                    arm_recovery_status(store,tool,current,plan_id,plan_status(store,tool,current,plan_id)))
             if action in ('arm-preview','install-receipt'):
                 proof=tool.verify_ready_to_arm(plan_id)
                 digest=identity(proof)
@@ -466,7 +498,7 @@ def root_action(args):
             if args.spec.stat().st_mode&0o077 or args.spec.stat().st_size>8192:raise SetupError('PRIVATE_BOUNDED_PLAN_REQUIRED')
             return run_worker('preview',args,values,spec=json.loads(args.spec.read_text()))
         if not args.id or not re.fullmatch('[a-f0-9]{32}',args.id):raise SetupError('EXACT_PREVIEW_PLAN_ID_REQUIRED')
-        if args.action in ('submit','close','cancel','protect','cancel-stop','arm','buy-protect') and not re.fullmatch('[a-f0-9]{64}',args.confirm):
+        if args.action in ('submit','close','cancel','protect','cancel-stop','arm','buy-protect','manual-buy') and not re.fullmatch('[a-f0-9]{64}',args.confirm):
             raise SetupError('OWNER_EXACT_CONFIRMATION_REQUIRED')
         if args.action=='buy-protect':
             return start_test_job(args,values)
@@ -476,7 +508,7 @@ def root_action(args):
 def main():
     os.umask(0o077)
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=('preview','preview-stdin','lookup-stdin','buy-protect','submit','capture','status','close','cancel','protect','cancel-stop','retire','arm-preview','arm','_worker'))
+    parser.add_argument('action',choices=('preview','preview-stdin','lookup-stdin','buy-protect','manual-buy','submit','capture','status','close','cancel','protect','cancel-stop','retire','arm-preview','arm','_worker'))
     parser.add_argument('--spec',type=Path,help='Private Oracle JSON file; never a credential file')
     parser.add_argument('--id',help='Optional 32-hex preview ID for safe retries; required for subsequent actions')
     parser.add_argument('--confirm',default='',help='Exact plan hash for a test write, or evidence digest for arm')

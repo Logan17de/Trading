@@ -1124,7 +1124,11 @@ def handler(state):
                     content=content.replace("cid:"+attachment["content_id"],"data:image/png;base64,"+attachment["content"])
                 return self.respond(200,content.encode(),"text/html; charset=utf-8")
             assets = {"/": ("index.html", "text/html; charset=utf-8"),
-                "/live-setup": ("live-setup.html", "text/html; charset=utf-8"),
+                "/live-setup": ("manual-order.html", "text/html; charset=utf-8"),
+                "/advanced-setup": ("live-setup.html", "text/html; charset=utf-8"),
+                "/manual-order": ("manual-order.html", "text/html; charset=utf-8"),
+                "/manual-order.js": ("manual-order.js", "text/javascript; charset=utf-8"),
+                "/manual-order.css": ("manual-order.css", "text/css; charset=utf-8"),
                 "/live-setup.js": ("live-setup.js", "text/javascript; charset=utf-8"),
                 "/live-setup.css": ("live-setup.css", "text/css; charset=utf-8"),
                 "/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
@@ -1133,7 +1137,7 @@ def handler(state):
             if self.path in assets:
                 name, kind = assets[self.path]
                 body = (ASSETS / name).read_bytes()
-                if name in ("index.html", "live-setup.html"):
+                if name in ("index.html", "live-setup.html", "manual-order.html"):
                     body = body.replace(b"__LOCAL_TOKEN__", state.token.encode())
                 return self.respond(200, body, kind)
             if self.path == "/api/dashboard":

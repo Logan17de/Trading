@@ -29,6 +29,7 @@ const nextSteps = {
 const money = value => value != null && Number.isFinite(Number(value)) ? new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:2}).format(Number(value)) : '—';
 const words = value => String(value || '').replaceAll('_',' ').toLowerCase().replace(/^./,s=>s.toUpperCase());
 const reasons = {
+  TURN_ALGO_OFF_BEFORE_SETUP:'Oracle requires global Algo Off for real trade preview. Turn Algo Off in Options Trader, then retry. Contract lookup remains read-only.',
   COMMISSIONING_PRICE_NOT_ON_TICK:'Each price must be a multiple of the contract’s tick size.',
   COMMISSIONING_BUY_LIMIT_BELOW_TRIGGER:'BUY limit must be at least the BUY trigger.',
   COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG:'The test window expired, the contract already expired, or an expiry-day LIMIT test is outside the early-session safety cutoff (BUY by 13:00 IST, review before 12:30 IST). GTT BUY requires a later expiry.',
@@ -108,7 +109,9 @@ function entryMode(){
 }
 function invalidateContract(){
   verifiedContract=null;
-  for(const key of ['expiry','lot_size','tick_size','egress_ip'])document.querySelector('[name="'+key+'"]').value='';
+  for(const key of ['expiry','lot_size','tick_size'])document.querySelector('[name="'+key+'"]').value='';
+  // Oracle egress IPv4 is not contract metadata. Keep the owner's entered value
+  // when switching symbols; Oracle independently verifies it at real preview.
   document.querySelector('#contract-summary').textContent='Contract details require a fresh lookup for this exact symbol. Prices were not changed.';
 }
 async function lookupContract(){
@@ -122,11 +125,19 @@ async function lookupContract(){
     if(data.status!=='OWNER_CONTRACT_FOUND')throw new Error(reasons[data.reason] || words(data.reason || data.status));
     if(data.contract.index!==requested.index || data.contract.symbol!==requested.symbol)throw new Error('Oracle returned a different contract. No details applied');
     for(const key of ['expiry','lot_size','tick_size'])document.querySelector('[name="'+key+'"]').value=data.contract[key];
-    document.querySelector('[name="egress_ip"]').value=data.egress_ip;
-    verifiedContract={...data.contract,egress_ip:data.egress_ip};
+    if(data.egress_ip)document.querySelector('[name="egress_ip"]').value=data.egress_ip;
+    const publicOnly=data.source==='GROWW_PUBLIC_INSTRUMENT_MASTER';
+    verifiedContract={...data.contract,egress_ip:publicOnly?null:data.egress_ip};
+    previewFeedback(publicOnly ? 'Contract details loaded from Groww public master. Live quote unavailable while Algo On. Check expiry and one-lot quantity, then Review; real preview still requires Algo Off.' : 'Contract and broker quote loaded. Review the expiry and one-lot quantity before proceeding.','info');
     const q=data.quote || {};
-    $('#contract-summary').textContent=`${data.contract.index} · ${data.contract.expiry} · 1 lot = ${data.contract.lot_size} · Tick ${money(data.contract.tick_size)}. Last ${money(q.last_price)} · Bid ${money(q.bid_price)} · Ask ${money(q.offer_price)}. ${q.timestamp_status==='RECENT_TRADE_ONLY'?'Quote received':'Quote not current'} ${new Date(data.checked_at).toLocaleTimeString()}.`;
-  }catch(error){invalidateContract();document.querySelector('#contract-summary').textContent='Contract lookup: '+error.message+'. Retry after resolving the cause. Your prices are unchanged.';}
+    $('#contract-summary').textContent=publicOnly ?
+      `${data.contract.index} · ${data.contract.expiry} · 1 lot = ${data.contract.lot_size} · Tick ${money(data.contract.tick_size)}. Contract found in Groww public master. Live quote unavailable because Oracle requires Algo Off. Enter/confirm Oracle IPv4; real preview verifies quote, account, and IP. No order sent.` :
+      `${data.contract.index} · ${data.contract.expiry} · 1 lot = ${data.contract.lot_size} · Tick ${money(data.contract.tick_size)}. Last ${money(q.last_price)} · Bid ${money(q.bid_price)} · Ask ${money(q.offer_price)}. ${q.timestamp_status==='RECENT_TRADE_ONLY'?'Quote received':'Quote not current'} ${new Date(data.checked_at).toLocaleTimeString()}.`;
+  }catch(error){
+    invalidateContract();
+    document.querySelector('#contract-summary').textContent='Contract lookup: '+error.message+'. Retry after resolving the cause. Your prices are unchanged.';
+    previewFeedback('Contract lookup blocked: '+error.message+'. No order sent.','error',true);
+  }
   finally{busy=false;render();}
 }
 async function loadSaved() {
@@ -171,12 +182,22 @@ async function command(body) {
     if(body.action==='preview')previewFeedback('Preview response was interrupted. Refresh the saved setup before trying again. No automatic retry was sent.','error',true);
   } finally {clearInterval(progressTimer);progressTimer=null;busy=false;render();readRuntime();}
 }
+$('#preview-button').addEventListener('click',event=>{
+  // Native HTML validation can prevent submit when a changed symbol cleared the
+  // old expiry/lot. Trigger a read-only contract lookup instead of a dead-end warning.
+  const index=$('[name="index"]').value, symbol=$('[name="symbol"]').value.trim();
+  if(!busy && (!verifiedContract || verifiedContract.index!==index || verifiedContract.symbol!==symbol)){
+    event.preventDefault();
+    previewFeedback('Loading the listed contract first. Review the populated details and click Review again. No order sent.');
+    lookupContract();
+  }
+});
 $('#plan-form').addEventListener('submit',event=>{
   event.preventDefault();if(busy || !(current.allowed_actions || []).includes('preview'))return;
   const fields=new FormData(event.currentTarget);const value=key=>Number(fields.get(key));const now=new Date();
   const direct=fields.get('entry_mode')==='LIMIT';
   if(direct && !directSupported){previewFeedback('The installed Oracle release does not support the new limit test yet. No order was sent.','error',true);return;}
-  if(!verifiedContract || verifiedContract.index!==fields.get('index') || verifiedContract.symbol!==fields.get('symbol').trim() || verifiedContract.expiry!==fields.get('expiry') || verifiedContract.lot_size!==value('lot_size') || Number(verifiedContract.tick_size)!==value('tick_size') || verifiedContract.egress_ip!==fields.get('egress_ip')){
+  if(!verifiedContract || verifiedContract.index!==fields.get('index') || verifiedContract.symbol!==fields.get('symbol').trim() || verifiedContract.expiry!==fields.get('expiry') || verifiedContract.lot_size!==value('lot_size') || Number(verifiedContract.tick_size)!==value('tick_size') || (verifiedContract.egress_ip!==null && verifiedContract.egress_ip!==fields.get('egress_ip'))){
     previewFeedback('Load contract & current price for this exact symbol before reviewing the test. Old expiry and lot details cannot be reused. No order was sent.','error',true);return;
   }
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
@@ -195,7 +216,10 @@ $('#plan-form').addEventListener('invalid',event=>{
 },true);
 function contractFieldChanged(event){
   if(event.target.matches('[name="symbol"],[name="index"]'))invalidateContract();
-  else if(['expiry','lot_size','tick_size','egress_ip'].includes(event.target.name))verifiedContract=null;
+  else if(['expiry','lot_size','tick_size'].includes(event.target.name) ||
+          (event.target.name==='egress_ip' && verifiedContract?.egress_ip!=null))verifiedContract=null;
+  // Public master lookup has no verified egress IPv4. Allow the owner to enter
+  // it afterward; Oracle independently validates it during real preview.
   document.querySelector('#preview-feedback').hidden=true;
 }
 document.querySelector('#plan-form').addEventListener('input',contractFieldChanged);
