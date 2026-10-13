@@ -11,7 +11,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-from .alert_cadence import position_risk
+from .alert_cadence import position_risk, current
 
 PROJECT="https://imirspxhbnerxknyynqx.supabase.co"
 
@@ -21,8 +21,40 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("OUTBOUND_REDIRECT_DENIED")
 
 
+def minimal(snapshot,basket,owner_test,now):
+    """Use only last collected position evidence and two lightweight journal keys."""
+    snapshot=snapshot if isinstance(snapshot,dict) else {}
+    basket=basket if isinstance(basket,dict) else {}
+    owner_test=owner_test if isinstance(owner_test,dict) else {}
+    phase=basket.get('phase','IDLE')
+    if phase not in ('IDLE','CLOSED',None):
+        exposure='ACTIVE'
+    elif owner_test.get('state') in ('RUNNING','ERROR') or owner_test.get('attention'):
+        exposure='ACTIVE'
+    else:
+        observed=[]
+        for path in (snapshot.get('ordered_options',[]),
+                     (snapshot.get('execution_observation') or {}).get('positions',[])):
+            if isinstance(path,list):observed.extend(path)
+        exposure='UNKNOWN'
+        for row in observed:
+            if not isinstance(row,dict):continue
+            quantity=row.get('quantity')
+            if type(quantity) in (int,float) and quantity!=0:
+                exposure='ACTIVE'
+                break
+        else:
+            if (snapshot.get('positions_status')=='AVAILABLE'
+                    and snapshot.get('orders_status')=='AVAILABLE'
+                    and current(snapshot.get('finished_at'),now)):
+                exposure='FLAT'
+    return {'risk_state':exposure,'broker_writes':False}
+
+
 def payload(view,now):
-    exposure=position_risk(view,now)
+    exposure=(view.get('risk_state') if isinstance(view,dict) and
+              view.get('risk_state') in ('ACTIVE','FLAT','UNKNOWN')
+              else position_risk(view,now))
     return {"source":"oracle","risk_state":exposure,
             "observed_at":now.isoformat()}
 
