@@ -128,7 +128,8 @@ def test_missing_monitor_is_not_reported_healthy():
     assert checks["oracle_failure_watchdog"]["status"] == "UNKNOWN"
     view = snapshot()
     monitor = {"format": "trading-incident-watch-v1",
-               "broker_writes": False, "monitor_status": "CURRENT"}
+               "broker_writes": False, "monitor_status": "CURRENT",
+               "oracle": {"checked_at": NOW.isoformat()}}
     checks = by_id(readiness_audit.assess(view, now=NOW, monitor=monitor))
     assert checks["oracle_failure_watchdog"]["status"] == "OBSERVED"
     assert checks["independent_full_vm_outage_alert"]["status"] == "UNKNOWN"
@@ -186,3 +187,42 @@ def test_bad_snapshot_cli_fails_without_leaking_error(tmp_path, capsys, monkeypa
     output = capsys.readouterr().out
     assert "PRIVATE" not in output
     assert json.loads(output)["overall"] == "UNAVAILABLE"
+
+
+def test_saved_monitor_current_label_expires():
+    monitor = {"format": "trading-incident-watch-v1", "broker_writes": False,
+               "monitor_status": "CURRENT",
+               "oracle": {"checked_at": (NOW - timedelta(hours=1)).isoformat()}}
+    result = readiness_audit.assess(snapshot(), now=NOW, monitor=monitor)
+    assert by_id(result)["oracle_failure_watchdog"]["status"] == "UNKNOWN"
+
+
+def test_pc_audit_only_uses_fixed_read_command(tmp_path, capsys, monkeypatch):
+    from nifty_engine.agent_engine import oracle_link
+    state = tmp_path / ".agent-state"
+    state.mkdir()
+    config = {
+        "format": "trading-oracle-viewer-v1",
+        "host": "example.invalid",
+        "user": "ubuntu",
+        "identity_file": str(tmp_path / "existing-key"),
+        "python": "/opt/growing-trader/releases/" + SHA + "/venv/bin/python",
+        "root": "/var/lib/trading-observer",
+    }
+    (state / "oracle-viewer.json").write_text(json.dumps(config), encoding="utf-8")
+    view = snapshot()
+    view["runtime"]["release"] = SHA
+    commands = []
+
+    def fake_request(settings, command):
+        assert settings == config
+        commands.append(command)
+        return view
+
+    monkeypatch.setattr(oracle_link, "request", fake_request)
+    monkeypatch.setattr("sys.argv", ["readiness_audit", "--root", str(tmp_path)])
+    assert readiness_audit.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert commands == [{"action": "read"}]
+    assert by_id(result)["deployed_source_identity"]["status"] == "OBSERVED"
+    assert result["authorizes_execution"] is False
