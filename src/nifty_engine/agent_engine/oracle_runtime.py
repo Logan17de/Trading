@@ -100,6 +100,10 @@ class Runtime:
         view["runtime"]={"host":"ORACLE","boot_id":self.boot_id,"heartbeat_sequence":self.sequence,
             "heartbeat_at":self.at,"error":self.error,"orders_enabled":execution["execution_enabled"],"collector_host":"ORACLE"}
         view["execution_controller"]=execution
+        # Only the fixed, nonsecret auth diagnostic is published.
+        probe=self.state.pnl_lines.store.meta('groww-auth-probe-v1',{})
+        view['auth_probe']={k:probe.get(k) for k in
+                            ('slot','status','checked_at','provider_code')}
         from .live_setup import public as live_setup_public
         view['live_setup']=live_setup_public(self.state.pnl_lines.store,self.gate)
         view['premium_impulse']=self.impulse.public()
