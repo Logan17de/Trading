@@ -20,7 +20,7 @@ def ready_alert_evidence(store, *, at=NOW, release=RELEASE):
         {"status":"UPLOADED","checked_at":at.isoformat(),"broker_writes":False})
     store.set_meta(live_start.KEY, {
         "format":live_start.KEY,"release":release,"owner_verified":True,
-        "active_position_alert_tested":True,"independent_cloud_outage_tested":True,
+        "critical_transport_tested":True,"independent_cloud_outage_tested":True,
         "api_checkpoint_tested":True,"provider_acceptance_at":at.isoformat(),
         "reviewed_at":at.isoformat(),
     })
