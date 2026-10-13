@@ -23,7 +23,7 @@ def inspect(now, read_profile):
         status,code='VALID',None
     except Exception as exc:
         code=safe_error(exc).get('code')
-        status='INVALID' if code in ('401','403') else 'UNKNOWN'
+        status='INVALID' if code in ('401','403','GA005') else 'UNKNOWN'
     return dict(slot=slot,status=status,provider_code=code,
                 checked_at=now.isoformat(),broker_writes=False)
 
