@@ -43,6 +43,8 @@ def _current(at,now,seconds=MAX_PROOF_AGE):
 
 def mail_receipt(incidents,recipient,now):
     """One actual recipient-server acceptance of an explicit test email."""
+    if not isinstance(recipient,str) or '@' not in recipient:
+        return None
     return max((
         r['accepted_at'] for r in incidents
         if (r.get('code')=='ALERT_TEST' and r.get('mail_status')=='ACCEPTED'
