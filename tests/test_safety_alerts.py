@@ -25,7 +25,7 @@ def view(now=TIME, *, active=False, owner_test=False):
         'format':'trading-dashboard-v1','order_capability':False,
         'as_of':now.isoformat(),'markets':[market],
         'positions_status':'AVAILABLE','orders_status':'AVAILABLE',
-        'runtime':{'boot_id':'test','heartbeat_sequence':1,'heartbeat_at':now.isoformat()},
+        'runtime':{'boot_id':'test','heartbeat_sequence':int(now.timestamp()),'heartbeat_at':now.isoformat()},
         'execution_controller':{'phase':'MONITORING' if active else 'IDLE',
                                 'protection':'VERIFIED_ACTIVE','blockers':[]},
         'control':{'algo':{'desired_enabled':False}},
