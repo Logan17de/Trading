@@ -76,7 +76,8 @@ class Runtime:
                 'legacy_management':premium_strategy.load(self.root),'research':self.research_catalog,
                 **({'normal':self.normal_catalog} if self.normal_catalog else {})}),
             entries_retired=False,strategy_switches_required=True,matched_iv_required=True,
-            normal_catalog=bool(self.normal_catalog),commissioning_required=True)
+            normal_catalog=bool(self.normal_catalog),commissioning_required=True,
+            safety_alerts_required=True)
         from .impulse_feed import StreamingImpulse
         self.impulse=StreamingImpulse(self.root,self.state.pnl_lines.store)
         from .research_sync import SupabaseArchive
@@ -187,6 +188,14 @@ class Runtime:
                 from .strategy_controls import set_switch
             return set_switch(self.state.pnl_lines.store,value['switch'],datetime.now(timezone.utc))
         if isinstance(value,dict) and set(value)=={"action","enabled"} and value["action"]=="intent" and type(value["enabled"]) is bool:
+            if value["enabled"]:
+                from .live_start import preflight, refusal
+                from .premium_executor import observation
+                from .dashboard import load_json
+                try: obs=observation(load_json(self.output,8_000_000))
+                except (OSError, ValueError, TypeError): obs={'complete':False}
+                failed=preflight(self,obs,datetime.now(timezone.utc))
+                if failed: return refusal(self,failed)
             result=self.state.algo_set(value["enabled"])
             current=self.read().get('control',{}).get('algo')
             if current: result.update(current)

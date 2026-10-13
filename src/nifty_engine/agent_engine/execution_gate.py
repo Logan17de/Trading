@@ -27,7 +27,7 @@ class ExecutionDenied(PermissionError):
 class ExecutionGate:
     def __init__(self, journal, pause_file, *, mode, release, host, clock, policy_hash, entries_retired=False,
                  strategy_switches_required=False, matched_iv_required=False, normal_catalog=False,
-                 commissioning_required=False):
+                 commissioning_required=False, safety_alerts_required=False):
         self.journal, self.pause_file = journal, Path(pause_file)
         self.mode, self.release, self.host = mode, release, host
         self.clock, self.policy_hash = clock, policy_hash
@@ -36,6 +36,7 @@ class ExecutionGate:
         self.matched_iv_required = matched_iv_required
         self.normal_catalog = normal_catalog
         self.commissioning_required = commissioning_required
+        self.safety_alerts_required = safety_alerts_required
         self.account_fingerprint = None
 
     @contextlib.contextmanager
@@ -65,6 +66,9 @@ class ExecutionGate:
             result.append('REVIEWED_LIVE_ACTIVATION_REQUIRED')
         if purpose not in ('ENTRY', 'ROLL', 'EXIT', 'PROTECT'):
             result.append('KNOWN_EXECUTION_PURPOSE_REQUIRED')
+        if self.safety_alerts_required and purpose in ('ENTRY','ROLL'):
+            from .live_start import blockers as alert_blockers
+            result.extend(alert_blockers(self.journal.store, self.release, self.clock()))
         if purpose in ('ENTRY','ROLL') and self.entries_retired:
             result.append('RETIRED_STRATEGY_NEW_ENTRY_DISABLED')
         if purpose in ('ENTRY', 'ROLL') and self.strategy_switches_required:

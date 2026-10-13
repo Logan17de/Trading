@@ -212,7 +212,7 @@ class Monitor:
                     row.update(state='RECOVERED', recovered_at=now.isoformat())
         self.save()
 
-    def deliver(self, now, env, *, send=None):
+    def deliver(self, now, env, *, send=None, allow_requested_test=False):
         """Only authorized safety categories may generate email.
 
         Accepted round receipts use new idempotency keys for each 20m / 2h
@@ -229,7 +229,11 @@ class Monitor:
                 continue
             kind=category(row['code'],row.get('risk_state','UNKNOWN'))
             if kind=='ROUTINE':
-                continue
+                # Only the explicit CLI test-email command may bypass the
+                # exclusive automatic safety-alert allowlist.
+                if not (allow_requested_test and row['code']=='ALERT_TEST'):
+                    continue
+                kind='ACTIVE'
             if kind=='API':
                 slot=auth_slot(now)
                 if not slot or row.get('auth_slots_sent',{}).get(slot):
@@ -412,7 +416,7 @@ def main():
                 print(dumps(monitor.public())); return
             fault=dict(code='ALERT_TEST',component=MESSAGES['ALERT_TEST'][0],message=MESSAGES['ALERT_TEST'][1],details={},immediate=True)
             monitor.record({'ALERT_TEST':fault},now,complete=False)
-            monitor.deliver(now,env)
+            monitor.deliver(now,env,allow_requested_test=True)
         if args.action in ('tick','receipt') and env.get('RESEND_API_KEY'):
             monitor.reconcile(datetime.now(timezone.utc),env['RESEND_API_KEY'])
         print(dumps(monitor.public()))
