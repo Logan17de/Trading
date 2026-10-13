@@ -98,5 +98,5 @@ def expected_auth_failure(probe, now):
     slot = auth_slot(now)
     return (slot is not None and isinstance(probe, dict)
             and probe.get("slot") == slot and probe.get("status") == "INVALID"
-            and probe.get("provider_code") in ("401", "403")
+            and probe.get("provider_code") in ("401", "403", "GA005")
             and current(probe.get("checked_at"), now, 300))
