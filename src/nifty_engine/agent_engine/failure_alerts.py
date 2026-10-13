@@ -40,7 +40,7 @@ MESSAGES = {
     'RESEARCH_ARCHIVE_FAILED': ('Research archive', 'The one-way research archive reported a synchronization failure.'),
     'ALERT_TEST': ('Alert transport test', 'This is a requested notification test. No broker order was sent.'),
     'OWNER_TEST_FAILED': ('Owner broker test', 'The owner test needs attention. Check its entry, stop-loss and remaining position in Groww.'),
-    'API_AUTH_FAILED': ('Groww authentication', 'Groww rejected the authentication check. Verify account/API credentials without posting keys in messages.'),
+    'API_AUTH_FAILED': ('Groww authentication', 'Groww rejected the authentication check. Verify key validity, subscription and required daily approval without sharing secrets.'),
     'STOP_PROTECTION_FAILED': ('Stop-loss protection', 'An active engine-owned basket does not have current verified protection. Inspect the exact order and GTT in Groww.'),
     'TRADE_SUBMISSION_FAILED': ('Trade entry or exit', 'An intended broker order is failed or uncertain. Reconcile existing orders before retrying.'),
 }
