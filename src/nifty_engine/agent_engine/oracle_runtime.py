@@ -97,7 +97,7 @@ class Runtime:
             execution.update(execution_enabled=False,status='BLOCKED')
             execution['blockers'].append('EXECUTOR_WORKER_RECONCILIATION_REQUIRED')
             execution['worker_failure']=self.execution_error
-        view["runtime"]={"host":"ORACLE","boot_id":self.boot_id,"heartbeat_sequence":self.sequence,
+        view["runtime"]={"host":"ORACLE","release":self.gate.release,"boot_id":self.boot_id,"heartbeat_sequence":self.sequence,
             "heartbeat_at":self.at,"error":self.error,"orders_enabled":execution["execution_enabled"],"collector_host":"ORACLE"}
         view["execution_controller"]=execution
         from .live_setup import public as live_setup_public
