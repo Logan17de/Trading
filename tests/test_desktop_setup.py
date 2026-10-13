@@ -451,10 +451,15 @@ def test_one_lot_above_old_purchase_cap_reaches_oracle_preview_unchanged(app):
     assert len(calls)==1 and ' preview-stdin ' in calls[0][0][-1]
 
 
-def test_rejected_price_preview_is_editable_but_still_checks_original_plan(app):
+@pytest.mark.parametrize('blocked_reason', [
+    'COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET',
+    'COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG',
+    'TURN_ALGO_OFF_BEFORE_SETUP',
+])
+def test_rejected_price_preview_is_editable_but_still_checks_original_plan(app, blocked_reason):
     ctl,store,calls,cfg=app
     def blocked(*a,**kw):
-        return response('OWNER_SETUP_BLOCKED',reason='COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET')
+        return response('OWNER_SETUP_BLOCKED',reason=blocked_reason)
     ctl.run=blocked
     result=ctl.command({'action':'preview','spec':spec()})
     assert 'preview' in result['allowed_actions'] and 'submit' not in result['allowed_actions']

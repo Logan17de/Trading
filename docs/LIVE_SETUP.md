@@ -18,8 +18,14 @@ There is no fixed INR purchase cap for this owner-chosen one-lot test. The quote
 purchase amount must fit the actual Groww option-buy balance; keep charges available
 as well. It does not sell a naked option, choose an instrument,
 change the owner's prices to force a fill, or use a pre-existing manual position.
-Only NIFTY/SENSEX FNO NRML, one current-master lot and a non-expiry-day contract
-are accepted. Keep the purchase amount and charges available. A test may remain
+Only NIFTY/SENSEX FNO NRML and one current-master lot are accepted. The direct
+LIMIT Buy + protect test also accepts an option expiring TODAY only when reviewed
+before 12:30 IST and with BUY submission expiring by 13:00 IST (maximum 30-minute
+window). The exact contract still must exist in the current Groww instrument master.
+Past expiries and same-day GTT BUY entries remain blocked. On expiry day the option
+can lose its full paid premium, and Groww may reject or fail to fill the stop/exit.
+Protection is not guaranteed. The simulator/regular strategy never inherits this
+exception. Keep the purchase amount and charges available. A test may remain
 pending if its limit does not fill. Advanced GTT mode remains available.
 
 ## Use the desktop app

@@ -10,6 +10,7 @@ let activeAction = '';
 let progressTimer = null;
 let runtimeTimer = null;
 let directSupported = false;
+let verifiedContract = null;
 const nextSteps = {
   NOT_STARTED:'Load your contract, enter the prices and review your test.',
   PRIOR_TEST_RETIRED:'The old test is archived. Your last draft is kept for editing.',
@@ -30,7 +31,7 @@ const words = value => String(value || '').replaceAll('_',' ').toLowerCase().rep
 const reasons = {
   COMMISSIONING_PRICE_NOT_ON_TICK:'Each price must be a multiple of the contract’s tick size.',
   COMMISSIONING_BUY_LIMIT_BELOW_TRIGGER:'BUY limit must be at least the BUY trigger.',
-  COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG:'The BUY submission window expired, or the contract expires today or earlier. A new preview renews an unsubmitted window; this test requires a later contract expiry.',
+  COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG:'The test window expired, the contract already expired, or an expiry-day LIMIT test is outside the early-session safety cutoff (BUY by 13:00 IST, review before 12:30 IST). GTT BUY requires a later expiry.',
   COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET:'This GTT test waits for an upward crossing. The current ask is already at or above your trigger. Edit the unsubmitted preview; prices are never changed for you.',
   COMMISSIONING_STOP_PRICE_ORDER_INVALID:'Stop limit must be at or below the stop trigger; both must be below the BUY trigger.',
   COMMISSIONING_CANCEL_STOP_BEFORE_CLOSE:'Cancel and verify the stop-loss before sending a separate SELL.',
@@ -77,6 +78,9 @@ function render() {
     for (const [label,value,kind] of rows) { const div=document.createElement('div');if(kind)div.className=kind;const dt=document.createElement('dt');dt.textContent=label;const dd=document.createElement('dd');dd.textContent=value;div.append(dt,dd);$('#review-plan').append(div); }
   }
   $('#test-effect').textContent = spec?.entry_mode==='LIMIT' ? 'Buy + protect authorizes one real limit BUY, stop-loss after the full fill, and an Oracle-managed target exit. The BUY and stop are separate requests. Failed or uncertain protection needs attention; prices are never raised to force a fill.' : 'This GTT BUY waits for its price trigger. After a fill, Attach stop-loss is a separate action. Acceptance does not mean filled.';
+  if(spec?.entry_mode==='LIMIT' && spec.contract.expiry===new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())){
+    $('#test-effect').textContent += ' EXPIRY TODAY: You can lose the entire paid premium and charges. The stop/target may be rejected or remain unfilled, and the option can expire before exit. No automatic exit is guaranteed.';
+  }
   $('#evidence').replaceChildren();
   for (const [key,label] of Object.entries(labels)) {const span=document.createElement('span');const ok=current.facts?.[key]===true;span.textContent=`${ok?'✓':'○'} ${label}`;if(ok)span.className='positive';$('#evidence').append(span);}
 }
@@ -89,6 +93,7 @@ function progress() {
   if(activeAction==='preview')previewFeedback(`Checking preview · ${seconds}s. Oracle is checking the contract and account. No order is being submitted.`);
 }
 function restoreForm(spec) {
+  verifiedContract = null; // A saved draft is not a fresh contract lookup.
   if(!spec)return;
   const values = {...spec,...spec.contract,lot_size:spec.quantity};
   for(const key of ['index','symbol','expiry','lot_size','tick_size','trigger_price','buy_limit_price','sell_limit_price','stop_trigger_price','stop_limit_price','egress_ip']) {
@@ -101,18 +106,27 @@ function entryMode(){
   $('#buy-trigger-field').hidden=direct;$('[name="trigger_price"]').required=!direct;
   $('#entry-explanation').textContent=direct ? 'Oracle sends your limit BUY, then attaches the declared stop after a full fill. It monitors the target and verifies stop cancellation before selling. A limit order can remain unfilled.' : 'GTT waits for an upward price crossing. Its BUY trigger must be above the current ask. Each subsequent broker action requires your click.';
 }
+function invalidateContract(){
+  verifiedContract=null;
+  for(const key of ['expiry','lot_size','tick_size','egress_ip'])document.querySelector('[name="'+key+'"]').value='';
+  document.querySelector('#contract-summary').textContent='Contract details require a fresh lookup for this exact symbol. Prices were not changed.';
+}
 async function lookupContract(){
-  if(busy)return;busy=true;activeAction='lookup';render();
+  if(busy)return;
+  const requested={index:document.querySelector('[name="index"]').value,symbol:document.querySelector('[name="symbol"]').value.trim()};
+  busy=true;activeAction='lookup';render();
   $('#contract-summary').textContent='Reading the contract and current quote from Oracle…';
   try{
-    const response=await fetch('/api/live-setup',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':token},body:JSON.stringify({action:'lookup',spec:{index:$('[name="index"]').value,symbol:$('[name="symbol"]').value.trim()}}),cache:'no-store'});
+    const response=await fetch('/api/live-setup',{method:'POST',headers:{'Content-Type':'application/json','X-Local-Token':token},body:JSON.stringify({action:'lookup',spec:requested}),cache:'no-store'});
     const data=await response.json();
     if(data.status!=='OWNER_CONTRACT_FOUND')throw new Error(reasons[data.reason] || words(data.reason || data.status));
-    for(const key of ['expiry','lot_size','tick_size'])$(`[name="${key}"]`).value=data.contract[key];
-    $('[name="egress_ip"]').value=data.egress_ip;
+    if(data.contract.index!==requested.index || data.contract.symbol!==requested.symbol)throw new Error('Oracle returned a different contract. No details applied');
+    for(const key of ['expiry','lot_size','tick_size'])document.querySelector('[name="'+key+'"]').value=data.contract[key];
+    document.querySelector('[name="egress_ip"]').value=data.egress_ip;
+    verifiedContract={...data.contract,egress_ip:data.egress_ip};
     const q=data.quote || {};
     $('#contract-summary').textContent=`${data.contract.index} · ${data.contract.expiry} · 1 lot = ${data.contract.lot_size} · Tick ${money(data.contract.tick_size)}. Last ${money(q.last_price)} · Bid ${money(q.bid_price)} · Ask ${money(q.offer_price)}. ${q.timestamp_status==='RECENT_TRADE_ONLY'?'Quote received':'Quote not current'} ${new Date(data.checked_at).toLocaleTimeString()}.`;
-  }catch(error){$('#contract-summary').textContent=`Contract lookup: ${error.message}. Your prices are unchanged.`;}
+  }catch(error){invalidateContract();document.querySelector('#contract-summary').textContent='Contract lookup: '+error.message+'. Retry after resolving the cause. Your prices are unchanged.';}
   finally{busy=false;render();}
 }
 async function loadSaved() {
@@ -162,12 +176,15 @@ $('#plan-form').addEventListener('submit',event=>{
   const fields=new FormData(event.currentTarget);const value=key=>Number(fields.get(key));const now=new Date();
   const direct=fields.get('entry_mode')==='LIMIT';
   if(direct && !directSupported){previewFeedback('The installed Oracle release does not support the new limit test yet. No order was sent.','error',true);return;}
+  if(!verifiedContract || verifiedContract.index!==fields.get('index') || verifiedContract.symbol!==fields.get('symbol').trim() || verifiedContract.expiry!==fields.get('expiry') || verifiedContract.lot_size!==value('lot_size') || Number(verifiedContract.tick_size)!==value('tick_size') || verifiedContract.egress_ip!==fields.get('egress_ip')){
+    previewFeedback('Load contract & current price for this exact symbol before reviewing the test. Old expiry and lot details cannot be reused. No order was sent.','error',true);return;
+  }
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
-  if(fields.get('expiry')<=today){
+  if(fields.get('expiry')<today || (fields.get('expiry')===today && !direct)){
     $('#setup-state').textContent='Contract expiry is not eligible';
-    $('#setup-reason').textContent='This broker test currently requires an option expiring after today. No request was sent to Oracle or Groww.';
-    $('#command-note').textContent='Your draft is unchanged. The option expiry identifies the contract; the BUY submission window is set automatically.';
-    previewFeedback(`Preview blocked: the selected contract expires ${fields.get('expiry')}. This test requires an expiry after today. No order was sent. Changing the date alone would not change the contract.`,'error',true);
+    $('#setup-reason').textContent='Expired contracts cannot be used. An expiry-day test must be an explicit protected LIMIT BUY, not GTT.';
+    $('#command-note').textContent='Your draft is unchanged. Contract expiry is populated by exact broker lookup.';
+    previewFeedback('Preview blocked: this option has expired, or expiry-day GTT entry is unsupported. No order was sent. Load the exact contract to continue.','error',true);
     return;
   }
   command({action:'preview',spec:{...(direct?{entry_mode:'LIMIT'}:{}),contract:{symbol:fields.get('symbol').trim(),index:fields.get('index'),expiry:fields.get('expiry'),lot_size:value('lot_size'),tick_size:value('tick_size')},quantity:value('lot_size'),trigger_price:direct?value('buy_limit_price'):value('trigger_price'),buy_limit_price:value('buy_limit_price'),sell_limit_price:value('sell_limit_price'),stop_trigger_price:value('stop_trigger_price'),stop_limit_price:value('stop_limit_price'),valid_until:new Date(now.getTime()+30*60*1000).toISOString(),egress_ip:fields.get('egress_ip').trim()}});
@@ -176,13 +193,26 @@ $('#plan-form').addEventListener('invalid',event=>{
   $('#technical-details').open=true;
   previewFeedback(`Check ${event.target.labels?.[0]?.textContent.trim() || 'the highlighted field'}: ${event.target.validationMessage}`,'error');
 },true);
-$('#plan-form').addEventListener('input',()=>{$('#preview-feedback').hidden=true;});
+function contractFieldChanged(event){
+  if(event.target.matches('[name="symbol"],[name="index"]'))invalidateContract();
+  else if(['expiry','lot_size','tick_size','egress_ip'].includes(event.target.name))verifiedContract=null;
+  document.querySelector('#preview-feedback').hidden=true;
+}
+document.querySelector('#plan-form').addEventListener('input',contractFieldChanged);
+document.querySelector('#plan-form').addEventListener('change',contractFieldChanged);
 $('#refresh-status').addEventListener('click',()=>command({action:'status'}));
 $('#lookup-contract').addEventListener('click',lookupContract);
 $('[name="entry_mode"]').addEventListener('change',entryMode);
 $('#confirm-action').addEventListener('change',render);
 for(const button of document.querySelectorAll('[data-read]'))button.addEventListener('click',()=>command({action:button.dataset.read}));
-for(const button of document.querySelectorAll('[data-write]'))button.addEventListener('click',()=>{const action=button.dataset.write;if(busy || savedOnly || (action!=='buy-protect' && !$('#confirm-action').checked) || !(current.allowed_actions||[]).includes(action))return;command({action,confirm:action==='arm'?current.evidence_digest:current.plan_hash});});
+for(const button of document.querySelectorAll('[data-write]'))button.addEventListener('click',()=>{
+  const action=button.dataset.write;
+  if(busy || savedOnly || (action!=='buy-protect' && !$('#confirm-action').checked) || !(current.allowed_actions||[]).includes(action))return;
+  if(action==='buy-protect' && current.plan_spec?.contract?.expiry===new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())){
+    if(!window.confirm('This contract expires TODAY. A real one-lot BUY can lose its full paid premium and charges. The subsequent stop or target may not be accepted or filled. Continue with the exact reviewed real order?'))return;
+  }
+  command({action,confirm:action==='arm'?current.evidence_digest:current.plan_hash});
+});
 function readRuntime(){return fetch('/api/dashboard',{cache:'no-store'}).then(r=>r.json()).then(data=>{
   const setup=data.live_setup;
   directSupported=setup?.supports_direct_test===true;

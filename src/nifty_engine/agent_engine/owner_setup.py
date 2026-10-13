@@ -305,7 +305,7 @@ def worker(payload):
         raise SetupError('EXACT_ORACLE_SERVICE_IDENTITY_REQUIRED')
     require_direct_route(os.environ)
     store=Store(root/'.agent-state/pc-monitor.sqlite3')
-    if intent(store)['enabled']: raise SetupError('TURN_ALGO_OFF_BEFORE_SETUP')
+    if payload['action'] != 'lookup' and intent(store)['enabled']: raise SetupError('TURN_ALGO_OFF_BEFORE_SETUP')
     mode=payload['environment']['EXECUTION_MODE']
     lock=(root/'.agent-state/broker-commissioning.lock').open('a')
     with lock:
