@@ -199,6 +199,11 @@ class RemoteViewer:
             accepted=self.alert_status=='ACCEPTED'
             due=may_send(self.incident_code,kind,now,self.last_accepted_at,
                          initial=not accepted and self.last_accepted_at is None)
+            # Flip this only after the independently scheduled cloud watchdog
+            # has verified a real email receipt. Prevent duplicate outage mail.
+            if os.environ.get('TRADING_CLOUD_VM_ALERTS_PRIMARY')=='1':
+                due=False
+                self.alert_status='DELEGATED_TO_CLOUD'
             if due and now.timestamp()-self.last_attempt>=300:
                 if accepted:
                     self.alert_round+=1
