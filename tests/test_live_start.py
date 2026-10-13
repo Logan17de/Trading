@@ -117,3 +117,13 @@ def test_preflight_checks_selected_executable_strategy_and_ignores_only_clock_of
     from nifty_engine.agent_engine.strategy_groups import set_switch
     set_switch(store,{"id":"normal_theta","enabled":True,"revision":0},NOW)
     assert live_start.preflight(r,{"complete":True,"received_at":NOW.isoformat()},NOW)==[]
+
+
+def test_existing_owner_on_is_never_secretly_turned_off_by_start_refusal(tmp_path):
+    r,store=runtime(tmp_path,gate_blockers=['LIVE_ENVIRONMENT_NOT_ACTIVATED'])
+    premium_strategy.set_intent(store,True,NOW)
+    result=live_start.refusal(r,['LIVE_ENVIRONMENT_NOT_ACTIVATED'])
+    assert result['status']=='ON_BLOCKED'
+    assert result['desired_enabled'] is True
+    assert result['execution_enabled'] is False
+    assert premium_strategy.intent(store)['enabled'] is True
