@@ -182,8 +182,9 @@ def main():
         monitor = _read_file(args.monitor) if args.monitor else None
         result = assess(view, monitor=monitor, expected_release=expected_release)
         print(json.dumps(result, sort_keys=True))
-    except (OSError, ValueError, TypeError, KeyError, ConnectionError) as exc:
-        # Never print exception bodies: SSH/provider exceptions may contain identities.
+    except Exception as exc:
+        # Includes subprocess timeouts. Never print exception bodies: SSH/provider
+        # failures may contain identity paths or other protected information.
         print(json.dumps({"format": "trading-readiness-audit-v1", "overall": "UNAVAILABLE",
                           "error": type(exc).__name__, "broker_writes": False,
                           "authorizes_execution": False}, sort_keys=True))
