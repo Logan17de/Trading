@@ -37,15 +37,16 @@ def test_queued_report_waits_and_restarts_without_consuming_attempts(tmp_path,mo
     assert reporting.deliver_once(Store(path),OPEN+timedelta(days=1),send=lambda *a:'receipt')=='ACCEPTED'
 
 
-def test_alerts_keep_monitoring_but_only_unresolved_incidents_send_after_open(tmp_path):
+def test_critical_alerts_continue_outside_regular_mail_window(tmp_path):
     path=tmp_path/'alerts.sqlite3';m=Monitor(Store(path));closed=OPEN.replace(hour=20)
     m.tick(broken(closed),closed)
-    m.deliver(closed,ENV,send=lambda *a:pytest.fail('closed send'))
-    assert all(r['attempts']==0 for r in m.public()['incidents'])
-    restarted=Monitor(Store(path));calls=[];now=OPEN+timedelta(days=1)
+    calls=[]
+    m.deliver(closed,ENV,send=lambda *a:calls.append(a) or 'receipt')
+    assert len(calls)==1  # live/unknown exposure overrides the routine quiet hours
+    restarted=Monitor(Store(path));now=OPEN+timedelta(days=1)
     restarted.tick(broken(now),now)
     restarted.deliver(now,ENV,send=lambda *a:calls.append(a) or 'receipt')
-    assert len(calls)==1
+    assert len(calls)==2
 
 
 def test_recovered_overnight_incidents_do_not_send_next_session(tmp_path):
