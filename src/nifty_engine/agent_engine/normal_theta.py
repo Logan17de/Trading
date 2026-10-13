@@ -25,11 +25,31 @@ def load(root):
     cfg = json.loads(path.read_text(encoding='utf-8-sig'))
     expected = dict(format='normal-theta-v1', indices=['NIFTY','SENSEX'],
         maximum_lots=2, risk_limit_inr=1000, entry_window_jst=['14:00','19:00'],
+        latest_entry_jst='18:30',forced_exit_jst='18:45',flat_deadline_jst='19:00',
+        weekday_index_jst=['NIFTY','NIFTY','SENSEX','SENSEX','NIFTY'],
         short_dte=[14,45], close_dte=7, short_abs_delta=[.15,.25],
         trend_adx_min=25, take_profit_fraction=.5, stop_credit_multiple=1.5,
         maximum_relative_quote_spread=.10, historical_iv_required=False)
     if cfg != expected: raise ValueError('DECLARED_NORMAL_THETA_POLICY_REQUIRED')
     return cfg
+
+
+def scheduled_index(cfg, now):
+    """Use JST weekday, not the expiry calendar, to select the index."""
+    day=now.astimezone(JST).weekday()
+    return cfg['weekday_index_jst'][day] if day<5 else None
+
+
+def entry_window(cfg, now):
+    """Only start a new protected spread at 14:00-18:29 JST on weekdays."""
+    clock=now.astimezone(JST).strftime('%H:%M')
+    return (scheduled_index(cfg,now) is not None
+            and cfg['entry_window_jst'][0]<=clock<cfg['latest_entry_jst'])
+
+
+def force_exit_due(cfg, now):
+    """Start owned-position liquidation ahead of the 19:00 JST deadline."""
+    return now.astimezone(JST).strftime('%H:%M')>=cfg['forced_exit_jst']
 
 
 def confirmed_trend(cfg, index, bundle, now):
@@ -59,8 +79,8 @@ def evaluate(cfg, index, bundle, now, *, occupied=False):
         event_calendar=bundle.get('event_calendar', {'status':'UNKNOWN'}))
     reasons = result['reasons']; local = now.astimezone(JST)
     if index not in cfg['indices']: raise ValueError('SUPPORTED_INDEX_REQUIRED')
-    if not (local.weekday()<5 and (14,0)<=(local.hour,local.minute)<(19,0)):
-        reasons.append('OUTSIDE_1400_1900_JST')
+    if not entry_window(cfg,now):
+        reasons.append('OUTSIDE_1400_1830_JST')
     if occupied: reasons.append('SINGLE_BASKET_OCCUPIED')
     if bundle.get('index')!=index or bundle.get('positions_complete') is not True:
         reasons.append('COMPLETE_INDEX_POSITION_EVIDENCE_REQUIRED')

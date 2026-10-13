@@ -10,7 +10,7 @@ The original four preferences and exact position ownership remain provenance.
 
 This is a new, unbacktested hypothesis for both NIFTY and SENSEX, evaluated when
 fresh evidence is available. It does not guarantee a daily trade or profit.
-There is no former weekday routing, fixed ₹20/₹80 target, expiry entry or rollover.
+Owner-defined weekday routing is active: **NIFTY on Monday, Tuesday and Friday; SENSEX on Wednesday and Thursday**. There is no fixed ₹20/₹80 target, expiry-only entry or automatic rollover.
 
 | Check | Rule |
 | --- | --- |
@@ -22,9 +22,11 @@ There is no former weekday routing, fixed ₹20/₹80 target, expiry entry or ro
 | Quotes | Positive two-sided quotes, sufficient displayed quantity, spread ≤10% of midpoint; dated Greeks and books required |
 | Size | One owned basket; compare one/two lots using current actual balances and exact hypothetical broker margin/charges |
 | Risk | Quoted expiry loss after estimated round-trip charges ≤₹1,000; hedge-only debit plus costs also ≤₹1,000 |
-| Selection | Highest net expiry reward/risk among sampled valid baskets, then lower margin; not a global optimum or probability estimate |
-| Entry | Weekdays 14:00 inclusive–19:00 exclusive JST, confirmed broker session and all execution gates |
-| Exit | Half of actual net entry credit after estimated costs; loss trigger is the smaller of ₹1,000 and 1.5 times gross entry credit; close at seven or fewer calendar DTE |
+| Selection | Highest estimated net maximum expiry profit among bounded, margin-verified, affordable baskets, then lower margin; not a global optimum or expected-return estimate |
+| Entry | Correct weekday index, 14:00 inclusive–18:30 exclusive JST, confirmed broker session and all execution gates |
+| Exit | 18:45 JST initiate mandatory owned-basket unwind, with 19:00 JST target flat deadline; also profit/loss and DTE exits. Cancel/confirm protective stop before short close, short before hedge. Fills cannot be guaranteed |
+
+Both NSE and BSE F&O regular sessions close at 15:40 IST (19:10 JST as of August 2026). The owner-specified **19:00 JST deadline is earlier than exchange close**. The system initiates short-first liquidation at 18:45 JST; it must report unsettled positions instead of asserting they are closed. Global Algo Off/paused execution can prevent order submission or exit. No new spreads begin at or after 18:30.
 
 Held exact-owned baskets are reviewed outside the fresh-entry window while the
 exchange is open. Disabling their strategy stops new entries/incomplete entry,

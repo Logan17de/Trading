@@ -48,6 +48,10 @@ class ReportExecution:
 
     def matched_iv_required(self):
         return self.e.gate.matched_iv_required
+    def may_continue_entry(self,now,state=None):
+        return premium_strategy.entry_window(now)
+    def timed_exit_reason(self,now):
+        return None
 
     def evidence(self, obs):
         """Add independently dated prospective books without redating either source."""
@@ -187,6 +191,14 @@ class ReportExecution:
             e._exclusive(state, obs)
             if stamp(obs['received_at']) <= stamp(state['last_write_at']):
                 return e._status('WAIT_FOR_POST_WRITE_POSITION_SNAPSHOT')
+            # Normal's timed liquidation supersedes P&L/entry continuation.
+            # Existing cancellation, ownership and short-before-hedge exits
+            # remain unchanged. We never mark flat until broker confirms it.
+            timed_reason=self.timed_exit_reason(e.clock())
+            if (timed_reason and state['phase'] not in
+                ('REPORT_EXIT_SHORTS','REPORT_EXIT_HEDGES','CLOSED')):
+                state.update(phase='REPORT_EXIT_SHORTS',exit_reason=timed_reason)
+                e._save(state)
             if state['phase'] in ('REPORT_ENTRY_HEDGES','REPORT_ENTRY_SHORTS','REPORT_PROTECTION'):
                 for symbol,p in state['protections'].items():
                     result=e.protection.reconcile(p['key'])
@@ -203,7 +215,7 @@ class ReportExecution:
                 review=self.close_reason(state,obs)
                 if review.get('reason')=='LOSS_TRIGGER':
                     state.update(phase='REPORT_EXIT_SHORTS',exit_reason='LOSS_DURING_ENTRY');e._save(state)
-            if entering and (not enabled or not premium_strategy.entry_window(e.clock())
+            if entering and (not enabled or not self.may_continue_entry(e.clock(),state)
                              or (e.clock() - stamp(state['started_at'])).total_seconds() > 180):
                 state.update(phase='REPORT_EXIT_SHORTS', exit_reason='ENTRY_DISABLED_OR_TIMEOUT'); e._save(state)
             purpose = ('ENTRY' if state['phase'] in ('REPORT_ENTRY_HEDGES', 'REPORT_ENTRY_SHORTS') else

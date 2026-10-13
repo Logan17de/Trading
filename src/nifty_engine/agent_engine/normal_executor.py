@@ -13,6 +13,11 @@ class NormalExecution(ReportExecution):
     def enabled(self,sid):return sid==policy.ID and groups.read(self.e.journal.store)['enabled'][policy.ID]
     def allowed(self,sid):return sid==policy.ID
     def matched_iv_required(self):return False
+    def may_continue_entry(self,now,state=None):
+        return (policy.entry_window(self.cfg,now) and
+                (state is None or state['candidate']['index']==policy.scheduled_index(self.cfg,now)))
+    def timed_exit_reason(self,now):
+        return 'DAILY_1900_FLAT_DEADLINE' if policy.force_exit_due(self.cfg,now) else None
     def spread_type(self,c):
         if c.get('spread_type') not in ('bull_put','bear_call'):raise ValueError('NORMAL_VERTICAL_TYPE_REQUIRED')
         return c['spread_type']
@@ -30,6 +35,9 @@ class NormalExecution(ReportExecution):
         reasons=[];candidates=[]
         if not self.enabled(policy.ID):reasons.append('STRATEGY_SWITCH_OFF')
         for index in self.cfg['indices']:
+            if index!=policy.scheduled_index(self.cfg,self.e.clock()):
+                reasons.append(index+'_INDEX_NOT_SCHEDULED_TODAY')
+                continue
             value=policy.evaluate(self.cfg,index,self.input_bundle({'index':index}),self.e.clock())
             candidate=value['candidate']
             if candidate and self.enabled(policy.ID) and (not state or signature(candidate)==signature(state['candidate'])):
@@ -47,6 +55,10 @@ class NormalExecution(ReportExecution):
         # Re-evaluate current source evidence; a forged/stale prepared object may
         # not remove trend, net-theta, quote-width or actual margin requirements.
         if c.get('normal_policy_sha256')!=identity(self.cfg):raise ValueError('NORMAL_POLICY_CHANGED')
+        if c.get('index')!=policy.scheduled_index(self.cfg,self.e.clock()):
+            raise ValueError('INDEX_NOT_SCHEDULED_TODAY')
+        if not policy.entry_window(self.cfg,self.e.clock()):
+            raise ValueError('NORMAL_NEW_ENTRY_WINDOW_ENDED')
         current=self.preparation(obs,state)['selected']
         if not current or signature(current)!=signature(c) or current['spread_type']!=c.get('spread_type'):
             raise ValueError('CURRENT_NORMAL_THETA_CANDIDATE_REQUIRED')
@@ -62,6 +74,9 @@ class NormalExecution(ReportExecution):
         return super().validate(c,obs,state)
 
     def close_reason(self,state,obs):
+        if self.timed_exit_reason(self.e.clock()):
+            return dict(action='REVIEW_EXIT',reason='DAILY_1900_FLAT_DEADLINE',
+                        net_pnl_inr=None,execution_enabled=False,broker_writes=False)
         e=self.e;c=state['candidate'];net=e._net(state)
         liquidation=sum(q*e._book(contract(next(r for r in c['legs'] if r['symbol']==symbol)),obs,
             'SELL' if q>0 else 'BUY',abs(q))['bid' if q>0 else 'ask'] for symbol,q in net.items())

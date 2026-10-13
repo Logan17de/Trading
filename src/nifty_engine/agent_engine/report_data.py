@@ -412,10 +412,14 @@ class ReportData:
                 # A neutral/unknown trend cannot become a trade candidate.
                 normal_books=[];normal_margins={}
                 if self.normal_cfg:
-                    from .normal_theta import confirmed_trend
-                    trend=confirmed_trend(self.normal_cfg,index,b,self.clock())
+                    from .normal_theta import confirmed_trend, scheduled_index, entry_window
+                    chosen_today=scheduled_index(self.normal_cfg,self.clock())
+                    scanning_enabled=entry_window(self.normal_cfg,self.clock()) and index==chosen_today
+                    trend=confirmed_trend(self.normal_cfg,index,b,self.clock()) if scanning_enabled else 'UNKNOWN'
                     direction='PE' if trend=='BULLISH' else 'CE' if trend=='BEARISH' else None
-                    scan=dict(status='NO_CONFIRMED_TREND',direction=None,
+                    block_reason=('INDEX_NOT_SCHEDULED_TODAY' if index!=chosen_today else
+                                  'ENTRY_WINDOW_CLOSED' if not scanning_enabled else 'NO_CONFIRMED_TREND')
+                    scan=dict(status=block_reason,direction=None,
                         checked_at=self.clock().isoformat(),broker_writes=False,
                         margin_requests=0,verified_affordable=0,full_chain_exhaustive=False)
                     if direction and normal_dates:

@@ -100,6 +100,13 @@ def test_separate_group_switches_restart_revision_and_research_cannot_enter(tmp_
 class NormalSession(ReportSession):
     def __init__(self,path,index='NIFTY',regime='BULLISH'):
         super().__init__(path,index,regime);self.data=evidence(index,regime)
+        # Synthetic NIFTY execution occurs on Friday, while the shared
+        # historical research fixture uses Wednesday (now SENSEX-only).
+        if index=='NIFTY':
+            self.now=NOW+timedelta(days=2)
+            for feature in self.data['features'].values():
+                if 'history_end_at' in feature:
+                    feature['history_end_at']=(self.now-timedelta(days=1)).isoformat()
         self.gate.normal_catalog=True
         self.executor=PremiumExecutor(self.journal,self.gateway,self.protection,self.gate,LEGACY,
             clock=lambda:self.now,report_cfg=RESEARCH,normal_cfg=CFG)
@@ -300,3 +307,52 @@ def test_max_net_profit_rather_than_profit_to_risk_ratio():
     candidate=theta.evaluate(CFG,'NIFTY',base,NOW)['candidate']
     assert candidate is not None
     assert candidate['net_max_expiry_profit_inr']>0
+
+@pytest.mark.parametrize('weekday,index',[
+    (0,'NIFTY'),(1,'NIFTY'),(2,'SENSEX'),(3,'SENSEX'),(4,'NIFTY'),
+    (5,None),(6,None)])
+def test_jst_weekday_index_schedule(weekday,index):
+    date=NOW+timedelta(days=weekday-NOW.weekday())
+    assert theta.scheduled_index(CFG,date)==index
+
+
+@pytest.mark.parametrize('time_text,allowed,exit_due',[
+    ('13:59',False,False),('14:00',True,False),
+    ('18:29',True,False),('18:30',False,False),
+    ('18:44',False,False),('18:45',False,True),
+    ('18:59',False,True),('19:00',False,True),
+    ('20:00',False,True)])
+def test_normal_entry_and_forced_exit_boundaries(time_text,allowed,exit_due):
+    hour,minute=map(int,time_text.split(':'))
+    instant=NOW.replace(hour=hour,minute=minute)
+    assert theta.entry_window(CFG,instant)==allowed
+    assert theta.force_exit_due(CFG,instant)==exit_due
+
+
+def test_index_route_for_execution_requires_scheduled_index(tmp_path):
+    s=NormalSession(tmp_path,index='NIFTY')
+    s.now=NOW  # Wednesday: SENSEX only
+    prepared=s.executor.normal.preparation(s.observation())
+    assert prepared['selected'] is None
+    assert 'NIFTY_INDEX_NOT_SCHEDULED_TODAY' in prepared['reasons']
+    assert not s.broker.writes
+
+
+def test_exit_force_starts_before_1900_and_never_marks_flat_early(tmp_path):
+    s=NormalSession(tmp_path,index='NIFTY')
+    s.monitoring()
+    state=s.executor._state()
+    assert state['phase']=='REPORT_MONITORING'
+    s.now=s.now.replace(hour=18,minute=44,second=53)
+    first=s.tick()  # 18:44:58 JST
+    assert s.executor._state()['phase']=='REPORT_MONITORING'
+    second=s.tick() # 18:45:03 JST
+    state=s.executor._state()
+    assert state['exit_reason']=='DAILY_1900_FLAT_DEADLINE'
+    assert state['phase'] in ('REPORT_EXIT_SHORTS','REPORT_EXIT_HEDGES')
+    assert state['phase']!='CLOSED'
+    s.close()
+    assert s.executor._state()['phase']=='CLOSED'
+    assert s.executor._state()['exit_reason']=='DAILY_1900_FLAT_DEADLINE'
+    assert [row['transaction_type'] for kind,row in s.broker.writes if kind=='ORDER']==[
+        'BUY','SELL','BUY','SELL']
