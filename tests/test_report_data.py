@@ -204,16 +204,24 @@ def test_off_blocks_all_order_purposes_even_with_valid_activation(tmp_path,purpo
         with gate.authorize('POST','/v1/order/create',{},obs,purpose=purpose):pytest.fail('write capability must not be granted')
 
 
-def test_owner_command_only_explicit_intent_survives_restart_no_orders(tmp_path):
+def test_owner_command_requires_live_commissioning_and_never_saves_unverified_on(tmp_path):
     path=tmp_path/'j.sqlite3';j=PcJournal(path)
     runtime=Runtime.__new__(Runtime)
-    runtime.state=SimpleNamespace(algo_set=lambda enabled:premium_strategy.set_intent(j.store,enabled,NOW))
+    runtime.state=SimpleNamespace(
+        algo_set=lambda enabled:premium_strategy.set_intent(j.store,enabled,NOW),
+        pnl_lines=SimpleNamespace(store=j.store))
     runtime.read=lambda:{'control':{'algo':{'execution_enabled':False,'broker_writes':False}}}
+    runtime.gate=SimpleNamespace(account_fingerprint=None,
+        blockers=lambda *a,**kw:['LIVE_ENVIRONMENT_NOT_ACTIVATED','OWNER_ALGO_OFF'])
+    runtime.executor=None;runtime.error=None;runtime.execution_error=None
+    runtime.output=tmp_path/'missing-observation.json'
     assert not premium_strategy.intent(j.store)['enabled']
     with pytest.raises(ValueError):runtime.command({'action':'intent','enabled':'true'})
     assert not premium_strategy.intent(j.store)['enabled']
     result=runtime.command({'action':'intent','enabled':True})
+    assert result['status']=='START_REFUSED' and result['desired_enabled'] is False
     assert not result['execution_enabled'] and not result['broker_writes']
-    assert premium_strategy.intent(PcJournal(path).store)['enabled']
+    assert 'LIVE_ENVIRONMENT_NOT_ACTIVATED' in result['blockers']
+    assert not premium_strategy.intent(PcJournal(path).store)['enabled']
     runtime.command({'action':'intent','enabled':False})
     assert not premium_strategy.intent(PcJournal(path).store)['enabled']
