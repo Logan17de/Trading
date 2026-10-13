@@ -40,7 +40,7 @@ def blockers(store, release, now):
             or proof.get("format")!=KEY
             or proof.get("release")!=release
             or proof.get("owner_verified") is not True
-            or proof.get("active_position_alert_tested") is not True
+            or proof.get("critical_transport_tested") is not True
             or proof.get("independent_cloud_outage_tested") is not True
             or proof.get("api_checkpoint_tested") is not True
             or not _fresh(proof.get("provider_acceptance_at"),now,MAX_PROOF_AGE)
