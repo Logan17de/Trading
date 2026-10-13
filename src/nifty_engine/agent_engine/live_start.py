@@ -82,6 +82,7 @@ def refusal(runtime, reasons):
     """The client can prove that Algo Start did not silently persist On."""
     from .premium_strategy import intent
     value=intent(runtime.state.pnl_lines.store)
-    return dict(status="START_REFUSED",desired_enabled=value["enabled"],
-                owner_intent=value,execution_enabled=False,broker_writes=False,
+    return dict(status="ON_BLOCKED" if value["enabled"] else "START_REFUSED",
+                desired_enabled=value["enabled"],owner_intent=value,
+                execution_enabled=False,broker_writes=False,
                 blockers=list(dict.fromkeys(reasons)),live_orders_submitted=False)
