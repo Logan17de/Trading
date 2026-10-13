@@ -13,7 +13,7 @@ class OneTick:
         return self.calls>1
 
 
-def test_blocked_backup_cannot_prevent_daily_email(tmp_path,monkeypatch):
+def test_blocked_backup_does_not_reenable_forbidden_daily_email(tmp_path,monkeypatch):
     now=datetime(2026,10,8,10,30,tzinfo=timezone.utc)
     monkeypatch.setattr(runtime,'datetime',SimpleNamespace(now=lambda tz:now))
     from nifty_engine.agent_engine import report_strategies
