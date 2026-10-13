@@ -180,7 +180,7 @@ class Monitor:
         else:
             exposure=self.state.get('last_exposure','UNKNOWN')
         found = faults(view, now, state,
-                       auth_probe=self.store.meta('groww-auth-probe-v1',{}))
+                       auth_probe=(view or {}).get('auth_probe',{}))
         if read_error is not None and 'OBSERVER_UNREACHABLE' in found:
             found['OBSERVER_UNREACHABLE']['details']=diagnostics(dict(read_error,stage='LOCAL_SOCKET_READ'))
         self.record(found, now, complete=view is not None and state=='HEALTHY')
