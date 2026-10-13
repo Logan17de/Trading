@@ -177,3 +177,26 @@ def test_recovery_stops_reminders(tmp_path):
     monitor.tick(view(t+timedelta(seconds=65),active=True),t+timedelta(seconds=65))
     monitor.deliver(TIME+timedelta(minutes=20),ENV,send=send)
     assert len(delivered)==1
+
+
+def test_execution_reconciliation_and_rejected_exits_are_alertable():
+    for reason in ("EXECUTION_RECONCILIATION_REQUIRED",
+                   "SHORT_EXIT_REJECTED_REVIEW_REQUIRED",
+                   "REPORT_ENTRY_TERMINAL_EMPTY"):
+        v=view(active=True)
+        v["live_setup"]["mode"]="live"
+        v["execution_controller"]["reason"]=reason
+        assert "TRADE_SUBMISSION_FAILED" in faults(v,TIME)
+    v=view()
+    v["live_setup"]["mode"]="live"
+    v["execution_controller"]["reason"]="NO_TRADE"
+    assert "TRADE_SUBMISSION_FAILED" not in faults(v,TIME)
+
+
+def test_groww_ga005_is_treated_as_authorization_failure():
+    t=TIME.replace(hour=12,minute=0)
+    class Unauthorized(Exception):
+        code="GA005"
+    result=inspect(t,lambda: (_ for _ in ()).throw(Unauthorized("PRIVATE")))
+    assert result["status"]=="INVALID"
+    assert expected_auth_failure(result,t)
