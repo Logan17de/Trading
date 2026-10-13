@@ -77,10 +77,11 @@ select cron.schedule(
 );
 ```
 
-4. Verify the Edge Function logs show authenticated checks and
-   `trading_vm_cron_ready()` only reports true after successful actual cron
-   execution **and a real external alert has been provider-accepted**.
-   The function itself does not prove inbox delivery.
+4. Verify the Edge Function logs show authenticated checks, and
+   `trading_vm_cron_ready()` reports true only after a recent successful
+   one-minute cron run and a recent Edge invocation. **This does not prove
+   email delivery**. The independent cloud outbox must separately record a
+   real provider-accepted outage alert before safety certification can pass.
 5. Deploy the immutable reviewed release on Oracle through the existing
    owner-controlled rollout. Verify broker and local journal backups, original
    Oracle release/pause/mode, account identity and unchanged shared VM
