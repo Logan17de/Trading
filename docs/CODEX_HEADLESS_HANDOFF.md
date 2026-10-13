@@ -1,5 +1,25 @@
 # Current Trading handoff
 
+## October 13 GitHub publication and Codex schedule removal
+
+Owner requested publication of all project code to Logan17de/Trading and removal
+of the Codex schedules. Deleted `trading-news-and-barrier-check` and
+`trading-incident-watch` through the app automation tool. Unrelated automations
+were preserved. Do not recreate these schedules without a new owner request.
+Oracle/PC services, owner intent, pause and email quiet hours were not changed.
+
+Included the previously untracked `scripts/trading_report_receiver.py` and
+`pc_maintenance.py` for code provenance. These are inactive legacy helpers;
+neither is wired into the current app. Their historical news/EOD behavior is not
+current policy and must not be enabled implicitly. Credentials, local journals,
+captures, backups and the protected vault stay private and excluded from Git.
+
+The last completed API check on October 9 returned authentication HTTP 403;
+owner Edge required a PIN. No API approval or broker write was performed. The
+October 12 check was interrupted before final reconciliation; it must not be
+reported as a completed noon check or successful approval. Live commissioning
+remains incomplete, with paper/pause and Algo Off at the last verified read.
+
 ## October 8 Trading email quiet hours — installed
 
 Owner requested no Oracle email after market close. Reports, incident alerts

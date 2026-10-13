@@ -139,14 +139,16 @@
   session, preserving its original date. Existing approved sender/recipient.
   Retry frozen content without changing trading state. See FAILURE_ALERTS.md.
   Distinguish provider acceptance, recipient-server acceptance and inbox evidence.
-- At 12:00 JST weekdays use owner's Edge to check existing Codex API key. Approve
+- Owner October 13 removed the Codex Trading schedules. Do not recreate noon
+  checks or incident wake-ups without a new request. On a requested API check,
+  use owner's Edge to check the existing Codex API key. Approve
   only if Expired; verify Approved and retest reads. Never create/rotate keys,
   change permissions/subscriptions or claim a scheduled heartbeat actually ran.
 - Keep Oracle continuously running. Verified private SSH and fixed Unix-socket
   client; no public trading port. Liveness needs heartbeat advancement. PC alerts
   require PC awake/signed in/online; no external cloud monitor is installed.
 - Read FAILURE_ALERTS.md for the independent Oracle failure-email watchdog and
-  five-minute Codex incident watch. The monitor is a separate immutable release
+  former five-minute Codex incident watch (deleted October 13). The Oracle monitor is a separate immutable release
   and private journal; never couple an alert-only rollout to an executor upgrade.
   Its only external write is approved owner email. Preserve incident IDs, frozen
   retry envelopes and actual delivery distinctions. Diagnostic status must remain
