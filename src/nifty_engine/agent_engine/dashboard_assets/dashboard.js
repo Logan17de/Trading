@@ -276,10 +276,24 @@ function strategyReadinessHTML(s) {
   const label=s.readiness.status==='RESEARCH_ONLY'?'Research only':s.readiness.live_ready?'Entry recheck ready':'Live blocked';
   return `<small class="strategy-route" title="${escapeHTML(reasons.join('; '))}">${escapeHTML(label)} · ${s.readiness.code_implemented?'executor installed':'executor unavailable'}</small>`;
 }
+// Use only today's recent, provider-validated journal observations for a
+// clearly labeled last-known display. This is not a live P&L readiness signal.
+function latestConfirmedPnl(p) {
+  const rows=p?.series||[], now=Date.now();
+  for(let i=rows.length-1;i>=0;i--) {
+    const row=rows[i], age=now-Date.parse(row.at);
+    if(!Number.isFinite(age)||age<0||age>60000) continue;
+    if(['self','algo','unassigned'].every(k=>known(row[k])))
+      return {...row,total:row.self+row.algo+row.unassigned};
+  }
+  return null;
+}
 function renderAccount() {
   const a=data.account;
   const p=data.broker_pnl, actual=!data.demo, split=Boolean(p);
-  setAmount("today-pnl",actual?p?.total_inr:a.today_pnl_inr,true); $("today-return").hidden=actual;
+  const lastPnl=actual&&p?.status!=='AVAILABLE'?latestConfirmedPnl(p):null;
+  const displayedPnl=actual?(p?.status==='AVAILABLE'?p.total_inr:lastPnl?.total):a.today_pnl_inr;
+  setAmount("today-pnl",displayedPnl,true); $("today-return").hidden=actual;
   $("today-return").textContent=percent(a.today_return_pct); tone($("today-return"),a.today_return_pct);
   setAmount("realized",actual?p?.realized_inr:a.realized_today_inr,true); setAmount("unrealized",actual?p?.unrealized_inr:a.unrealized_inr,true); $("trade-count").textContent=(actual?p?.closed_contracts:a.trade_count_today)??"—";
   const funds=data.funds;
@@ -289,14 +303,15 @@ function renderAccount() {
   setAmount("option-buy-money",data.demo?a.available_margin_inr:funds?.option_buy_available_inr);
   setAmount("collateral-money",data.demo?0:funds?.collateral_available_inr);
   $("funds-status").textContent=data.demo?"Sample cash · design preview":funds?.status==='AVAILABLE'?`Clear cash · Groww ${dateTime(funds.received_at)} · refresh 30s`:funds?.status==='STALE'?"Groww money is stale · waiting for a new read":"Groww money unavailable · amounts stay unknown";
-  const pnlStatus=p?.status==='AVAILABLE'?`Index options · before charges · ${dateTime(p.received_at)}`:p?.status==='CARRY_DAY_BASIS_UNVERIFIED'?"Overnight position · today's P&L basis unverified":p?.status==='STALE'?"P&L is stale · waiting for Groww":"P&L incomplete · waiting for current positions and prices";
+  const pnlStatus=p?.status==='AVAILABLE'?`Index options · before charges · ${dateTime(p.received_at)}`:lastPnl?`Last verified ${dateTime(lastPnl.at)} · not current · before charges`:p?.status==='CARRY_DAY_BASIS_UNVERIFIED'?"Overnight position · today's P&L basis unverified":p?.status==='STALE'?"P&L is stale · waiting for Groww":"P&L incomplete · waiting for current positions and prices";
   $("account-status").textContent=data.demo?"Sample results · design preview":pnlStatus;
-  setAmount("chart-pnl",actual?p?.total_inr:a.today_pnl_inr,true); setAmount("portfolio-value",a.portfolio_value_inr);
+  setAmount("chart-pnl",displayedPnl,true); setAmount("portfolio-value",a.portfolio_value_inr);
   const groups=[{key:'self',name:'Self trades',color:'#2473b5'},{key:'algo',name:'Algo',color:'#8853ca'}];
   if(p?.buckets?.unassigned?.contracts>0||(p?.series||[]).some(r=>known(r.unassigned)&&r.unassigned!==0)) groups.push({key:'unassigned',name:'Unassigned / mixed',color:'#b46c15'});
   $("pnl-breakdown").hidden=!split;
-  $("pnl-breakdown").innerHTML=groups.map(g=>`<div class="pnl-bucket"><span><i style="background:${g.color}"></i>${g.name}</span><strong class="${known(p?.buckets?.[g.key]?.total_inr)?p.buckets[g.key].total_inr<0?'negative':'positive':''}">${escapeHTML(signed(p?.buckets?.[g.key]?.total_inr))}</strong><small>Realised ${escapeHTML(signed(p?.buckets?.[g.key]?.realized_inr))} · Open ${escapeHTML(signed(p?.buckets?.[g.key]?.unrealized_inr))}</small></div>`).join('');
-  $('summary-pnl-split').innerHTML=groups.map(g=>`<span><i style="background:${g.color}"></i>${g.name} <b class="${known(p?.buckets?.[g.key]?.total_inr)?p.buckets[g.key].total_inr<0?'negative':'positive':''}">${escapeHTML(signed(p?.buckets?.[g.key]?.total_inr))}</b></span>`).join('');
+  const displayedBucket=g=>p?.status==='AVAILABLE'?p?.buckets?.[g.key]?.total_inr:lastPnl?.[g.key];
+  $("pnl-breakdown").innerHTML=groups.map(g=>{const amount=displayedBucket(g);return `<div class="pnl-bucket"><span><i style="background:${g.color}"></i>${g.name}</span><strong class="${known(amount)?amount<0?'negative':'positive':''}">${escapeHTML(signed(amount))}</strong><small>${lastPnl?'Last verified · ':''}Realised ${escapeHTML(signed(p?.buckets?.[g.key]?.realized_inr))} · Open ${escapeHTML(signed(p?.buckets?.[g.key]?.unrealized_inr))}</small></div>`;}).join('');
+  $('summary-pnl-split').innerHTML=groups.map(g=>{const amount=displayedBucket(g);return `<span><i style="background:${g.color}"></i>${g.name} <b class="${known(amount)?amount<0?'negative':'positive':''}">${escapeHTML(signed(amount))}</b></span>`;}).join('');
   if(split&&(p?.series||[]).some(r=>known(r.self)||known(r.algo)||known(r.unassigned))) {
     const lines=groups.map(g=>({...g,points:p.series.map(r=>({at:r.at,value:r[g.key]}))}));
     const points=p.series.map(r=>({at:r.at,value:known(r.self)?r.self:known(r.algo)?r.algo:r.unassigned}));

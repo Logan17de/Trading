@@ -231,9 +231,14 @@ class RemoteViewer:
                 for k in ("price","change","change_pct","high","low"):market[k]=None
                 for option in market["options"]:
                     for k in ("last_price","bid","ask","open_pnl_inr"):option[k]=None
-            for k in list(view.get("funds",{})):
-                if k.endswith("_inr"):view["funds"][k]=None
-            if "funds" in view:view["funds"]["status"]="STALE"
+            # A market/position snapshot older than 15 seconds does not make
+            # independently timestamped Groww funds older than their 45-second
+            # limit. revalidate() above already blanks expired money. A failed
+            # Oracle heartbeat still blanks money regardless of its age.
+            if self.status!="HEALTHY" and "funds" in view:
+                for k in list(view["funds"]):
+                    if k.endswith("_inr"):view["funds"][k]=None
+                view["funds"]["status"]="STALE"
             algo=view.get("control",{}).get("algo")
             if algo:
                 algo["execution_enabled"]=False

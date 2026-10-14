@@ -67,6 +67,8 @@ class PersistentProtection:
                           initial_fingerprint=identity(request), expiry=short['expiry'], child_key='gtt-child-'+reference,
                           created_at=self.gateway.clock().isoformat())
             db.execute('INSERT INTO meta VALUES(?,?)', (self.key(operation),dumps(record)))
+            from .trade_audit import change
+            change(db, self.key(operation), None, record)
         try:
             self.gateway._gate(observation)
             receipt = self.transport.create_smart_order(reference_id=reference, timeout=5, **request)

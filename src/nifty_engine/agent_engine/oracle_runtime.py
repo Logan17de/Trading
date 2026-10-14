@@ -176,6 +176,8 @@ class Runtime:
             algo['stop_status']='PROVIDER_COMMISSIONING_VERIFIED' if view['live_setup']['provider_verified'] else 'PERSISTENT_GTT_IMPLEMENTED_ACTIVATION_UNVERIFIED'
             view['control']['blockers']=algo['blockers']
             view['control']['execution_enabled']=execution['execution_enabled']
+        from .trade_audit import recent as recent_trade_audit
+        view["trade_audit"]=recent_trade_audit(self.state.pnl_lines.store)
         view["runtime"]["initializing"]=self.sequence==1
         view["daily_email"]=self.mail_state
         view["execution_preparation"]=self.state.pnl_lines.store.meta("premium-preparation",

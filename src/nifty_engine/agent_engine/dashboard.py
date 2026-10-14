@@ -1144,15 +1144,26 @@ def handler(state):
                 "/manual-order.css": ("manual-order.css", "text/css; charset=utf-8"),
                 "/live-setup.js": ("live-setup.js", "text/javascript; charset=utf-8"),
                 "/live-setup.css": ("live-setup.css", "text/css; charset=utf-8"),
+                "/trade-log": ("trade-log.html", "text/html; charset=utf-8"),
+                "/trade-log.js": ("trade-log.js", "text/javascript; charset=utf-8"),
+                "/trade-log.css": ("trade-log.css", "text/css; charset=utf-8"),
                 "/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
                 "/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
                 "/app-icon.svg":("app-icon.svg","image/svg+xml")}
             if self.path in assets:
                 name, kind = assets[self.path]
                 body = (ASSETS / name).read_bytes()
-                if name in ("index.html", "live-setup.html", "manual-order.html"):
+                if name in ("index.html", "live-setup.html", "manual-order.html", "trade-log.html"):
                     body = body.replace(b"__LOCAL_TOKEN__", state.token.encode())
                 return self.respond(200, body, kind)
+            if self.path == "/api/trade-log":
+                try:
+                    audit=state.read().get("trade_audit")
+                    return self.respond(200,audit if audit else {"format":"trading-audit-v1",
+                        "status":"AUDIT_NOT_DEPLOYED","events":[],"read_only":True,"broker_writes":False})
+                except Exception:
+                    return self.respond(503,{"format":"trading-audit-v1",
+                        "status":"AUDIT_UNAVAILABLE","events":[],"read_only":True,"broker_writes":False})
             if self.path == "/api/dashboard":
                 try:
                     return self.respond(200, state.read())
