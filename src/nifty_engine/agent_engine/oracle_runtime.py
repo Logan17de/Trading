@@ -439,6 +439,33 @@ class Runtime:
                 self.mail_state=self.mail.tick(self.read(),now)
             except Exception as exc:self.mail_state={"status":"REPORT_"+type(exc).__name__,"provider_accepted":False,"inbox_verified":False}
 
+    def retention_loop(self):
+        # Quiet-hour, bounded SQLite pruning; never on trading/owner threads.
+        from . import retention
+        store=self.state.pnl_lines.store
+        try:
+            retention.configure_audit_expiry(store)
+        except Exception as exc:
+            store.set_meta('journal-retention-error',dict(
+                status='GUARD_MIGRATION_FAILED',error_type=type(exc).__name__))
+            return
+        while not self.stop.wait(60):
+            try:
+                now=datetime.now(timezone.utc)
+                if retention.quiet_hours(now):
+                    prior=store.meta(retention.STATUS_KEY,{})
+                    last=prior.get('last_run_utc') if isinstance(prior,dict) else None
+                    previous=datetime.fromisoformat(last) if isinstance(last,str) else None
+                    # No expired rows? Inspect once per Japanese calendar day.
+                    # A backlog is drained in small batches every 60 seconds.
+                    same_day=previous and previous.astimezone(retention.JST).date()==now.astimezone(retention.JST).date()
+                    if not (same_day and prior.get('total_deleted')==0):
+                        retention.run_once(store,now=now)
+            except Exception as exc:
+                try:store.set_meta('journal-retention-error',dict(
+                    at=datetime.now(timezone.utc).isoformat(),error_type=type(exc).__name__))
+                except Exception:pass
+
     def backup_loop(self):
         # Backup I/O must never occupy the reporting scheduler's thread.
         while not self.stop.wait(30):
@@ -461,6 +488,7 @@ class Runtime:
         threading.Thread(target=self.refresh_view_loop,daemon=True).start()
         threading.Thread(target=self.report_loop,daemon=True).start()
         threading.Thread(target=self.backup_loop,daemon=True).start()
+        threading.Thread(target=self.retention_loop,daemon=True).start()
         with open(os.devnull,"w") as muted,contextlib.redirect_stdout(muted),contextlib.redirect_stderr(muted):
             logging.disable(logging.CRITICAL)
             with readonly_transport([],history=True,dashboard=True,calculations=True,feed=True,timeout_seconds=5):

@@ -137,4 +137,6 @@ def recent(store,limit=120):
         except (ValueError,TypeError,OverflowError):
             continue
     return dict(format='trading-audit-v1',status='AVAILABLE',source='PRIVATE_ORACLE_JOURNAL',
-                count=len(events),events=events,read_only=True,broker_writes=False)
+                count=len(events),events=events,retention_days=60,
+                retention=store.meta('journal-retention-status',{}),
+                read_only=True,broker_writes=False)

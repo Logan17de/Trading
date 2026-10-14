@@ -40,7 +40,9 @@ class Store:
                 CREATE TRIGGER IF NOT EXISTS pc_trade_audit_no_update
                     BEFORE UPDATE ON pc_trade_audit BEGIN SELECT RAISE(ABORT,'AUDIT_APPEND_ONLY'); END;
                 CREATE TRIGGER IF NOT EXISTS pc_trade_audit_no_delete
-                    BEFORE DELETE ON pc_trade_audit BEGIN SELECT RAISE(ABORT,'AUDIT_APPEND_ONLY'); END;
+                    BEFORE DELETE ON pc_trade_audit
+                    WHEN OLD.at IS NULL OR OLD.at >= CAST(strftime('%s','now','-60 days') AS REAL)
+                    BEGIN SELECT RAISE(ABORT,'AUDIT_NOT_YET_EXPIRED'); END;
                 CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY, day TEXT NOT NULL, payload TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'QUEUED', attempts INTEGER NOT NULL DEFAULT 0,
                     first_attempt REAL, next_attempt REAL NOT NULL DEFAULT 0, lease REAL, token TEXT, provider_id TEXT, error TEXT);

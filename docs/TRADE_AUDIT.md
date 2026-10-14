@@ -31,10 +31,11 @@ kept separate from pre-charge Groww gross P&L; none is fabricated by logging.
 
 Each audit event is committed in the same SQLite transaction as the associated
 `meta` or broker-order journal transition. Matching identical states do not
-produce duplicate events. The audit table cannot be UPDATEd or DELETEd. Older
-records remain in SQLite; the Trade Log shows the most recent 120 transitions
-and exports the visible window as CSV. A full private DB backup includes all
-earlier audit records.
+produce duplicate events. The audit table cannot be UPDATEd, and DELETE
+is prohibited until a record is older than 60 days. Quiet-hours retention
+then removes expired rows in bounded batches. The Trade Log shows the most
+recent 120 retained transitions and exports the visible window as CSV.
+Separate private database backups retain their original recovery snapshots.
 
 Only the private Oracle observer writes these records. The PC dashboard and
 `/api/trade-log` are read-only and cannot place, cancel, protect or authorize
