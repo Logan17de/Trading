@@ -52,9 +52,11 @@ class ExecutionGate:
         if not policy.intent(self.journal.store)['enabled']: result.append('OWNER_ALGO_OFF')
         proof = self.journal.store.meta('premium-execution-activation', {})
         if self.commissioning_required:
-            from .live_setup import activation
-            verified = self.account_fingerprint is not None and activation(
-                self.journal.store, self.release, self.policy_hash, self.account_fingerprint) is not None
+            from .live_setup import activation, owner_authorization
+            verified = self.account_fingerprint is not None and (
+                activation(self.journal.store, self.release, self.policy_hash, self.account_fingerprint) is not None
+                or owner_authorization(self.journal.store, self.release,
+                                       self.policy_hash,self.account_fingerprint) is not None)
         else:
             verified = not (not isinstance(proof, dict) or proof.get('format') != 'trading-execution-activation-v1'
                 or proof.get('release') != self.release or not re.fullmatch('[a-f0-9]{40}', self.release)

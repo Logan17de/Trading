@@ -102,11 +102,18 @@ class PremiumExecutor:
             protection='VERIFIED_ACTIVE' if states and all(r=='VERIFIED_ACTIVE' for r in states) else ','.join(states) or 'NOT_ARMED'
             if any('RECONCILIATION_REQUIRED' in r or r.startswith('UNKNOWN') for r in states):
                 blockers.append('BROKER_PROTECTION_RECONCILIATION_REQUIRED')
+        if self.gate.commissioning_required:
+            from .live_setup import activation
+            provider_verified=(self.gate.account_fingerprint is not None
+                and activation(self.journal.store,self.gate.release,
+                    self.gate.policy_hash,self.gate.account_fingerprint) is not None)
+        else:
+            provider_verified='REVIEWED_LIVE_ACTIVATION_REQUIRED' not in blockers
         return dict(code_implemented=True,status='BLOCKED' if blockers else 'READY',
             phase=state.get('phase','IDLE'),strategy=state.get('strategy'),blockers=blockers,
             reason=status.get('reason'),at=status.get('at'),execution_enabled=not blockers,
             protection=protection,loss_cap_guaranteed=False,
-            provider_execution_verified=not bool('REVIEWED_LIVE_ACTIVATION_REQUIRED' in blockers),
+            provider_execution_verified=provider_verified,
             management_enabled=not external_pending and not self.gate.blockers(obs,purpose='PROTECT'),
             report_preparation=prepared,position_review=self.position_review(obs),
             external_close=state.get('external_close'),

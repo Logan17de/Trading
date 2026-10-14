@@ -34,6 +34,36 @@ but retains completed-basket protection/exits while global Algo remains On.
 Global Off/pause/paper deny all engine writes, including exits. Already armed
 broker instructions can still act independently. No manual trade is adopted.
 
+## One-click real Algo On (owner consent)
+
+On the first owner-clicked **Algo Start**, the PC requests explicit real-money
+confirmation. Oracle performs an authenticated **read-only** account preflight:
+the exact deployed release, Groww account and F&O access, direct egress IP,
+flat F&O positions, terminal ordinary F&O orders, no active GTT/OCO orders,
+available option BUY/SELL balances, Algo Off and both pause markers must all
+qualify. The first response stores an expiring source/account-bound nonce;
+the exact digest is consumed after owner consent. Privileged setup prepares
+LIVE mode with Algo still Off, unlinks only the observer's pause, restarts the
+observer, and verifies the fresh live readback. If restart verification fails,
+the paper environment and observer pause are restored. **Only then** is the
+owner's Algo On instruction sent. No order is submitted by preview/arming or
+by reading the dashboard; only the live Normal executor can submit when all
+trend, basket margin, price, risk, depth, weekday and session gates pass.
+
+This owner-selected first live trade is explicitly **uncommissioned**:
+the first Groww stop/child/fill path has no prior real provider proof. A separate
+owner-risk-acceptance receipt binds the exact release, policy and Groww account.
+It never sets `provider_verified` or counterfeits an earlier GTT observation.
+If Groww rejects a protective stop or an order is partial/unknown, the durable
+executor uses its existing reconciliation/short-before-hedge close handling.
+There is no guaranteed ₹1,000 loss limit, stop fill, exit before 19:00 or profit.
+An independent cloud outage-alert watchdog remains separately uncommissioned.
+
+Algo Off remains a direct owner switch and does not re-arm or place orders.
+The original shared trader pause is **never** removed by this flow. A change to
+the immutable release, strategy policy or Groww account requires renewed
+owner authorization. No maintenance task automatically enables LIVE or toggles On.
+
 Stop triggers, limits and a theoretical expiry payoff bound do not guarantee a
 maximum realized loss during gaps, leg execution or fees. Net positive theta
 does not neutralize direction, gamma or volatility. The Groww API documentation

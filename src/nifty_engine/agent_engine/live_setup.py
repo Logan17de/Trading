@@ -31,6 +31,41 @@ def activation(store, release, policy_hash, account_fingerprint=None):
         return None
 
 
+OWNER_KEY = 'premium-owner-live-authorization'
+
+
+def owner_authorization(store, release, policy_hash, account_fingerprint):
+    """Explicitly owner-authorized *uncommissioned* live trading, never provider proof.
+
+    This path exists so the first real transaction can be strategy-managed;
+    do not relabel it as validated stop-fill or broker commissioning evidence.
+    Every source/policy/account change invalidates the authorization.
+    """
+    value=store.meta(OWNER_KEY,{})
+    try:
+        return value if (isinstance(value,dict)
+            and value.get('format')=='trading-owner-live-authorization-v1'
+            and value.get('release')==release
+            and value.get('policy_hash')==policy_hash
+            and account_fingerprint is not None
+            and value.get('account_fingerprint')==account_fingerprint
+            and value.get('owner_approved') is True
+            and value.get('provider_verified') is False
+            and value.get('risk_acknowledged') is True
+            and value.get('strategy')=='normal_theta') else None
+    except (AttributeError,TypeError,ValueError):
+        return None
+
+
+def owner_receipt(binding, now):
+    return dict(format='trading-owner-live-authorization-v1',
+        release=binding['release'],policy_hash=binding['policy_hash'],
+        account_fingerprint=binding['account_fingerprint'],
+        strategy='normal_theta',owner_approved=True,risk_acknowledged=True,
+        provider_verified=False,commissioned=False,source='OWNER_EXPLICIT_ALGO_ON',
+        reviewed_at=now.isoformat())
+
+
 def receipt(evidence, now):
     """Called only after owner setup has rerun replay checks and live readbacks."""
     return dict(format='trading-execution-activation-v2', release=evidence['binding']['release'],
@@ -41,7 +76,9 @@ def receipt(evidence, now):
 
 def public(store, gate):
     from .broker_commissioning import public_status
-    evidence = activation(store, gate.release, gate.policy_hash, getattr(gate, 'account_fingerprint', None))
+    fp=getattr(gate,'account_fingerprint',None)
+    evidence = activation(store, gate.release, gate.policy_hash, fp) if fp is not None else None
+    owner = owner_authorization(store, gate.release,gate.policy_hash,fp)
     from .commissioning_direct import AUTH
     owner_test=store.meta(AUTH,{})
     return dict(format='trading-live-setup-v1',
@@ -49,8 +86,10 @@ def public(store, gate):
                 supports_direct_test=True,
                 mode=gate.mode, paused=gate.pause_file.exists() or gate.pause_file.is_symlink(),
                 provider_verified=evidence is not None,
-                activation_installed=evidence is not None,
+                owner_risk_authorized=owner is not None,
+                first_live_basket_uncommissioned=owner is not None and evidence is None,
+                activation_installed=evidence is not None or owner is not None,
                 commissioning=public_status(store, gate.release, gate.policy_hash),
-                next_step='OWNER_START' if evidence and gate.mode == 'live' and not (
+                next_step='OWNER_START' if (evidence or owner) and gate.mode == 'live' and not (
                     gate.pause_file.exists() or gate.pause_file.is_symlink()) else
                     'OWNER_LIVE_SETUP_REQUIRED', broker_writes=False)

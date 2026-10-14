@@ -208,13 +208,13 @@ function renderControl() {
   }
   if(policy?.format==='normal-theta-v1') {
     $("everyday-rule").textContent="Normal theta spread · Research";
-    $("monitor-schedule").textContent="14:00–19:00 JST entries · owned exits from market open";
+    $("monitor-schedule").textContent="14:00–18:30 JST new entries · mandatory owned exit begins 18:45 JST · flat target 19:00 JST";
     $("expiry-status").textContent="14–45 DTE · close by 7 DTE · actual API/master expiry";
     $("strategy-priority").textContent="Uptrend: hedged put credit spread. Downtrend: hedged call credit spread. No confirmed trend: no trade. One basket; manual trades protected.";
     const normal=data.normal_theta;
     $("analysis-status").textContent=normal?.indices?Object.entries(normal.indices).map(([index,r])=>`${index}: ${r.regime} · ${r.status}${r.reasons?.length?` · ${r.reasons.join('; ')}`:''}`).join(' | '):"Waiting for current trend, theta and quotes";
     $("preparation-status").textContent=`Normal preparation: ${data.execution_controller?.report_preparation?.status||'WAIT'} · read-only comparison · historical IV not required`;
-    $("control-note").textContent="Positive net model theta; equal bought hedge. Half-credit profit exit; ₹1,000 loss trigger and quoted risk bound. Research never enters; the existing 38-day study continues. Start still requires actual broker validation and live activation.";
+    $("control-note").textContent="Positive model theta with bought hedge first, limited basket and stop-loss checks. Algo Start initiates a read-only broker safety review and first-time LIVE preparation, then can place REAL orders when strategy conditions pass. First live order has no prior provider stop-fill verification; actual losses may exceed the estimate.";
   }
   $("algo-start").disabled=data.demo||algoStartPending||strategySwitchPending||on||data.vm?.status!=='HEALTHY';
   $("algo-start").textContent=on?"Algo On":"Algo Start";
@@ -223,11 +223,11 @@ function renderControl() {
   const labels={RETIRED_STRATEGY_NEW_ENTRY_DISABLED:"legacy entries retired",ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED:"Oracle executor is not connected",REPOSITORY_PAUSED:"trading is paused",LIVE_ENVIRONMENT_NOT_ACTIVATED:"live mode is not activated",REVIEWED_LIVE_ACTIVATION_REQUIRED:"broker execution and persistent protection need live verification",ORACLE_EXECUTOR_CONNECTION_REQUIRED:"waiting for Oracle broker connection",WAITING_FOR_COLLECTION_WINDOW:"waiting for the collection window",ALL_EXECUTABLE_STRATEGIES_OFF:"no execution strategy selected",FRESH_COMPLETE_BROKER_STATE_REQUIRED:"fresh complete broker state is required",FRESH_MARKET_DATA_REQUIRED:"current data is required",OUTSIDE_1400_1900_JST:"outside 14:00–19:00 JST",OFFLINE_VIEW:"offline view",MAXIMUM_LOTS_REQUIRED:"lot cap missing",PREMIUM_POLICY_REQUIRED:"strategy settings are missing",OWNER_ALGO_OFF:"owner setting is Off",VM_UNHEALTHY_OR_STALE:"VM heartbeat/data unavailable"};
   labels.SELF_CLOSE_RECONCILIATION_REQUIRED="Self closure needs flat/protection confirmation";
   const blockers=[...new Set(algo?.blockers||[])].filter(k=>k!=='OWNER_ALGO_OFF').map(k=>labels[k]||k).join('; ');
-  $("algo-start-result").textContent=algoStartPending?"Saving owner setting…":last?.status==='TRANSPORT_FAILED'?"Oracle did not confirm the setting. Read the On/Off state before retrying.":selection+(on?(writesPermitted?"Algo On. Oracle may place real orders for these strategies when their entry checks pass; one basket at a time.":`On is saved until you click Algo Off. Trading blocked: ${blockers||'readiness not confirmed'}.`):`Algo Off. Start saves On on Oracle; orders require live readiness.${blockers?` Currently blocked: ${blockers}.`:''}`);
+  $("algo-start-result").textContent=algoStartPending?"Checking Groww and preparing real Algo On…":last?.status==='TRANSPORT_FAILED'?"Oracle did not confirm the setting. Read the On/Off state before retrying.":selection+(on?(writesPermitted?"Algo On. Real Groww orders may occur when Normal theta qualifies; one hedged basket at a time.":`On is saved until you click Algo Off. Trading blocked: ${blockers||'readiness not confirmed'}.`):`Algo Off. Starting now will request real trading authorization with account checks.${last?.status==='ON_BLOCKED'?` Last start blocked: ${(last.blockers||[]).join('; ')}.`:''}${blockers?` Current conditions: ${blockers}.`:''}`);
   const execution=data.execution_controller;
   const setup=data.live_setup;
   if($("live-setup-status"))$("live-setup-status").textContent=setup?
-    (setup.next_step==='OWNER_START'?"Real trading setup verified. Select Normal theta spread and click Algo Start when ready.":
+    (setup.next_step==='OWNER_START'?(setup.provider_verified?"Groww provider commissioning verified. Algo On is ready when conditions pass.":"Owner-authorized LIVE mode. First real basket remains uncommissioned; broker stop/exit behavior is not guaranteed."):
     `Real trading setup: ${String(setup.commissioning?.status||'NOT_STARTED').replaceAll('_',' ').toLowerCase()}. Complete the owner broker check, then prepare live mode. Algo stays Off during setup.`):"Real trading setup: waiting for Oracle status.";
   const impulse=data.premium_impulse;
   $("impulse-status").textContent=impulse?`Stream: ${impulse.transport_status||impulse.status} · ${Object.entries(impulse.indices||{}).map(([index,r])=>`${index}: ${r.score??'—'}/100 (${r.status}, ${r.known_points}/100 evidence)`).join(' · ')||'waiting for current events and history'} · ${impulse.processing_ms??'—'} ms local processing · read-only`:'Streaming breakout detector: waiting for Oracle evidence';
@@ -357,6 +357,11 @@ function sampleData() {
 }
 async function setAlgo(enabled){
   if(algoStartPending||demo) return;
+  // The first On click may prepare a LIVE broker executor. This must never
+  // happen from page load, polling or a simulated demo switch.
+  if(enabled&&typeof globalThis.confirm==='function'&&!globalThis.confirm(
+    'Enable REAL Groww algorithmic trading?\n\nThe strategy may buy and sell real NIFTY/SENSEX options using your funds. The first live basket is NOT yet provider-commissioned. Orders and stops can fail or remain unfilled, and losses can exceed the estimated cap.\n\nContinue only if you accept these risks.'
+  )) return;
   algoStartPending=true;renderControl();
   try {
     const response=await fetch(enabled?'/api/algo/start':'/api/algo/stop',{method:'POST',headers:{'X-Local-Token':document.querySelector('meta[name="local-token"]').content},cache:'no-store'});

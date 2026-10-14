@@ -1,5 +1,29 @@
 # Owner setup for real trading
 
+## Algo Start: first real trade managed by the strategy
+
+The Options Trader desktop has an explicit REAL MONEY confirmation on **Algo
+Start**. For the first use, the PC securely requests a live preflight, then
+prepares the Oracle observer's LIVE mode while Algo remains Off. It next
+records the owner's On instruction. The broker executor only places a hedged
+Normal Theta basket if live price, volume/depth, expiry, funds, order,
+margin, strategy, timing and risk checks pass. No manual test BUY/SELL is
+submitted by this startup action.
+
+This new owner-authorized route deliberately does **not** pretend a real Groww
+order or protective GTT has already been validated. The first live basket is
+uncommissioned and may lose more than its theoretical ₹1,000 bounded payoff
+because of gaps, separate leg execution, stop rejects or an unfilled close.
+The service must be trading on the exact immutable approved release with no
+unknown open F&O positions, orders, or active stop/GTT/OCO. Unsupported or
+incomplete readings block startup without turning Algo On. The original global
+trader pause remains untouched. The independent Supabase watchdog is not
+commissioned by this click.
+
+The manual commissioning controls below remain optional for deeper provider
+validation. They are no longer mandatory prerequisites to the separately
+owner-authorized first strategy trade.
+
 ## Simple BUY / SELL / SL test
 
 The default PC page at `http://127.0.0.1:8765/live-setup` now shows three

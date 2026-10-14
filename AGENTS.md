@@ -1,5 +1,17 @@
 # Trading workspace
 
+- October 14: The owner explicitly chose the first real Normal Theta
+  strategy-owned order rather than a separate manual commissioning trade.
+  The protected owner-clicked Algo Start flow uses a broker-authenticated
+  flat-account/pending-order/GTT/margin check, binds consent to source and
+  account, prepares Oracle LIVE with Algo Off, verifies the observer, and
+  finally saves the owner's On instruction. No polling, refresh or maintenance
+  can invoke this action. The owner-live authorization receipt deliberately
+  marks the first broker stop and child order path uncommissioned. It is not
+  provider evidence. Preserve the original shared pause and never remove
+  Oracle runtime pause without explicit user confirmation. Failure must
+  restore paper/paused state. Read docs/NORMAL_THETA.md.
+
 - Owner **Buy + protect** uses the direct LIMIT test (plan v3) and starts only
   that exact authorized `owner_test_job` on Oracle. It submits once, attaches the
   declared stop after a full fill, and manages the declared target after verified

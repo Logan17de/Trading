@@ -969,8 +969,21 @@ class DashboardState:
             self.background_thread.start()
 
     def algo_set(self, enabled):
-        """Persist intent without enabling a blocked broker executor."""
+        """User-clicked Algo On prepares a verified live route first, never hidden trades."""
         if self.remote:
+            if enabled:
+                setup=self.owner_setup.public() if self.owner_setup else {}
+                if (setup.get('requires_reconciliation') or setup.get('operation')):
+                    return dict(status='ON_BLOCKED',desired_enabled=False,
+                        blockers=['UNRESOLVED_OWNER_TEST_OPERATION'],broker_writes=False)
+                view=self.remote.read()
+                ready=view.get('live_setup') or {}
+                if ready.get('mode')!='live' or ready.get('paused'):
+                    result=self.remote.prepare_owner_live()
+                    if result.get('status')!='LIVE_PREPARED_ALGO_OFF':
+                        return dict(status='ON_BLOCKED',desired_enabled=False,
+                            blockers=[result.get('reason','LIVE_SETUP_NOT_CONFIRMED')],
+                            broker_writes=False)
             return self.remote.set_intent(enabled)
         now = datetime.now(timezone.utc)
         policy = premium_strategy.load(self.root)
