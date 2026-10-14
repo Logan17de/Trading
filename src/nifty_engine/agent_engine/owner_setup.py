@@ -319,6 +319,21 @@ def retire_plan(store, tool, current, plan_id):
                 plan_hash=record['plan_hash'], checked_at=tool.clock().isoformat())
 
 
+def validate_live_positions(positions):
+    """Manual F&O holdings remain protected, not adopted by Normal theta."""
+    if (not isinstance(positions,list) or len(positions)>1000 or
+        any(not isinstance(row,dict) or type(row.get('quantity')) not in (int,float)
+            for row in positions)):
+        raise SetupError('EXACT_BROKER_POSITIONS_REQUIRED')
+    active=[row for row in positions if row['quantity']]
+    if any(not isinstance(row.get('trading_symbol'),str)
+           or not re.fullmatch('[A-Z0-9]{8,80}',row['trading_symbol'])
+           or row.get('product') not in ('NRML','MIS','CNC')
+           for row in active):
+        raise SetupError('COMPLETE_MANUAL_POSITION_IDENTITY_REQUIRED')
+    return len(active)
+
+
 def worker(payload):
     """Only root's fixed child runs this, as the journal's service UID."""
     import fcntl
@@ -374,12 +389,10 @@ def worker(payload):
                     raise SetupError('OWNED_BASKET_MUST_BE_CLOSED_BEFORE_LIVE')
                 tool._profile()
                 positions=tool._read('get_positions_for_user',segment='FNO').get('positions')
-                if (not isinstance(positions,list) or len(positions)>1000 or
-                        any(not isinstance(row,dict) or type(row.get('quantity')) not in (int,float)
-                            for row in positions)):
-                    raise SetupError('EXACT_BROKER_POSITIONS_REQUIRED')
-                if any(row['quantity'] for row in positions):
-                    raise SetupError('FLAT_FNO_ACCOUNT_REQUIRED')
+                # Existing personal holdings are safe to leave open; the
+                # collector permanently excludes their symbols from new
+                # strategy-owned orders and never adopts/cancels manual orders.
+                validate_live_positions(positions)
                 orders=tool._orders()
                 if any(row.get('order_status') not in ('EXECUTED','CANCELLED','REJECTED','EXPIRED')
                        for row in orders):

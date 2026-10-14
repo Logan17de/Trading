@@ -3,7 +3,7 @@
 - October 14: The owner explicitly chose the first real Normal Theta
   strategy-owned order rather than a separate manual commissioning trade.
   The protected owner-clicked Algo Start flow uses a broker-authenticated
-  flat-account/pending-order/GTT/margin check, binds consent to source and
+  complete-position/pending-order/GTT/margin check, binds consent to source and
   account, prepares Oracle LIVE with Algo Off, verifies the observer, and
   finally saves the owner's On instruction. No polling, refresh or maintenance
   can invoke this action. The owner-live authorization receipt deliberately

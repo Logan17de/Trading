@@ -113,3 +113,17 @@ def test_remote_preview_and_confirm_are_exactly_one_owner_click(monkeypatch):
     assert remote.prepare_owner_live()['status']=='LIVE_PREPARED_ALGO_OFF'
     assert len(commands)==2
     assert all('sudo -n ' in cmd and 'owner_setup' in cmd for cmd in commands)
+
+def test_live_preview_can_coexist_with_identified_manual_positions():
+    from nifty_engine.agent_engine.owner_setup import validate_live_positions, SetupError
+    import pytest
+    manual=[dict(trading_symbol='NIFTY26O1322950CE',product='NRML',quantity=65),
+            dict(trading_symbol='SENSEX26O1576000CE',product='NRML',quantity=0)]
+    assert validate_live_positions(manual)==1
+    for rows in (None, [dict(trading_symbol='NIFTY26O1322950CE',product='NRML',quantity='65')],
+                 [dict(trading_symbol='NIFTY26O1322950CE',product='NRML',quantity=65.0,)],
+                 [dict(trading_symbol='INVALID',product='NRML',quantity=65)]):
+        if isinstance(rows,list) and rows and type(rows[0].get('quantity')) is float:
+            assert validate_live_positions(rows)==1
+        else:
+            with pytest.raises(SetupError):validate_live_positions(rows)

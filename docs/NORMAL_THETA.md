@@ -39,7 +39,7 @@ broker instructions can still act independently. No manual trade is adopted.
 On the first owner-clicked **Algo Start**, the PC requests explicit real-money
 confirmation. Oracle performs an authenticated **read-only** account preflight:
 the exact deployed release, Groww account and F&O access, direct egress IP,
-flat F&O positions, terminal ordinary F&O orders, no active GTT/OCO orders,
+complete identified F&O positions protected as manual/unknown, terminal ordinary F&O orders, no active GTT/OCO orders,
 available option BUY/SELL balances, Algo Off and both pause markers must all
 qualify. The first response stores an expiring source/account-bound nonce;
 the exact digest is consumed after owner consent. Privileged setup prepares

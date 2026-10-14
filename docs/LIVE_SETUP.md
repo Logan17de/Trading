@@ -14,8 +14,8 @@ This new owner-authorized route deliberately does **not** pretend a real Groww
 order or protective GTT has already been validated. The first live basket is
 uncommissioned and may lose more than its theoretical ₹1,000 bounded payoff
 because of gaps, separate leg execution, stop rejects or an unfilled close.
-The service must be trading on the exact immutable approved release with no
-unknown open F&O positions, orders, or active stop/GTT/OCO. Unsupported or
+The service must be trading on the exact immutable approved release with complete classified F&O positions and no pending orders or active
+stop/GTT/OCO. Existing manual positions are never adopted or closed by the algo. Unsupported or
 incomplete readings block startup without turning Algo On. The original global
 trader pause remains untouched. The independent Supabase watchdog is not
 commissioned by this click.
