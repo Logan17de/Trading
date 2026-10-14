@@ -81,8 +81,71 @@ class Runtime:
         self.impulse=StreamingImpulse(self.root,self.state.pnl_lines.store)
         from .research_sync import SupabaseArchive
         self.research_archive=SupabaseArchive(self.state.pnl_lines.store)
+        # Dashboard chart/report calculation must never consume the synchronous
+        # owner-control socket's 12-second deadline. One dedicated background
+        # builder owns the view; readers only copy and revalidate it.
+        self.view_cache_lock=threading.Lock()
+        self.view_cache=None
+        self.view_cache_at=None
+        self.view_cache_error=None
+        self.cache_thread_active=False
+
+    def refresh_view_loop(self):
+        from .oracle_link import revalidate
+        while not self.stop.is_set():
+            try:
+                value=self._build_view()
+                with self.view_cache_lock:
+                    self.view_cache=value
+                    self.view_cache_at=datetime.now(timezone.utc)
+                    self.view_cache_error=None
+            except Exception as exc:
+                with self.view_cache_lock:self.view_cache_error=type(exc).__name__
+            self.stop.wait(6)
 
     def read(self):
+        import copy
+        from .oracle_link import revalidate
+        if not getattr(self,'cache_thread_active',False):
+            # Explicit, offline/manual Runtime instances remain deterministic.
+            # Only the resident socket service needs a nonblocking projection.
+            return self._build_view()
+        with self.view_cache_lock:
+            view=copy.deepcopy(self.view_cache)
+            cached_at=self.view_cache_at
+        if view is None:
+            return dict(status='OBSERVER_VIEW_INITIALIZING',order_capability=False,
+                        broker_writes=False)
+        now=datetime.now(timezone.utc)
+        # A slow/faulty background render never misrepresents old cash, quotes,
+        # P&L, strategies, or capability as currently verified.
+        age=(now-cached_at).total_seconds() if cached_at else float('inf')
+        revalidate(view,now)
+        view.setdefault('runtime',{})['view_age_seconds']=round(age,2)
+        view['runtime']['heartbeat_sequence']=self.sequence
+        view['runtime']['heartbeat_at']=self.at
+        view['runtime']['initializing']=self.sequence==1
+        view['runtime']['error']=self.error
+        if age>45:
+            view['runtime']['view_status']='STALE_RENDER'
+            view['runtime']['orders_enabled']=False
+            view['order_capability']=False
+            if isinstance(view.get('control'),dict):
+                view['control']['execution_enabled']=False
+                algo=view['control'].get('algo')
+                if isinstance(algo,dict):
+                    algo['execution_enabled']=False
+                    algo['status']='ON_BLOCKED' if algo.get('desired_enabled') else 'OFF'
+                    algo['blockers']=list(dict.fromkeys(algo.get('blockers',[])+['OBSERVER_VIEW_STALE']))
+            ex=view.get('execution_controller')
+            if isinstance(ex,dict):
+                ex['execution_enabled']=False
+                ex['status']='BLOCKED'
+                ex['blockers']=list(dict.fromkeys(ex.get('blockers',[])+['OBSERVER_VIEW_STALE']))
+        else:view['runtime']['view_status']='FRESH_RENDER'
+        return view
+
+    def _build_view(self):
         view=self.state.read()
         from .oracle_link import revalidate
         revalidate(view,datetime.now(timezone.utc))
@@ -201,8 +264,14 @@ class Runtime:
                                     reason='RECHECK_STRATEGY_SELECTION',
                                     broker_writes=False,execution_enabled=False)
             result=self.state.algo_set(value["enabled"])
-            current=self.read().get('control',{}).get('algo')
-            if current: result.update(current)
+            # Force a fresh render after owner intent changes. Do not echo
+            # stale pre-command ON/OFF information from an old dashboard.
+            if getattr(self,'cache_thread_active',False):
+                with self.view_cache_lock:
+                    self.view_cache=None
+            else:
+                current=self.read().get('control',{}).get('algo')
+                if current:result.update(current)
             return result
         for kind in ("withdrawal", "investment"):
             if isinstance(value,dict) and set(value)=={"action",kind} and value["action"]=="record_"+kind:
@@ -386,6 +455,8 @@ class Runtime:
 
     def run(self):
         self.research_archive.start()
+        self.cache_thread_active=True
+        threading.Thread(target=self.refresh_view_loop,daemon=True).start()
         threading.Thread(target=self.report_loop,daemon=True).start()
         threading.Thread(target=self.backup_loop,daemon=True).start()
         with open(os.devnull,"w") as muted,contextlib.redirect_stdout(muted),contextlib.redirect_stderr(muted):
