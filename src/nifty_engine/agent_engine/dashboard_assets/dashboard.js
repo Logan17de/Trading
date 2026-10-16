@@ -202,15 +202,22 @@ function algoReason(code) {
   return labels[code]||labels[String(code).split(':')[0]]||String(code||'Status unavailable').toLowerCase().replaceAll('_',' ');
 }
 
+function normalScheduledIndex(view, now) {
+  const days=view.control?.strategy_rules?.weekday_index_jst;
+  if(!Array.isArray(days))return view.control?.algo?.index||null;
+  const day=['Mon','Tue','Wed','Thu','Fri'].indexOf(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tokyo',weekday:'short'}).format(now));
+  return day>=0?days[day]||null:null;
+}
+
 // Presentation only: never changes a guard, owner setting, candidate or broker state.
 function algoChecklistModel(view, now=new Date()) {
   const control=view.control||{},algo=control.algo||{},execution=view.execution_controller||{},setup=view.live_setup||{};
   const cfg=control.strategy_rules||{},indices=view.normal_theta?.indices||{};
-  const index=algo.index,entry=indices[index]||{},reasons=entry.reasons||[],scan=entry.basket_scan||{};
+  const index=normalScheduledIndex(view,now),entry=indices[index]||{},reasons=entry.reasons||[],scan=entry.basket_scan||{};
   const on=algo.desired_enabled===true,active=!['IDLE','CLOSED'].includes(execution.phase||'IDLE');
   const age=at=>(now.getTime()-Date.parse(at))/1000;
   const recent=at=>Number.isFinite(age(at))&&age(at)>=0&&age(at)<=15;
-  const fresh=view.vm?.status==='HEALTHY'&&view.freshness==='RECENT'&&!view.runtime?.error;
+  const fresh=view.vm?.status==='HEALTHY'&&view.freshness==='RECENT'&&!view.runtime?.error&&recent(view.as_of);
   const worker=view.normal_data_worker,workerBad=worker&&(worker.status==='FAILED'||!Number.isFinite(age(worker.checked_at))||age(worker.checked_at)<0||age(worker.checked_at)>180);
   const evaluated=fresh&&!workerBad&&recent(entry.at)&&Array.isArray(entry.reasons);
   const candidate=evaluated&&entry.status==='CANDIDATE'?entry.candidate:null;
@@ -294,12 +301,12 @@ function algoChecklistModel(view, now=new Date()) {
 }
 
 function strategyGraphModel(view, now=new Date()) {
-  const index=view.control?.algo?.index,entry=view.normal_theta?.indices?.[index]||{};
+  const index=normalScheduledIndex(view,now),entry=view.normal_theta?.indices?.[index]||{};
   const market=(view.markets||[]).find(r=>r.index===index),fresh=view.vm?.status==='HEALTHY'&&view.freshness==='RECENT';
   const rows=(market?.series||[]).filter(r=>known(r.value)&&Number.isFinite(Date.parse(r.at)));
   const current=algoChecklistModel(view,now).evaluated;
   const missingTrend=(entry.reasons||[]).some(r=>r.startsWith('CURRENT_TREND_INPUT_REQUIRED'));
-  const graph={index,points:rows,current,price:fresh?market?.price:null,
+  const graph={index,points:rows,current,price:current?market?.price:null,hasProjection:Boolean(entry.trend_inputs),
     state:!current||missingTrend?'Current trend unknown':entry.regime==='BULLISH'?'Bullish trend confirmed → hedged put spread':
       entry.regime==='BEARISH'?'Bearish trend confirmed → hedged call spread':'Waiting for MA alignment and ADX ≥25',
     // These reference values are optional read-only engine evidence, never
@@ -314,14 +321,15 @@ function strategyGraphModel(view, now=new Date()) {
 
 function renderStrategyGraph() {
   const graph=strategyGraphModel(data),indicator=graph.indicators;
+  const missing=graph.hasProjection?'unknown':'not supplied';
   $('strategy-graph-title').textContent=`Strategy graph${graph.index?' · '+graph.index:''}`;
   $('strategy-graph-state').textContent=graph.state;
   $('strategy-graph-price').textContent=known(graph.price)?numeric.format(graph.price):'—';
   $('strategy-graph-legend').innerHTML=[
     {name:'Index price',color:'#2473b5'},
-    {name:known(indicator.ma20)?'Daily MA20 '+numeric.format(indicator.ma20):'Daily MA20 · not supplied',color:'#9b62b6'},
-    {name:known(indicator.ma50)?'Daily MA50 '+numeric.format(indicator.ma50):'Daily MA50 · not supplied',color:'#d18221'},
-    {name:known(indicator.adx14)?'Daily ADX '+indicator.adx14.toFixed(1)+' / 25 required':'Daily ADX · not supplied',color:'#526980'},
+    {name:known(indicator.ma20)?'Daily MA20 '+numeric.format(indicator.ma20):'Daily MA20 · '+missing,color:'#9b62b6'},
+    {name:known(indicator.ma50)?'Daily MA50 '+numeric.format(indicator.ma50):'Daily MA50 · '+missing,color:'#d18221'},
+    {name:known(indicator.adx14)?'Daily ADX '+indicator.adx14.toFixed(1)+' / 25 required':'Daily ADX · '+missing,color:'#526980'},
   ].map(s=>`<span><i style="background:${s.color}"></i>${escapeHTML(s.name)}</span>`).join('');
   if(graph.points.length) {
     const lines=[{key:'spot',name:'Observed index price',color:'#2473b5',points:graph.points}];
@@ -330,7 +338,7 @@ function renderStrategyGraph() {
       lines.push({key,name:'Prior daily '+key.toUpperCase(),color,points:graph.points.map(r=>({at:r.at,value:indicator[key]}))});
     chart($('strategy-graph'),graph.points,{color:'#2473b5',label:`${graph.index} strategy graph · observed index price`,lines,fiveMinuteGrid:true,gapSeconds:20,indexPoints:true});
   }else emptyChart($('strategy-graph'),'Waiting for actual index observations','No simulated prices or indicators.');
-  $('strategy-graph-caption').textContent=`${graph.received_at?'Observed through '+clockSeconds(graph.received_at):'No observations yet'} · 5-second refresh target · daily MA20/MA50 and ADX, not 20/50 intraday ticks.${graph.current?'':' Current readings are unknown; any displayed line is historical.'}${!known(indicator.ma20)||!known(indicator.ma50)||!known(indicator.adx14)?' This Oracle release does not supply numeric indicators; they are not plotted.':''}`;
+  $('strategy-graph-caption').textContent=`${graph.received_at?'Observed through '+clockSeconds(graph.received_at):'No observations yet'} · 5-second refresh target · daily MA20/MA50 and ADX, not 20/50 intraday ticks.${graph.current?'':' Current readings are unknown; any displayed line is historical.'}${!known(indicator.ma20)||!known(indicator.ma50)||!known(indicator.adx14)?graph.hasProjection?' Waiting for current validated indicator readings.':' This Oracle release does not supply numeric indicators; they are not plotted.':''}`;
 }
 
 function renderControl() {

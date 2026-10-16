@@ -28,20 +28,35 @@ This is not an exhaustive chain search or a forecast. There is no fixed
 10-strike ATM distance. The checklist displays exact selected strikes, actual
 basket margin and calculated net maximum expiry profit when available.
 
-An additive read-only `trend_inputs` projection for the already validated
-spot/MA20/MA50/ADX14 is implemented in local Normal evaluation. It preserves
-missing/future/stale inputs as UNKNOWN and changes no policy or order route.
-The installed Oracle release `76e74ec...` does not expose these numeric values.
-The PC graph currently shows real live index prices and engine trend status;
-numeric MA overlays/ADX remain explicitly "not supplied". The projection is
-**not deployed to Oracle**: owner On/LIVE must not be interrupted by maintenance.
-The owner was asked to switch Off before a safe Oracle update; no intent,
-strategy switch, trading service, pause, receipt or broker order was changed.
-Do not claim all indicator lines are already installed.
+The additive read-only `trend_inputs` projection for already validated
+spot/MA20/MA50/ADX14 preserves missing/future/stale inputs as UNKNOWN and changes
+no policy or order route. The owner explicitly switched Algo Off at approximately
+15:35 JST and authorized installation. Oracle now runs immutable release
+`04c3f5c8c65ae79f8c633f3251364a480c6f88f2`. Under the owner setup lock,
+deployment checked Off/closed ownership/resolved tests, stopped only the observer,
+rechecked its inactive state, backed up SQLite with verified integrity and
+installed the projection. The updated runtime is paper/paused/Algo Off; its next
+explicit owner Start performs the existing new-release/account live setup.
+Do not enable On or manufacture a new authorization receipt during maintenance.
+Owner controls, capital, exact ownership, original shared pause, existing receipts
+and shared-service identities were preserved. The independent alert release was
+not upgraded. The private PC connection pin and viewer were refreshed.
 
-130 focused tests passed, including UI wait-versus-fault/stale behavior, graph
+At 15:43 JST the new heartbeat advanced, both indices had AVAILABLE spot,
+MA20/MA50/ADX14 evidence, the Normal reader was CURRENT without input failures,
+and actual price lines had accumulated fresh points after the RAM-cache restart.
+Owner Edge displayed the three price/reference lines and actual ADX reading.
+Daily MA references are deliberately flat throughout a session; they are not
+moving averages of the intraday ticks. The PC graph selects NIFTY Mon/Tue/Fri
+and SENSEX Wed/Thu directly from the declared JST weekday policy, including an
+already-open page crossing midnight. Weekends have no scheduled strategy index.
+Tests cover all seven days, stale/bad workers, missing indicators and live faults.
+
+130 local focused tests passed, including UI wait-versus-fault/stale behavior, graph
 evidence-only inputs, exact two-basket maximum-profit/affordability selection,
 read-only indicator projection, dashboard, owner setup and capital regressions.
+The staged Oracle release passed 85 synthetic policy/trailing/owner-setup checks.
+The final PC weekday/freshness/graph UI check passed after its final edits.
 JS syntax, declared Normal config and diff checks passed. The offline demo
 completed two synthetic jobs and queued one unsent report. Owner Edge displayed
 the new checklist and actual Strategy graph. No real order test was performed.

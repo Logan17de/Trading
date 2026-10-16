@@ -18,7 +18,7 @@ const context=vm.createContext({inr:n=>'INR '+n,dateTime:s=>s,known:n=>typeof n=
 vm.runInContext(source.slice(source.indexOf('function algoReason('),source.indexOf('function renderStrategyGraph(')),context);
 const now=new Date('2026-10-16T06:30:00Z'),at=now.toISOString();
 function base(){return {
- vm:{status:'HEALTHY'},freshness:'RECENT',runtime:{error:null},positions_status:'AVAILABLE',orders_status:'AVAILABLE',
+ vm:{status:'HEALTHY'},as_of:at,freshness:'RECENT',runtime:{error:null},positions_status:'AVAILABLE',orders_status:'AVAILABLE',
  live_setup:{mode:'live',paused:false,owner_risk_authorized:true},
  normal_data_worker:{status:'CURRENT',checked_at:at},
  execution_controller:{phase:'IDLE',blockers:['REPORT_INPUTS_OR_STRATEGY_SELECTION_REQUIRED'],execution_enabled:false},
@@ -44,6 +44,7 @@ view=base();view.control.strategy_controls.enabled.normal_theta=false;assert.equ
 view=base();view.control.algo.desired_enabled=false;assert.equal(model(view).heading,'Algo Off');
 view=base();view.freshness='STALE';m=model(view);assert.equal(m.heading,'Waiting for current Oracle data');
 assert.equal(m.rows.filter(r=>r.state==='passed').length,0);
+view=base();view.as_of='2026-10-16T06:29:00Z';assert.equal(model(view).heading,'Waiting for current Oracle data');
 view=base();view.normal_data_worker.checked_at='2026-10-16T06:26:00Z';m=model(view);
 assert.equal(m.heading,'Trading needs attention');assert.equal(m.rows.find(r=>r.title==='Confirmed trend').state,'unknown');
 view=base();view.normal_theta.indices.NIFTY.at='2026-10-16T06:29:00Z';
@@ -57,6 +58,10 @@ assert.equal(g.points[0].value,23099,'no smoothing/fabrication');
 view.normal_theta.indices.NIFTY.trend_inputs={ma20:{status:'AVAILABLE',value:23200},ma50:{status:'UNKNOWN',value:24000},adx14:{status:'AVAILABLE',value:19}};
 g=graph(view);assert.equal(g.indicators.ma20,23200);assert.equal(g.indicators.ma50,undefined);assert.equal(g.indicators.adx14,19);
 view.freshness='STALE';g=graph(view);assert.equal(g.current,false);assert.equal(g.price,null);assert.deepEqual(Object.keys(g.indicators),[]);
+for(const [day,index] of [['2026-10-12','NIFTY'],['2026-10-13','NIFTY'],['2026-10-14','SENSEX'],['2026-10-15','SENSEX'],['2026-10-16','NIFTY'],['2026-10-17',null],['2026-10-18',null]]){
+ context.view=base();context.dayNow=new Date(day+'T06:30:00Z');
+ assert.equal(vm.runInContext('strategyGraphModel(view,dayNow).index',context),index,'graph must follow JST weekdays, not stale algo.index');
+}
 view=base();const entry=view.normal_theta.indices.NIFTY;
 entry.status='CANDIDATE';entry.regime='BULLISH';entry.reasons=[];
 entry.candidate={expiry:'2026-11-03',spread_type:'bull_put',lots:1,basket_requirement_inr:20000,hedge_requirement_inr:500,
