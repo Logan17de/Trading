@@ -305,9 +305,39 @@ def test_directional_groww_basket_margin_scan_affordability_and_no_orders(tmp_pa
 
 def test_max_net_profit_rather_than_profit_to_risk_ratio():
     base=evidence()
+    base['contracts'][0].update(bid=50,ask=50.05)
+    for margin in base['margins'].values():
+        if margin['basket_requirement_inr']==40000:margin['basket_requirement_inr']=100001
+    first=theta.evaluate(CFG,'NIFTY',base,NOW)['candidate']
+    assert first is not None and first['lots']==1
+    short,hedge=copy.deepcopy(base['contracts'])
+    expiry='2026-11-17'
+    short.update(expiry=expiry,symbol='NIFTY26N1725000PE',bid=90,ask=90.05)
+    hedge.update(expiry=expiry,symbol='NIFTY26N1724900PE',strike=24900)
+    base['contracts'] += [short,hedge]
+    base['expiry_evidence']['expiries'].append(expiry)
+    key=identity({'legs':[(hedge['symbol'],'BUY'),(short['symbol'],'SELL')],'quantity':65})
+    base['margins'][key]=dict(received_at=NOW.isoformat(),basket_requirement_inr=25000,
+        hedge_requirement_inr=500,round_trip_charges_inr=10)
     candidate=theta.evaluate(CFG,'NIFTY',base,NOW)['candidate']
-    assert candidate is not None
-    assert candidate['net_max_expiry_profit_inr']>0
+    assert candidate['key']==key and candidate['net_max_expiry_profit_inr']>first['net_max_expiry_profit_inr']
+    assert candidate['net_max_expiry_profit_inr']/candidate['worst_case_loss_inr']<first['net_max_expiry_profit_inr']/first['worst_case_loss_inr']
+    # Highest profit still requires the exact affordable Groww basket response.
+    base['margins'][key]['basket_requirement_inr']=100001
+    assert theta.evaluate(CFG,'NIFTY',base,NOW)['candidate']['key']==first['key']
+
+
+def test_graph_indicator_projection_is_validated_read_only_and_keeps_missing_unknown():
+    b=evidence();original=copy.deepcopy(b)
+    value=theta.evaluate(CFG,'NIFTY',b,NOW)
+    assert b==original
+    for key in ('spot','ma20','ma50','adx14'):
+        assert value['trend_inputs'][key]['value']==b['features'][key]['value']
+        assert value['trend_inputs'][key]['status']=='AVAILABLE'
+    b['features']['ma20']['observed_at']=(NOW+timedelta(seconds=1)).isoformat()
+    value=theta.evaluate(CFG,'NIFTY',b,NOW)
+    assert value['trend_inputs']['ma20']==dict(status='UNKNOWN')
+    assert value['candidate'] is None
 
 @pytest.mark.parametrize('weekday,index',[
     (0,'NIFTY'),(1,'NIFTY'),(2,'SENSEX'),(3,'SENSEX'),(4,'NIFTY'),

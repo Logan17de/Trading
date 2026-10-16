@@ -1,5 +1,51 @@
 # Current Trading handoff
 
+## October 16 owner Start and strategy checklist / graph
+
+The owner clicked Algo Start at approximately 15:17 JST. Read-only PC evidence
+confirmed Oracle LIVE, runtime pause false, durable owner On and Normal selected.
+The original shared pause remains protected. The observer is healthy; the
+controller was IDLE, waiting for a confirmed NIFTY trend on the Friday route.
+Do not describe that as failed activation or change the owner's intent.
+Snapshot/margin freshness can independently become unknown between replies.
+
+The PC now replaces the old technical engine block with Algo status, a live
+Strategy graph, entry checklist, basket comparison and the last actual audit
+action. Ordinary trend/window/candidate waits have plain labels. Actual live
+setup, protection, worker and data faults remain attention/unknown states.
+The static "Execution paused" caption and Normal's generic "Live blocked"
+caption were corrected. Tools/reporting links are inside a disclosure.
+The graph uses actual observed index points on a five-minute grid, refreshes
+with the current view, preserves gaps, uses index-point labels and marks
+historical/stale readings. No ticks, fills or indicator lines are fabricated.
+
+Basket selection behavior was inspected, not changed: direction is confirmed
+first; the current scanner samples up to three short strikes near |delta| .20
+within .15–.25 and nearby outer hedges, then compares bounded exact Groww entry,
+hedge and exit margin/charge responses for one/two lots. It ranks qualifying
+affordable baskets by net quoted maximum expiry profit, then lower margin.
+This is not an exhaustive chain search or a forecast. There is no fixed
+10-strike ATM distance. The checklist displays exact selected strikes, actual
+basket margin and calculated net maximum expiry profit when available.
+
+An additive read-only `trend_inputs` projection for the already validated
+spot/MA20/MA50/ADX14 is implemented in local Normal evaluation. It preserves
+missing/future/stale inputs as UNKNOWN and changes no policy or order route.
+The installed Oracle release `76e74ec...` does not expose these numeric values.
+The PC graph currently shows real live index prices and engine trend status;
+numeric MA overlays/ADX remain explicitly "not supplied". The projection is
+**not deployed to Oracle**: owner On/LIVE must not be interrupted by maintenance.
+The owner was asked to switch Off before a safe Oracle update; no intent,
+strategy switch, trading service, pause, receipt or broker order was changed.
+Do not claim all indicator lines are already installed.
+
+130 focused tests passed, including UI wait-versus-fault/stale behavior, graph
+evidence-only inputs, exact two-basket maximum-profit/affordability selection,
+read-only indicator projection, dashboard, owner setup and capital regressions.
+JS syntax, declared Normal config and diff checks passed. The offline demo
+completed two synthetic jobs and queued one unsent report. Owner Edge displayed
+the new checklist and actual Strategy graph. No real order test was performed.
+
 ## October 16 Normal-only runtime and ordinary trailing SL
 
 Owner retired research/data saving and requested ordinary orders, trailing SL

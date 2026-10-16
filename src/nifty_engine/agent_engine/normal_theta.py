@@ -77,6 +77,7 @@ def evaluate(cfg, index, bundle, now, *, occupied=False):
     result = dict(id=ID, index=index, at=now.isoformat(), config_sha256=identity(cfg),
         status='WAIT', reasons=[], candidate=None, execution_enabled=False,
         broker_writes=False, performance_status='NOT_BACKTESTED', regime='UNKNOWN',
+        trend_inputs={k:dict(status='UNKNOWN') for k in ('spot','ma20','ma50','adx14')},
         event_calendar=bundle.get('event_calendar', {'status':'UNKNOWN'}))
     reasons = result['reasons']; local = now.astimezone(JST)
     if index not in cfg['indices']: raise ValueError('SUPPORTED_INDEX_REQUIRED')
@@ -95,7 +96,12 @@ def evaluate(cfg, index, bundle, now, *, occupied=False):
     values={}
     for key,unit,daily,sessions in (('spot','index_points',False,0),('ma20','index_points',True,20),
             ('ma50','index_points',True,50),('adx14','index_score',True,28)):
-        try: values[key]=research._feature(bundle,key,unit,now,daily=daily,sessions=sessions)
+        try:
+            values[key]=research._feature(bundle,key,unit,now,daily=daily,sessions=sessions)
+            feature=bundle['features'][key]
+            result['trend_inputs'][key]=dict(status='AVAILABLE',value=values[key],unit=unit,
+                observed_at=feature['observed_at'],
+                **({k:feature[k] for k in ('history_end_at','sessions') if k in feature} if daily else {}))
         except (KeyError,ValueError,TypeError): reasons.append('CURRENT_TREND_INPUT_REQUIRED:'+key)
     if len(values)==4:
         if 0<=values['adx14']<=100 and values['adx14']>=cfg['trend_adx_min']:
