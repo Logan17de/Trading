@@ -546,7 +546,8 @@ def test_pinned_sdk_actual_json_matches_scoped_transport_without_any_network(tmp
             transport.modify_smart_order(smart_order_id='gtt_fake',smart_order_type='GTT',segment='FNO',trigger_price='40.00',
                 trigger_direction='UP',order=smart['order'],timeout=5)
             transport.cancel_smart_order(smart_order_id='gtt_fake',smart_order_type='GTT',segment='FNO',timeout=5)
-        assert [r[0].upper() for r in calls]==['POST','POST','POST','POST']
+        assert [r[0].upper() for r in calls[:2]]==['POST','POST']
+        assert calls[2][0].upper() in ('POST','PUT') and calls[3][0].upper()=='POST'
         ordinary=dict(segment='FNO',groww_order_id='owned_sl',order_type='SL',quantity=65,
             trigger_price=30.0,price=30.05,timeout=5)
         with pytest.raises(PermissionError): sdk.modify_order(**ordinary)

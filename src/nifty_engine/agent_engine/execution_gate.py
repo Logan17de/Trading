@@ -115,7 +115,7 @@ class ExecutionGate:
 def write_route(method, path):
     return ((method == 'POST' and path in ('/v1/order/create', '/v1/order/cancel', '/v1/order/modify',
                                           '/v1/order-advance/create'))
-            or (method == 'POST' and re.fullmatch(r'/v1/order-advance/modify/[A-Za-z0-9_-]{1,128}', path))
+            or (method in ('POST','PUT') and re.fullmatch(r'/v1/order-advance/modify/[A-Za-z0-9_-]{1,128}', path))
             or (method == 'POST' and re.fullmatch(r'/v1/order-advance/cancel/FNO/GTT/[A-Za-z0-9_-]{1,128}', path)))
 
 
