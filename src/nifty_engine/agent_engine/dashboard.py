@@ -517,7 +517,7 @@ def collect_charts(market, snapshot, now, *, previous=None, refresh_all=True):
 class DashboardCollector:
     def __init__(self, market, *, clock=lambda: datetime.now(timezone.utc), metadata_loader=download_metadata,
                  background_history=True, journal=None, calendar_loader=download_calendar, smart_loader=None,
-                 before_ownership=None):
+                 before_ownership=None, record_market_data=True):
         self.market, self.clock, self.metadata_loader = market, clock, metadata_loader
         self.metadata, self.charts, self.chart_bucket, self.metadata_attempt = {}, {}, None, None
         self.sequence = 0
@@ -528,8 +528,8 @@ class DashboardCollector:
         self.smart_loader = smart_loader
         self.before_ownership = before_ownership
         from .session import SessionJournal
-        self.sessions = SessionJournal(journal.store) if journal else None
-        self.pnl_journal = broker_pnl.PnlJournal(journal.store) if journal else None
+        self.sessions = SessionJournal(journal.store) if journal and record_market_data else None
+        self.pnl_journal = broker_pnl.PnlJournal(journal.store) if journal and record_market_data else None
         self.account_loader = None
         self.news_loader = None
         self.funds, self.funds_next_at = {}, 0
@@ -842,7 +842,7 @@ def capture(output):
 
 
 class DashboardState:
-    def __init__(self, root, *, offline=False, background=False):
+    def __init__(self, root, *, offline=False, background=False, record_market_data=True):
         self.root, self.offline = Path(root).resolve(), offline
         self.directory = self.root / ".agent-state" / "dashboard-captures"
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -858,9 +858,16 @@ class DashboardState:
         self.monitor = PcMonitor(self.root) if background else None
         from .session import ObservedLines, SessionJournal
         line_store = self.monitor.journal.store if self.monitor else PcJournal(self.root/".agent-state/pc-monitor.sqlite3").store
-        SessionJournal(line_store)
-        self.observed_lines = ObservedLines(line_store)
-        self.pnl_lines = broker_pnl.PnlJournal(line_store)
+        if record_market_data:
+            SessionJournal(line_store)
+            self.observed_lines = ObservedLines(line_store)
+            self.pnl_lines = broker_pnl.PnlJournal(line_store)
+        else:
+            from .live_buffers import LiveLines, LivePnl, OperationalStore
+            line_store = OperationalStore(line_store)
+            if self.monitor: self.monitor.journal.store = line_store
+            self.observed_lines = LiveLines()
+            self.pnl_lines = LivePnl(line_store)
         from .capital import CapitalLedger
         self.capital_ledger = CapitalLedger(line_store)
         self.snapshot = None

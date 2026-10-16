@@ -51,7 +51,10 @@ def disconnected_execution(gate, obs, now, error):
 class Runtime:
     def __init__(self,root):
         self.root=Path(root)
-        self.state=DashboardState(root,background=True)
+        from .normal_theta import load as normal_catalog
+        self.normal_catalog=normal_catalog(self.root)
+        self.lean=bool(self.normal_catalog and not self.normal_catalog['research_enabled'])
+        self.state=DashboardState(root,background=True,record_market_data=not self.lean)
         self.stop=threading.Event();self.collector=None;self.next_auth=0;self.token_day=None
         self.boot_id=uuid.uuid4().hex;self.sequence=1;self.at=datetime.now(timezone.utc).isoformat();self.error=None
         self.mail=DailyMail(self.state.pnl_lines.store);self.next_mail=0
@@ -66,8 +69,6 @@ class Runtime:
         from .contracts import identity
         from .report_strategies import load as research_catalog
         self.research_catalog=research_catalog(self.root)
-        from .normal_theta import load as normal_catalog
-        self.normal_catalog=normal_catalog(self.root)
         if self.research_catalog is None:raise ValueError('RESEARCH_CATALOG_REQUIRED')
         self.gate=ExecutionGate(self.state.monitor.journal,self.root/'.trader-paused',
             mode=os.environ.get('EXECUTION_MODE','paper'),
@@ -77,10 +78,19 @@ class Runtime:
                 **({'normal':self.normal_catalog} if self.normal_catalog else {})}),
             entries_retired=False,strategy_switches_required=True,matched_iv_required=True,
             normal_catalog=bool(self.normal_catalog),commissioning_required=True)
-        from .impulse_feed import StreamingImpulse
-        self.impulse=StreamingImpulse(self.root,self.state.pnl_lines.store)
-        from .research_sync import SupabaseArchive
-        self.research_archive=SupabaseArchive(self.state.pnl_lines.store)
+        if self.lean:
+            from .retired_research import RetiredResearch
+            self.impulse=self.research_archive=RetiredResearch()
+            from .strategy_groups import read as groups, set_switch
+            controls=groups(self.state.pnl_lines.store)
+            if controls['enabled']['research']:
+                set_switch(self.state.pnl_lines.store,dict(id='research',enabled=False,
+                    revision=controls['revision']),datetime.now(timezone.utc))
+        else:
+            from .impulse_feed import StreamingImpulse
+            self.impulse=StreamingImpulse(self.root,self.state.pnl_lines.store)
+            from .research_sync import SupabaseArchive
+            self.research_archive=SupabaseArchive(self.state.pnl_lines.store)
         # Dashboard chart/report calculation must never consume the synchronous
         # owner-control socket's 12-second deadline. One dedicated background
         # builder owns the view; readers only copy and revalidate it.
@@ -173,7 +183,8 @@ class Runtime:
                 ('ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED','ORACLE_EXECUTOR_CONNECTION_REQUIRED')]+execution['blockers']))
             algo['execution_enabled']=execution['execution_enabled']
             algo['status']='ON_READY' if execution['execution_enabled'] else 'ON_BLOCKED' if algo.get('desired_enabled') else 'OFF'
-            algo['stop_status']='PROVIDER_COMMISSIONING_VERIFIED' if view['live_setup']['provider_verified'] else 'PERSISTENT_GTT_IMPLEMENTED_ACTIVATION_UNVERIFIED'
+            algo['stop_status']=('ORDINARY_TRAILING_SL' if self.lean else
+                'PROVIDER_COMMISSIONING_VERIFIED' if view['live_setup']['provider_verified'] else 'PERSISTENT_GTT_IMPLEMENTED_ACTIVATION_UNVERIFIED')
             view['control']['blockers']=algo['blockers']
             view['control']['execution_enabled']=execution['execution_enabled']
         from .trade_audit import recent as recent_trade_audit
@@ -182,7 +193,7 @@ class Runtime:
         view["daily_email"]=self.mail_state
         view["execution_preparation"]=self.state.pnl_lines.store.meta("premium-preparation",
             {"status":"WAIT","reason":"PREPARATION_NOT_STARTED","execution_enabled":False,"broker_writes":False})
-        if self.research_catalog:
+        if self.research_catalog and not self.lean:
             cfg=self.research_catalog
             from .strategy_controls import read as switches, EXECUTABLE
             preferences=switches(self.state.pnl_lines.store)
@@ -237,11 +248,42 @@ class Runtime:
                 view['control']['strategy_controls']=preferences
                 view['control']['strategy_rules']=self.normal_catalog
                 if isinstance(algo,dict):algo['policy_version']=self.normal_catalog['format']
+        if self.lean: self.normal_view(view,execution)
         return view
+
+    def normal_view(self,view,execution):
+        from . import normal_theta, strategy_groups
+        store=self.state.pnl_lines.store; now=datetime.now(timezone.utc)
+        normal=normal_theta.update(store,self.normal_catalog,now,persist=False)
+        preferences=strategy_groups.read(store)
+        preferences['enabled']={'normal_theta':preferences['enabled']['normal_theta']}
+        indices={}
+        from .premium_executor import observation as observe
+        from .dashboard import load_json
+        try: obs=observe(load_json(self.output,8_000_000))
+        except (OSError,ValueError): obs=observe({})
+        for i,r in normal['indices'].items():
+            blockers=list(dict.fromkeys(r['reasons']+self.gate.blockers(obs,purpose='ENTRY',strategy=normal_theta.ID)))
+            indices[i]=dict(status=r['status'],live_ready=r['candidate'] is not None and not blockers,blockers=blockers)
+        view['normal_theta']=normal
+        view['strategies']=[dict(id=normal_theta.ID,name='Normal theta spread',mode='GUARDED_EXECUTOR',
+            description='Immediate limit entry, filled-position trailing SL, owned exits.',
+            desired_enabled=preferences['enabled'][normal_theta.ID],execution_route_implemented=True,
+            closed_trades=0,non_loss_pct=None,loss_pct=None,net_pnl_inr=None,return_pct=None,
+            readiness=dict(code_implemented=True,live_ready=any(r['live_ready'] for r in indices.values()),
+                status='READY_FOR_ENTRY_RECHECK' if any(r['live_ready'] for r in indices.values()) else 'BLOCKED',indices=indices))]
+        view['control'].update(strategy_controls=preferences,strategy_rules=self.normal_catalog,everyday=None)
+        view['control']['algo']['policy_version']=self.normal_catalog['format']
+        view['data_recording']=dict(status='DISABLED',research=False,supabase_upload=False,
+            charts='BOUNDED_SESSION_MEMORY',durable='OWNERSHIP_ORDERS_CONTROLS_CAPITAL_MAIL')
+        view['normal_data_worker']=store.meta('normal-data-worker',{})
+        view['backup_status']=store.meta('oracle-backup-health',{})
 
     def command(self,value):
         if value=={"action":"read"}:return self.read()
         if isinstance(value,dict) and set(value)=={'action','switch'} and value['action']=='strategy_switch':
+            if getattr(self,'lean',False) and value['switch'].get('id')=='research':
+                return dict(status='RETIRED_BY_OWNER',broker_writes=False)
             if getattr(self,'normal_catalog',None):
                 from .strategy_groups import set_switch
             else:
@@ -300,20 +342,27 @@ class Runtime:
         except Exception:
             self.gate.account_fingerprint=None
         self.collector=DashboardCollector(market,background_history=True,journal=self.state.monitor.journal,
+            record_market_data=not self.lean,
             smart_loader=SmartOrderReader(market.groww,market.limiter))
         self.collector.news_loader=None
         self.collector.account_loader=lambda:None
         from .execution_data import GrowwPreparation
-        self.preparer=GrowwPreparation(market,self.state.monitor.journal)
-        self.preparer.entries_retired=bool(self.research_catalog)
+        self.preparer=None if self.lean else GrowwPreparation(market,self.state.monitor.journal)
+        if self.preparer: self.preparer.entries_retired=bool(self.research_catalog)
         from .report_data import ReportData
+        from .normal_data import NormalData
         from .dashboard import load_json
-        self.report_data=ReportData(market,self.state.monitor.journal,self.research_catalog,
-            snapshot_reader=lambda:load_json(self.output,8_000_000),normal_cfg=self.normal_catalog)
+        if self.lean:
+            self.report_data=NormalData(market,self.state.monitor.journal,self.normal_catalog,
+                snapshot_reader=lambda:load_json(self.output,8_000_000))
+        else:
+            self.report_data=ReportData(market,self.state.monitor.journal,self.research_catalog,
+                snapshot_reader=lambda:load_json(self.output,8_000_000),normal_cfg=self.normal_catalog)
         from . import premium_strategy
         from .contracts import identity
         from .oracle_orders import GrowwOrderTransport, OracleOrderGateway
         from .oracle_protection import PersistentProtection
+        from .ordinary_protection import ProtectionRouter
         from .premium_executor import PremiumExecutor
         cfg=premium_strategy.load(self.root)
         # Exact immutable source directory, never a mutable default branch pin.
@@ -322,7 +371,7 @@ class Runtime:
                 **({'normal':self.normal_catalog} if self.normal_catalog else {})}):
             raise ValueError('POLICY_CHANGED_RESTART_REQUIRED')
         transport=GrowwOrderTransport(market,gate);gateway=OracleOrderGateway(self.state.monitor.journal,transport,gate)
-        protection=PersistentProtection(self.state.monitor.journal,transport,gateway)
+        protection=(ProtectionRouter if self.lean else PersistentProtection)(self.state.monitor.journal,transport,gateway)
         self.executor=PremiumExecutor(self.state.monitor.journal,gateway,protection,gate,cfg,clock=gate.clock,
             report_cfg=self.research_catalog,normal_cfg=self.normal_catalog)
         self.collector.before_ownership=self.executor.reconcile_before_collection
@@ -343,12 +392,15 @@ class Runtime:
             preparer=self.preparer
             research_reader=self.report_data
             if research_reader:
-                try:research_reader.check(load_json(self.output,8_000_000))
-                except Exception:
-                    for index in self.research_catalog['indices']:
-                        self.state.pnl_lines.store.set_meta('report-data-status-'+index,{
-                            'status':'WAIT','reason':'RESEARCH_READER_UNAVAILABLE',
-                            'at':datetime.now(timezone.utc).isoformat(),'broker_writes':False})
+                try:
+                    result=research_reader.check(load_json(self.output,8_000_000))
+                    self.state.pnl_lines.store.set_meta('normal-data-worker',result or dict(status='CURRENT',
+                        checked_at=datetime.now(timezone.utc).isoformat(),broker_writes=False))
+                except Exception as exc:
+                    try:
+                        self.state.pnl_lines.store.set_meta('normal-data-worker',dict(status='FAILED',
+                            checked_at=datetime.now(timezone.utc).isoformat(),failure=observer_error(exc),broker_writes=False))
+                    except Exception: pass  # A journal fault must not silently kill this worker.
             if preparer:
                 try:
                     preparer.safe_check(load_json(self.output,8_000_000),premium_strategy.load(self.root))
@@ -364,8 +416,12 @@ class Runtime:
         try:
             if value is None: value = load_json(self.output, 8_000_000)
             if not isinstance(value, dict) or not value.get('execution_observation'): return
-            connect_snapshot(self.state.pnl_lines.store, value, self.research_catalog,
-                             datetime.now(timezone.utc), self.normal_catalog)
+            if getattr(self,'lean',False):
+                from .normal_data import connect_snapshot as normal_snapshot
+                normal_snapshot(self.state.pnl_lines.store,value,self.normal_catalog,datetime.now(timezone.utc))
+            else:
+                connect_snapshot(self.state.pnl_lines.store, value, self.research_catalog,
+                                 datetime.now(timezone.utc), self.normal_catalog)
         except Exception:
             for index in self.research_catalog['indices']:
                 try:
@@ -426,16 +482,13 @@ class Runtime:
         while not self.stop.wait(30):
             try:
                 now=datetime.now(timezone.utc)
-                from .report_strategies import update as update_research
-                try:update_research(self.state.pnl_lines.store,self.root,now)
-                except Exception:
-                    self.state.pnl_lines.store.set_meta('report-strategy-evaluations',{
-                        'status':'RESEARCH_INPUT_UNAVAILABLE','mode':'MONITOR_ONLY',
-                        'broker_writes':False,'execution_enabled':False})
+                if not getattr(self,'lean',False):
+                    from .report_strategies import update as update_research
+                    update_research(self.state.pnl_lines.store,self.root,now)
                 self.state.capital_ledger.accrue(now)
                 if self.normal_catalog:
                     from .normal_theta import update as update_normal
-                    update_normal(self.state.pnl_lines.store,self.normal_catalog,now)
+                    update_normal(self.state.pnl_lines.store,self.normal_catalog,now,persist=not getattr(self,'lean',False))
                 self.mail_state=self.mail.tick(self.read(),now)
             except Exception as exc:self.mail_state={"status":"REPORT_"+type(exc).__name__,"provider_accepted":False,"inbox_verified":False}
 
@@ -468,18 +521,24 @@ class Runtime:
 
     def backup_loop(self):
         # Backup I/O must never occupy the reporting scheduler's thread.
+        retry_at=0
         while not self.stop.wait(30):
             try:
                 now=datetime.now(timezone.utc)
                 from .pc_control import JST
                 local=now.astimezone(JST);day=local.date().isoformat()
+                if now.timestamp()<retry_at: continue
                 if (local.hour,local.minute)>=(19,5) and not self.state.pnl_lines.store.meta("oracle-backup-"+day):
                     target=self.root/".agent-state/backups"/(day+"-"+uuid.uuid4().hex+".sqlite3")
                     result=backup_database(self.state.pnl_lines.store.path,target)
                     self.state.pnl_lines.store.set_meta("oracle-backup-"+day,result)
+                    self.state.pnl_lines.store.set_meta('oracle-backup-health',dict(status='VERIFIED',at=now.isoformat()))
             except Exception as exc:
+                retry_at=now.timestamp()+1800
                 try:self.state.pnl_lines.store.set_meta('oracle-backup-error',dict(
-                    at=now.isoformat(),error_type=type(exc).__name__))
+                    at=now.isoformat(),**observer_error(exc)))
+                except Exception:pass
+                try:self.state.pnl_lines.store.set_meta('oracle-backup-health',dict(status='FAILED',at=now.isoformat(),failure=observer_error(exc)))
                 except Exception:pass
 
     def run(self):
@@ -488,7 +547,7 @@ class Runtime:
         threading.Thread(target=self.refresh_view_loop,daemon=True).start()
         threading.Thread(target=self.report_loop,daemon=True).start()
         threading.Thread(target=self.backup_loop,daemon=True).start()
-        threading.Thread(target=self.retention_loop,daemon=True).start()
+        if not self.lean: threading.Thread(target=self.retention_loop,daemon=True).start()
         with open(os.devnull,"w") as muted,contextlib.redirect_stdout(muted),contextlib.redirect_stderr(muted):
             logging.disable(logging.CRITICAL)
             with readonly_transport([],history=True,dashboard=True,calculations=True,feed=True,timeout_seconds=5):
@@ -508,6 +567,9 @@ class Runtime:
                                 self.executor.reconcile_before_collection()
                                 value=self.collector.sample()
                             write_snapshot(self.output,value)
+                            if self.lean:
+                                self.state.observed_lines.record(value,datetime.now(timezone.utc))
+                                self.state.pnl_lines.record(value['broker_pnl'],datetime.now(timezone.utc))
                             if value.get("status")=="BLOCKED" or any(r.get("code")=="403" for r in value.get("probes",{}).values()):
                                 raise ConnectionError("read unavailable")
                         # Collection already persists observations. Building full

@@ -1,5 +1,39 @@
 # Current Trading handoff
 
+## October 16 Normal-only runtime and ordinary trailing SL
+
+Owner retired research/data saving and requested ordinary orders, trailing SL
+after fill and owned-position exits. Read ORDINARY_TRAILING.md. This supersedes
+the research/GTT requirements in earlier handoff sections. Keep only Normal in
+the active dashboard, stop study/stream/event/IV workers and Supabase uploads.
+Current price/P&L curves and strategy inputs are bounded RAM caches; restart
+requires fresh data. Ownership/orders/controls/capital/mail remain durable.
+
+New Normal entry is ordinary executable DAY LIMIT hedge BUY, full fill/readback,
+then ordinary LIMIT short SELL. Attach ordinary DAY BUY SL LIMIT after the short
+fill; tighten the exact stop as best net basket P&L improves. Preserve the existing
+up-to-INR-1,000 loss distance and all margin/ownership/risk gates. No new GTT.
+Cancel/read back protection before an independent exit, close short before hedge,
+reconcile partial fills and terminal unfilled exits; never repeat unknown writes.
+Legacy protection records keep original IDs and manual positions stay protected.
+
+Preparation now fetches only current Normal inputs and checks the daily-history
+receipt belongs to this session. Worker failures and failed backups are exposed
+to the independent email watchdog. Research is retired as an owner choice;
+old private records are retained for provenance. Offline operational compaction
+creates a new verified journal while preserving the full old database privately.
+
+Initial full Windows suite: 970 passed, six platform skips, two failures. One was
+the existing legacy smart-order modify HTTP method mismatch with installed SDK
+1.5.0; the other was a synthetic October 15 contract test using the real October
+16 clock. Both were corrected and their focused regressions passed. The new
+ordinary-order lifecycle tests passed for both indices/directions. The offline
+demo completed two synthetic jobs and queued one unsent report. Config and JS
+syntax checks passed. Synthetic tests are not live broker fill verification.
+
+Deployment verification will be recorded below after the paused/Off rollout.
+Do not activate, submit test orders or change owner intent during maintenance.
+
 ## October 13 GitHub publication and Codex schedule removal
 
 Owner requested publication of all project code to Logan17de/Trading and removal

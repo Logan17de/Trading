@@ -193,7 +193,7 @@ function renderControl() {
   $("strategy-priority").textContent="NIFTY Mon/Tue/Fri; SENSEX Wed/Thu. Expiry: a matching position skips entry; otherwise replace only the algo-owned basket. Your trades are protected.";
   $("levels").hidden=true; $("rule-details").hidden=true;
   $("analysis-status").textContent="60% premium reduction: NIFTY ≤ ₹8 / SENSEX ≤ ₹32. Review replacing the short with the next listed premium above its threshold. Keep the hedge unless net improvement exceeds ₹100.";
-  $("trailing-status").textContent=`Loss-stop trigger ₹1,000 per algo basket · ${data.execution_controller?.protection==='VERIFIED_ACTIVE'?'broker GTT verified':'broker protection not armed'} · fills and maximum loss are not guaranteed.`;
+  $("trailing-status").textContent=`Trailing SL · ${data.execution_controller?.protection==='VERIFIED_ACTIVE'?'ordinary broker stop verified':'broker stop not armed'} · only tightens · up to ₹1,000 basket-loss distance · fills are not guaranteed.`;
   $("control-note").textContent="By 19:00: hold when the short premium is above its entry premium − ₹5; otherwise queue a return to ₹20 / ₹80. Expiry at 18:00: uptrend → put 3 strikes below ATM; downtrend → call 3 strikes above ATM. Hedges are required. Broker activation and verification are shown above.";
   if(policy?.format==='trading-report-research-v1') {
     $("everyday-rule").textContent="Bull put · Bear call · Iron condor · Calendar";
@@ -207,14 +207,14 @@ function renderControl() {
     $("control-note").textContent="Switches select new entries; disabling a strategy keeps existing owned protection and exits while Algo is On. Three credit baskets have guarded execution routes. Calendar is monitoring only. Start requires live validation and complete data. ₹1,000 is an exit trigger, not a guaranteed loss cap."+(strategySwitchMessage?' '+strategySwitchMessage:'');
   }
   if(policy?.format==='normal-theta-v1') {
-    $("everyday-rule").textContent="Normal theta spread · Research";
+    $("everyday-rule").textContent="Normal theta spread";
     $("monitor-schedule").textContent="14:00–18:30 JST new entries · mandatory owned exit begins 18:45 JST · flat target 19:00 JST";
     $("expiry-status").textContent="14–45 DTE · close by 7 DTE · actual API/master expiry";
     $("strategy-priority").textContent="Uptrend: hedged put credit spread. Downtrend: hedged call credit spread. No confirmed trend: no trade. One basket; manual trades protected.";
     const normal=data.normal_theta;
     $("analysis-status").textContent=normal?.indices?Object.entries(normal.indices).map(([index,r])=>`${index}: ${r.regime} · ${r.status}${r.reasons?.length?` · ${r.reasons.join('; ')}`:''}`).join(' | '):"Waiting for current trend, theta and quotes";
     $("preparation-status").textContent=`Normal preparation: ${data.execution_controller?.report_preparation?.status||'WAIT'} · read-only comparison · historical IV not required`;
-    $("control-note").textContent="Positive model theta with bought hedge first, limited basket and stop-loss checks. Algo Start initiates a read-only broker safety review and first-time LIVE preparation, then can place REAL orders when strategy conditions pass. First live order has no prior provider stop-fill verification; actual losses may exceed the estimate.";
+    $("control-note").textContent="Bought hedge first → sell after fill → ordinary trailing SL after short fill. Exits close owned shorts before hedges. Algo Start authorizes real trading when checks pass. Research and bulk recording are off; live charts reset after restart. Stops can remain unfilled.";
   }
   $("algo-start").disabled=data.demo||algoStartPending||strategySwitchPending||on||data.vm?.status!=='HEALTHY';
   $("algo-start").textContent=on?"Algo On":"Algo Start";
@@ -229,6 +229,9 @@ function renderControl() {
   if($("live-setup-status"))$("live-setup-status").textContent=setup?
     (setup.next_step==='OWNER_START'?(setup.provider_verified?"Groww provider commissioning verified. Algo On is ready when conditions pass.":"Owner-authorized LIVE mode. First real basket remains uncommissioned; broker stop/exit behavior is not guaranteed."):
     `Real trading setup: ${String(setup.commissioning?.status||'NOT_STARTED').replaceAll('_',' ').toLowerCase()}. Complete the owner broker check, then prepare live mode. Algo stays Off during setup.`):"Real trading setup: waiting for Oracle status.";
+  /* Research and stream status are retired. */
+  $("impulse-status").hidden=true;
+  $("impulse-research-status").hidden=true;
   const impulse=data.premium_impulse;
   $("impulse-status").textContent=impulse?`Stream: ${impulse.transport_status||impulse.status} · ${Object.entries(impulse.indices||{}).map(([index,r])=>`${index}: ${r.score??'—'}/100 (${r.status}, ${r.known_points}/100 evidence)`).join(' · ')||'waiting for current events and history'} · ${impulse.processing_ms??'—'} ms local processing · read-only`:'Streaming breakout detector: waiting for Oracle evidence';
   const lastImpulse=impulse?.recent_confirmations?.at(-1);
@@ -461,8 +464,6 @@ $("demo-toggle").addEventListener("change",event=>{demo=event.target.checked;con
 for(const tab of document.querySelectorAll(".tab")) tab.addEventListener("click",()=>{selectedIndex=tab.dataset.index;try{localStorage.setItem("trading-index",selectedIndex);}catch{}contracts={buy:null,sell:null};renderOptions(true);});
 for(const side of ["buy","sell"]) $(side+"-option").addEventListener("change",event=>{contracts[side]=event.target.value||null;const market=data.markets.find(m=>m.index===selectedIndex);drawOption(side,market?.options.find(o=>o.symbol===contracts[side]));});
 load().then(()=>refresh());
-const impulseEvents=new EventSource('/api/impulse/events');
-impulseEvents.onmessage=event=>{try{const value=JSON.parse(event.data);if(!demo&&data){data.premium_impulse=value;renderControl();}}catch{}};
-impulseEvents.onerror=()=>{if(!demo&&data){data.premium_impulse={transport_status:'PC_STREAM_UNAVAILABLE',indices:{}};renderControl();}};
+// Only the five-second account/view refresh remains; no research SSE worker.
 setInterval(async()=>{if(!document.hidden){await load();if(autoRefresh&&!demo&&Date.now()-lastRequest>=4500) await refresh();}},5000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&autoRefresh&&!demo) refresh();});

@@ -10,6 +10,40 @@ from datetime import date
 
 
 class NormalExecution(ReportExecution):
+    def _liquidation(self,state,obs):
+        return sum(q*self.e._book(contract(next(r for r in state['candidate']['legs'] if r['symbol']==symbol)),obs,
+            'SELL' if q>0 else 'BUY',abs(q))['bid' if q>0 else 'ask'] for symbol,q in self.e._net(state).items())
+
+    def protection_stops(self,s,obs,active,qty,limit):
+        if not getattr(self.e.protection,'ordinary_stop',False):
+            return super().protection_stops(s,obs,active,qty,limit)
+        from .premium_executor import cash_stop
+        longs=sum(q*self.e._book(contract(next(r for r in s['candidate']['legs'] if r['symbol']==symbol)),obs,
+            'SELL',q)['bid'] for symbol,q in self.e._net(s).items() if q>0)
+        cash=self.e._cash(s)+longs
+        return {r['symbol']:cash_stop(cash,qty,s['costs'],r['tick_size'],s.get('best_pnl',0),limit)
+                for r in active}
+
+    def trail(self,s,obs):
+        if not getattr(self.e.protection,'ordinary_stop',False):return None
+        e=self.e;qty=s['candidate']['quantity']
+        pnl=e._cash(s)+self._liquidation(s,obs)-s['costs']
+        if pnl>s.get('best_pnl',0):s['best_pnl']=pnl;e._save(s)
+        active=[r for r in s['candidate']['legs'] if r['side']=='SELL' and e._net(s).get(r['symbol'],0)<0]
+        limit=min(self.cfg['risk_limit_inr'],s['candidate']['entry_credit_inr']*self.cfg['stop_credit_multiple'])
+        stops=self.protection_stops(s,obs,active,qty,limit)
+        for row in active:
+            key=s['protections'][row['symbol']]['key'];old=e.protection.record(key)
+            if old.get('request',{}).get('order_type')!='SL':continue  # Preserve an existing legacy parent.
+            stop=stops[row['symbol']]
+            if stop['trigger_price']<=e._book(contract(row),obs,'BUY',qty)['ask']:
+                s.update(phase='REPORT_EXIT_SHORTS',exit_reason='TRAILING_STOP');e._save(s)
+                return e._status('REPORT_TRAILING_EXIT_QUEUED')
+            if stop['trigger_price']<old['request']['trigger_price']:
+                s['last_write_at']=e.clock().isoformat();e._save(s)
+                return e._status('REPORT_TRAILING_SL_'+e.protection.tighten(key,stop,obs)['status'])
+        return None
+
     def enabled(self,sid):return sid==policy.ID and groups.read(self.e.journal.store)['enabled'][policy.ID]
     def allowed(self,sid):return sid==policy.ID
     def matched_iv_required(self):return False

@@ -193,7 +193,7 @@ def test_prepared_object_cannot_replace_hedge_or_risk_model(tmp_path):
     with pytest.raises(ValueError):s.executor.normal.validate(changed,s.observation())
 
 
-def test_runtime_two_groups_fixed_transport_and_no_implicit_activation(tmp_path):
+def test_runtime_only_normal_no_research_transport_or_implicit_activation(tmp_path):
     import shutil
     from nifty_engine.agent_engine.oracle_runtime import Runtime
     from nifty_engine.agent_engine.oracle_link import request
@@ -203,9 +203,10 @@ def test_runtime_two_groups_fixed_transport_and_no_implicit_activation(tmp_path)
     (tmp_path/'.trader-paused').touch()
     runtime=Runtime(tmp_path)
     view=runtime.read()
-    assert [r['id'] for r in view['strategies']]==['normal_theta','research']
+    assert [r['id'] for r in view['strategies']]==['normal_theta']
     assert not any(view['control']['strategy_controls']['enabled'].values())
-    assert view['research_studies'] and runtime.gate.mode=='paper'
+    assert 'research_studies' not in view and runtime.gate.mode=='paper'
+    assert view['data_recording']['status']=='DISABLED'
     assert 'MATCHED_IV' not in str(view['strategies'][0]['readiness'])
     from types import SimpleNamespace
     config=dict(format='trading-oracle-viewer-v1',host='example.test',user='ubuntu',
@@ -214,7 +215,7 @@ def test_runtime_two_groups_fixed_transport_and_no_implicit_activation(tmp_path)
     def local_transport(args,**kwargs):
         return SimpleNamespace(returncode=0,stdout=json.dumps(runtime.command(json.loads(kwargs['input']))))
     result=request(config,dict(action='strategy_switch',switch=dict(id='research',enabled=True,revision=0)),run=local_transport)
-    assert result['controls']['enabled']==dict(normal_theta=False,research=True)
+    assert result['status']=='RETIRED_BY_OWNER'
     assert not premium_strategy.intent(runtime.state.pnl_lines.store)['enabled']
     assert runtime.state.pnl_lines.store.meta('premium-execution-activation') is None
     assert (tmp_path/'.trader-paused').exists()

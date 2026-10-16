@@ -335,7 +335,7 @@ class RemoteViewer:
         return result
 
     def run(self,stop):
-        threading.Thread(target=self.impulse_watch,args=(stop,),daemon=True).start()
+        # Premium research/stream collection was retired by the owner.
         while not stop.is_set():
             start=time.monotonic()
             self.poll()

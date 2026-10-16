@@ -233,9 +233,13 @@ for(const [key,value] of Object.entries(values))get('[name="'+key+'"]').value=va
 let prevented=0;
 const fallback={status:'OWNER_CONTRACT_FOUND',source:'GROWW_PUBLIC_INSTRUMENT_MASTER',
   quote_available:false,egress_ip:null,quote:{},checked_at:'2026-10-13T06:00:00Z',
-  contract:{index:'SENSEX',symbol:'SENSEX26O1576000CE',expiry:'2026-10-15',
+ contract:{index:'SENSEX',symbol:'SENSEX26O1576000CE',expiry:'2026-10-15',
             lot_size:20,tick_size:0.05},broker_writes:false};
-const ctx=vm.createContext({Intl,Date,Number,Set,
+class FixtureDate extends Date {
+ constructor(...args){super(...(args.length?args:['2026-10-13T06:00:00Z']));}
+ static now(){return Date.parse('2026-10-13T06:00:00Z');}
+}
+const ctx=vm.createContext({Intl,Date:FixtureDate,Number,Set,
  setInterval:()=>0,clearInterval:()=>{},setTimeout:()=>0,clearTimeout:()=>{},
  FormData:class{get(key){return get('[name="'+key+'"]').value}},
  document:{querySelector:get,querySelectorAll:()=>[],createElement:elem},

@@ -93,6 +93,12 @@ def projection(key, body):
                                   parent_acknowledged=bool(body.get('smart_id')),
                                   cancel_requested=body.get('cancel_attempted') is True,
                                   evidence='BROKER_READBACK' if body.get('checked_at') else 'JOURNAL_STATE')
+    if key.startswith('ordinary-protection-'):
+        request=body.get('request') or {}
+        return 'PROTECTION',dict(status=safe(body.get('status')),symbol=symbol(request.get('trading_symbol')),
+            side='BUY',quantity=numeric(request.get('quantity')),trigger_price_inr=numeric(request.get('trigger_price')),
+            limit_price_inr=numeric(request.get('price')),modify_pending=bool(body.get('modify_pending')),
+            evidence='BROKER_READBACK' if body.get('checked_at') else 'JOURNAL_STATE')
     if key == 'normal-theta-evaluations':
         values=body.get('indices') or {}
         if not isinstance(values, dict):

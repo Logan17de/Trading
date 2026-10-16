@@ -29,7 +29,8 @@ def load(root):
         weekday_index_jst=['NIFTY','NIFTY','SENSEX','SENSEX','NIFTY'],
         short_dte=[14,45], close_dte=7, short_abs_delta=[.15,.25],
         trend_adx_min=25, take_profit_fraction=.5, stop_credit_multiple=1.5,
-        maximum_relative_quote_spread=.10, historical_iv_required=False)
+        maximum_relative_quote_spread=.10, historical_iv_required=False,
+        research_enabled=False, record_market_data=False, protection_type='ORDINARY_TRAILING_SL')
     if cfg != expected: raise ValueError('DECLARED_NORMAL_THETA_POLICY_REQUIRED')
     return cfg
 

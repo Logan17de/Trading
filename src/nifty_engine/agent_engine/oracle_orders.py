@@ -44,6 +44,10 @@ class GrowwOrderTransport:
         return self._write('POST', '/v1/order/cancel', {k:v for k,v in args.items() if k != 'timeout'},
                            self.market.groww.cancel_order, args)
 
+    def modify_order(self, **args):
+        return self._write('POST', '/v1/order/modify', {k:v for k,v in args.items() if k != 'timeout'},
+                           self.market.groww.modify_order, args)
+
     def get_order_status_by_reference(self, **args):
         try: return self._read(self.market.groww.get_order_status_by_reference, args)
         except Exception: return self._listed_order('order_reference_id',args['order_reference_id'])
@@ -74,7 +78,7 @@ class GrowwOrderTransport:
 
     def modify_smart_order(self, **args):
         body = {k:v for k,v in args.items() if k not in ('timeout','smart_order_id') and v is not None}
-        return self._write('PUT', '/v1/order-advance/modify/'+args['smart_order_id'], body,
+        return self._write('POST', '/v1/order-advance/modify/'+args['smart_order_id'], body,
                            self.market.groww.modify_smart_order, args)
 
     def cancel_smart_order(self, **args):

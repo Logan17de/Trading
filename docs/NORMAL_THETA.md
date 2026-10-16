@@ -1,4 +1,11 @@
-# Normal theta spread and Research
+# Normal theta spread
+
+**October 16 supersedes the historical research/GTT sections below:** Normal is
+the only active strategy. Research and bulk recording/upload are retired.
+New entries use ordinary DAY LIMIT orders and filled-position ordinary trailing
+SL orders; exits close exact owned shorts before hedges. Read
+[ORDINARY_TRAILING.md](ORDINARY_TRAILING.md) for current behavior and limitations.
+The remaining older sections are retained implementation provenance.
 
 October 7 owner requested a normal selling strategy derived from the report,
 separate from the historical-IV research. The dashboard has two private choices:

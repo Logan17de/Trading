@@ -546,7 +546,13 @@ def test_pinned_sdk_actual_json_matches_scoped_transport_without_any_network(tmp
             transport.modify_smart_order(smart_order_id='gtt_fake',smart_order_type='GTT',segment='FNO',trigger_price='40.00',
                 trigger_direction='UP',order=smart['order'],timeout=5)
             transport.cancel_smart_order(smart_order_id='gtt_fake',smart_order_type='GTT',segment='FNO',timeout=5)
-        assert [r[0].upper() for r in calls]==['POST','POST','PUT','POST']
+        assert [r[0].upper() for r in calls]==['POST','POST','POST','POST']
+        ordinary=dict(segment='FNO',groww_order_id='owned_sl',order_type='SL',quantity=65,
+            trigger_price=30.0,price=30.05,timeout=5)
+        with pytest.raises(PermissionError): sdk.modify_order(**ordinary)
+        with transport.scope(obs,'PROTECT'): transport.modify_order(**ordinary)
+        assert calls[-1][1]=='https://api.groww.in/v1/order/modify'
+        assert calls[-1][2]['json']=={k:v for k,v in ordinary.items() if k!='timeout'}
 
 
 def test_detail_route_rejection_uses_complete_list_exact_id_and_reference(tmp_path):

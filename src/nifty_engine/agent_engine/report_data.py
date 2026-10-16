@@ -99,7 +99,7 @@ def connect_snapshot(store, snapshot, cfg, now, normal_cfg=None):
 
 class ReportData:
     """Independent bounded research reads using the collector's rate limiter."""
-    def __init__(self,market,journal,cfg,*,clock=lambda:datetime.now(timezone.utc),master=download_instrument_text,snapshot_reader=None,normal_cfg=None):
+    def __init__(self,market,journal,cfg,*,clock=lambda:datetime.now(timezone.utc),master=download_instrument_text,snapshot_reader=None,normal_cfg=None,initialize_calendar=True):
         self.market,self.store,self.cfg=market,journal.store,cfg
         self.clock,self.master=clock,master
         self.snapshot_reader=snapshot_reader
@@ -109,7 +109,7 @@ class ReportData:
         self.book_checks={}
         self.margin_checks={}
         from .event_calendar import OfficialCalendar
-        self.calendar=OfficialCalendar(self.store)
+        self.calendar=OfficialCalendar(self.store) if initialize_calendar else None
 
     def call(self,method,**kwargs):
         self.market.limiter.wait()
