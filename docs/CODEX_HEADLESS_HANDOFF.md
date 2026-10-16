@@ -76,6 +76,12 @@ current visual verification in Edge is not claimed. The ordinary stop/fill/exit
 path remains untested with real broker orders. Algo stays Off; the owner's
 explicit Start is required for real-trading authorization and qualifying entries.
 
+Optional deletion of this task's local synthetic pytest directories under
+`.agent-state` was rejected by automatic approval review ("blocked by policy").
+They were left intact; do not claim local test-file cleanup completed. They are
+not active collection or runtime memory. The two synthetic Oracle tmpfs test
+directories were removed after tests. No operational journal or vault was purged.
+
 ## October 13 GitHub publication and Codex schedule removal
 
 Owner requested publication of all project code to Logan17de/Trading and removal
