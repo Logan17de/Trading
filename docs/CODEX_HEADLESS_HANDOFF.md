@@ -1,5 +1,41 @@
 # Current Trading handoff
 
+## October 16 scheduled exit changed to 18:44 JST
+
+Owner changed Normal's scheduled owned-basket exit from 18:45 to **18:44 JST**.
+Current immutable Oracle release is
+`fdd603f1028e05b0075d102116350e3e1187a108`. Config, strict loader, current guides
+and the PC checklist agree. The checklist reads the configured time rather than
+hardcoding it. The new-entry cutoff is still 18:30 and the flat/reconciliation
+target remains 19:00. Closing starts on the first eligible fresh monitoring tick
+at/after 18:44; do not claim an exact-time guaranteed fill or reopen afterward.
+
+Current Normal exits on 50% of actual net entry credit after estimated round-trip
+costs, loss of min(INR 1,000, 1.5 times gross entry credit), trailing/protective
+stop, <=7 DTE or scheduled liquidation. Entry/protection faults use the existing
+settle/unwind path. The fixed INR 8 / INR 32 short rolls remain retired.
+After an earlier confirmed full closure, a new qualifying basket may be entered
+before 18:30 with Algo On and all fresh gates; the same strike pair can qualify
+again. No automatic cooldown or cumulative daily-loss lock is implemented.
+See NORMAL_THETA.md for the exact owned-short-before-hedge close sequence.
+
+84 local focused tests passed, followed by 14 final boundary/lifecycle checks.
+89 exact-release Oracle synthetic tests passed, covering both indices/directions,
+18:43:58 monitoring, 18:44:03 exit, flat/order confirmation and no successor entry
+after the cutoff. Config, JS and diff checks passed. Offline demo completed two
+jobs and queued one unsent report; no real broker orders or test email were sent.
+
+The first staging connection failed before creating its target; a read-only
+absence check preceded the successful retry. Deployment held the setup lock,
+verified owner Off and no unsettled ownership/tests, backed up SQLite with an
+integrity check, and preserved controls, capital, broker provenance, original
+pause and shared-service identities. Existing paper/runtime pause/Algo Off were
+preserved. Only the observer and PC viewer restarted; independent alert/shared
+services were not upgraded. PC source pin now matches the installed release.
+At approximately 15:55 JST, readback showed HEALTHY, advancing heartbeat, IDLE,
+Off/paper/paused and forced_exit_jst=18:44. Owner Edge visibly displayed 18:44.
+The owner must explicitly Start again for new-release real-trading authorization.
+
 ## October 16 owner Start and strategy checklist / graph
 
 The owner clicked Algo Start at approximately 15:17 JST. Read-only PC evidence
