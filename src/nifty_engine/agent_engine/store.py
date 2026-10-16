@@ -34,6 +34,15 @@ class Store:
                     lease REAL, token TEXT, result TEXT, error TEXT);
                 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, at REAL NOT NULL, day TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, at REAL NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS pc_trade_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    at REAL NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS pc_trade_audit_time ON pc_trade_audit(at,id);
+                CREATE TRIGGER IF NOT EXISTS pc_trade_audit_no_update
+                    BEFORE UPDATE ON pc_trade_audit BEGIN SELECT RAISE(ABORT,'AUDIT_APPEND_ONLY'); END;
+                CREATE TRIGGER IF NOT EXISTS pc_trade_audit_no_delete
+                    BEFORE DELETE ON pc_trade_audit
+                    WHEN OLD.at IS NULL OR OLD.at >= CAST(strftime('%s','now','-60 days') AS REAL)
+                    BEGIN SELECT RAISE(ABORT,'AUDIT_NOT_YET_EXPIRED'); END;
                 CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY, day TEXT NOT NULL, payload TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'QUEUED', attempts INTEGER NOT NULL DEFAULT 0,
                     first_attempt REAL, next_attempt REAL NOT NULL DEFAULT 0, lease REAL, token TEXT, provider_id TEXT, error TEXT);
@@ -75,7 +84,15 @@ class Store:
 
     def set_meta(self, key: str, body):
         with self.transaction() as db:
+            # Audit the exact same committed state transition, without leaking
+            # raw broker receipts or allowing audit reads to issue orders.
+            from .trade_audit import projection, change
+            tracked = projection(key,body) is not None
+            old = db.execute("SELECT body FROM meta WHERE key=?", (key,)).fetchone() if tracked else None
+            prior = json.loads(old[0]) if old else None
             db.execute("INSERT OR REPLACE INTO meta VALUES(?,?)", (key, dumps(body)))
+            if tracked:
+                change(db,key,prior,body)
 
     def event(self, kind: str, body: dict, now: datetime):
         with self.transaction() as db:

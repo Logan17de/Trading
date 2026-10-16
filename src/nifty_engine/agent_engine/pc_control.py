@@ -115,6 +115,9 @@ class PcJournal:
             db.execute("INSERT OR IGNORE INTO pc_slots VALUES(?,?)", (slot, strategy))
             db.execute("INSERT INTO pc_orders(reference,slot,symbol,side,quantity) VALUES(?,?,?,?,?)",
                        (reference, slot, symbol, side, quantity))
+            from .trade_audit import put
+            put(db,'ORDER',dict(status='RESERVED',strategy=strategy,symbol=symbol,side=side,
+                                quantity=quantity,evidence='JOURNAL_RESERVATION'))
         return reference
 
     def slot_status(self):
@@ -132,6 +135,12 @@ class PcJournal:
             if row is None or (row[0] and row[0] != digest(broker_id)):
                 raise ValueError("unknown or changed engine acknowledgement")
             db.execute("UPDATE pc_orders SET broker_hash=?,state='SUBMITTED' WHERE reference=?", (digest(broker_id), reference))
+            if row[0] is None:
+                from .trade_audit import put
+                detail=db.execute("SELECT symbol,side,quantity FROM pc_orders WHERE reference=?", (reference,)).fetchone()
+                put(db,'ORDER',dict(status='BROKER_ACKNOWLEDGED',symbol=detail['symbol'],
+                    side=detail['side'],quantity=detail['quantity'],
+                    broker_acknowledged=True,evidence='EXACT_BROKER_ID_MATCH'))
 
     def ownership(self, orders, positions, *, complete):
         """A prefix alone proves nothing. Persist unexplained/manual symbol conflicts."""
@@ -150,6 +159,11 @@ class PcJournal:
                          and owned["filled"] <= filled <= owned["quantity"])
                 if exact:
                     exact_symbols.add(symbol)
+                    if filled > owned["filled"]:
+                        from .trade_audit import put
+                        put(db,'ORDER',dict(status='FILL_OBSERVED',symbol=symbol,
+                            side=owned["side"],quantity=owned["quantity"],
+                            filled_quantity=filled,evidence='EXACT_BROKER_ORDER_MATCH'))
                     db.execute("UPDATE pc_orders SET filled=? WHERE reference=?", (filled, ref))
                 else:
                     db.execute("INSERT OR IGNORE INTO pc_protected VALUES(?)", (symbol,))

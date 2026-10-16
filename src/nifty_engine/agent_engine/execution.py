@@ -244,6 +244,8 @@ class PreparedOrderGateway:
             record = {"status":"SUBMITTING", "reference":reference, "fingerprint":fingerprint,
                       "order":order, "slot":slot, "operation_key":operation_key}
             db.execute("INSERT INTO meta VALUES(?,?)", (operation_key, dumps(record)))
+            from .trade_audit import change
+            change(db, operation_key, None, record)
         try:
             # A pause/Off can arrive after the journal commit but before the write.
             self._gate(observation)
@@ -341,6 +343,8 @@ class PreparedOrderGateway:
                 return {"status":"CANCEL_RECONCILIATION_REQUIRED", "broker_writes":False}
             latest["cancel_attempted"] = True
             db.execute("UPDATE meta SET body=? WHERE key=?", (dumps(latest), operation_key))
+            from .trade_audit import change
+            change(db,operation_key,record,latest)
         try:
             self._gate(observation)
             self.broker.cancel_order(segment="FNO", groww_order_id=record["broker_id"], timeout=5)

@@ -48,6 +48,16 @@ class ReportExecution:
 
     def matched_iv_required(self):
         return self.e.gate.matched_iv_required
+    def may_continue_entry(self,now,state=None):
+        return premium_strategy.entry_window(now)
+    def timed_exit_reason(self,now):
+        return None
+
+    def protection_stops(self, s, obs, active, qty, limit):
+        budget=(self.e._cash(s)+limit-s['costs'])/len(active)
+        return {r['symbol']:cash_stop(budget,qty,0,r['tick_size'],0,0) for r in active}
+
+    def trail(self, s, obs): return None
 
     def evidence(self, obs):
         """Add independently dated prospective books without redating either source."""
@@ -187,6 +197,14 @@ class ReportExecution:
             e._exclusive(state, obs)
             if stamp(obs['received_at']) <= stamp(state['last_write_at']):
                 return e._status('WAIT_FOR_POST_WRITE_POSITION_SNAPSHOT')
+            # Normal's timed liquidation supersedes P&L/entry continuation.
+            # Existing cancellation, ownership and short-before-hedge exits
+            # remain unchanged. We never mark flat until broker confirms it.
+            timed_reason=self.timed_exit_reason(e.clock())
+            if (timed_reason and state['phase'] not in
+                ('REPORT_EXIT_SHORTS','REPORT_EXIT_HEDGES','CLOSED')):
+                state.update(phase='REPORT_EXIT_SHORTS',exit_reason=timed_reason)
+                e._save(state)
             if state['phase'] in ('REPORT_ENTRY_HEDGES','REPORT_ENTRY_SHORTS','REPORT_PROTECTION'):
                 for symbol,p in state['protections'].items():
                     result=e.protection.reconcile(p['key'])
@@ -203,7 +221,7 @@ class ReportExecution:
                 review=self.close_reason(state,obs)
                 if review.get('reason')=='LOSS_TRIGGER':
                     state.update(phase='REPORT_EXIT_SHORTS',exit_reason='LOSS_DURING_ENTRY');e._save(state)
-            if entering and (not enabled or not premium_strategy.entry_window(e.clock())
+            if entering and (not enabled or not self.may_continue_entry(e.clock(),state)
                              or (e.clock() - stamp(state['started_at'])).total_seconds() > 180):
                 state.update(phase='REPORT_EXIT_SHORTS', exit_reason='ENTRY_DISABLED_OR_TIMEOUT'); e._save(state)
             purpose = ('ENTRY' if state['phase'] in ('REPORT_ENTRY_HEDGES', 'REPORT_ENTRY_SHORTS') else
@@ -281,8 +299,7 @@ class ReportExecution:
             if amount != qty: raise ValueError('EXACT_SHORT_PROTECTION_QUANTITY_REQUIRED')
             active=[r for r in shorts if net.get(r['symbol'],0)<0]
             limit=min(self.cfg['risk_limit_inr'],c['entry_credit_inr']*self.cfg['stop_credit_multiple'])
-            budget=(e._cash(s)+limit-s['costs'])/len(active)
-            stops={r['symbol']:cash_stop(budget,qty,0,r['tick_size'],0,0) for r in active}
+            stops=self.protection_stops(s,obs,active,qty,limit)
             if any(stops[r['symbol']]['trigger_price']<=e._book(contract(r),obs,'BUY',qty)['ask'] for r in active):
                 s.update(phase='REPORT_EXIT_SHORTS',exit_reason='INSUFFICIENT_STOP_ROOM');e._save(s)
                 return e._status('REPORT_EXIT_INSUFFICIENT_STOP_ROOM')
@@ -296,7 +313,8 @@ class ReportExecution:
                     return e._status('REPORT_REBALANCE_STOP_'+e.protection.tighten(prior['key'],stops[r['symbol']],obs)['status'])
             if symbol not in s['protections']:
                 stop=stops[symbol]
-                s['protections'][symbol] = dict(key=s['slot'] + '-gtt-' + symbol, stop=stop)
+                suffix = '-sl-' if getattr(e.protection,'ordinary_stop',False) else '-gtt-'
+                s['protections'][symbol] = dict(key=s['slot'] + suffix + symbol, stop=stop)
                 e._save(s)
             p = s['protections'][symbol]
             s['last_write_at']=e.clock().isoformat();e._save(s)
@@ -311,11 +329,16 @@ class ReportExecution:
                 if result['status'] in ('CHILD_FILLED', 'CHILD_TERMINAL', 'VERIFIED_INACTIVE', 'NO_PROTECTION_ABORTED_BEFORE_WRITE'):
                     s.update(phase='REPORT_EXIT_SHORTS', exit_reason='PROTECTION_TRIGGERED'); e._save(s)
                     return e._status('REPORT_PROTECTIVE_CHILD_EXECUTED')
+                if result['status']=='CHILD_RECONCILIATION_REQUIRED' and getattr(e.protection,'ordinary_stop',False):
+                    s.update(phase='REPORT_EXIT_SHORTS',exit_reason='ORDINARY_STOP_TRIGGERED_OR_PARTIAL');e._save(s)
+                    return e._status('REPORT_ORDINARY_STOP_SETTLING')
                 if result['status'] != 'VERIFIED_ACTIVE': return e._status('REPORT_PROTECTION_' + result['status'])
             review = self.close_reason(s, obs)
             if review['action'] == 'REVIEW_EXIT':
                 s.update(phase='REPORT_EXIT_SHORTS', exit_reason=review['reason']); e._save(s)
                 return e._status('REPORT_EXIT_QUEUED')
+            trailing=self.trail(s,obs)
+            if trailing is not None:return trailing
             return e._status('REPORT_MONITORING_OWNED_BASKET')
         if phase == 'REPORT_EXIT_SHORTS':
             # A switch/window/timeout may stop an entry while its LIMIT is still
@@ -362,6 +385,6 @@ class ReportExecution:
     def exit_leg(self, s, row, qty, side, obs):
         name = 'exit-' + row['symbol']
         result = self.e._op(s, name, contract(row), side, qty, obs, 'EXIT')
-        if result['status'] == 'TERMINAL_PARTIAL':
+        if result['status'] in ('TERMINAL_PARTIAL','TERMINAL_EMPTY'):
             s['operations'].pop(name); s['cycle'] += 1; self.e._save(s)
         return self.e._status('REPORT_EXIT_' + result['status'])

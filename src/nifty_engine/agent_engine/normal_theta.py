@@ -25,22 +25,64 @@ def load(root):
     cfg = json.loads(path.read_text(encoding='utf-8-sig'))
     expected = dict(format='normal-theta-v1', indices=['NIFTY','SENSEX'],
         maximum_lots=2, risk_limit_inr=1000, entry_window_jst=['14:00','19:00'],
+        latest_entry_jst='18:30',forced_exit_jst='18:44',flat_deadline_jst='19:00',
+        weekday_index_jst=['NIFTY','NIFTY','SENSEX','SENSEX','NIFTY'],
         short_dte=[14,45], close_dte=7, short_abs_delta=[.15,.25],
         trend_adx_min=25, take_profit_fraction=.5, stop_credit_multiple=1.5,
-        maximum_relative_quote_spread=.10, historical_iv_required=False)
+        maximum_relative_quote_spread=.10, historical_iv_required=False,
+        research_enabled=False, record_market_data=False, protection_type='ORDINARY_TRAILING_SL')
     if cfg != expected: raise ValueError('DECLARED_NORMAL_THETA_POLICY_REQUIRED')
     return cfg
+
+
+def scheduled_index(cfg, now):
+    """Use JST weekday, not the expiry calendar, to select the index."""
+    day=now.astimezone(JST).weekday()
+    return cfg['weekday_index_jst'][day] if day<5 else None
+
+
+def entry_window(cfg, now):
+    """Only start a new protected spread at 14:00-18:29 JST on weekdays."""
+    clock=now.astimezone(JST).strftime('%H:%M')
+    return (scheduled_index(cfg,now) is not None
+            and cfg['entry_window_jst'][0]<=clock<cfg['latest_entry_jst'])
+
+
+def force_exit_due(cfg, now):
+    """Start owned-position liquidation ahead of the 19:00 JST deadline."""
+    return now.astimezone(JST).strftime('%H:%M')>=cfg['forced_exit_jst']
+
+
+def confirmed_trend(cfg, index, bundle, now):
+    """Directional prefilter before any strategy option-margin request.
+
+    Unknown/old market features never authorize searching a bullish or
+    bearish basket. Entry window and margin/position gates run separately.
+    """
+    if index not in cfg['indices']: return 'UNKNOWN'
+    try:
+        spot=research._feature(bundle,'spot','index_points',now)
+        ma20=research._feature(bundle,'ma20','index_points',now,daily=True,sessions=20)
+        ma50=research._feature(bundle,'ma50','index_points',now,daily=True,sessions=50)
+        adx=research._feature(bundle,'adx14','index_score',now,daily=True,sessions=28)
+        if not 0<=adx<=100 or adx<cfg['trend_adx_min']:return 'UNKNOWN'
+        if spot>ma20>ma50:return 'BULLISH'
+        if spot<ma20<ma50:return 'BEARISH'
+    except (KeyError,ValueError,TypeError):
+        pass
+    return 'UNKNOWN'
 
 
 def evaluate(cfg, index, bundle, now, *, occupied=False):
     result = dict(id=ID, index=index, at=now.isoformat(), config_sha256=identity(cfg),
         status='WAIT', reasons=[], candidate=None, execution_enabled=False,
         broker_writes=False, performance_status='NOT_BACKTESTED', regime='UNKNOWN',
+        trend_inputs={k:dict(status='UNKNOWN') for k in ('spot','ma20','ma50','adx14')},
         event_calendar=bundle.get('event_calendar', {'status':'UNKNOWN'}))
     reasons = result['reasons']; local = now.astimezone(JST)
     if index not in cfg['indices']: raise ValueError('SUPPORTED_INDEX_REQUIRED')
-    if not (local.weekday()<5 and (14,0)<=(local.hour,local.minute)<(19,0)):
-        reasons.append('OUTSIDE_1400_1900_JST')
+    if not entry_window(cfg,now):
+        reasons.append('OUTSIDE_1400_1830_JST')
     if occupied: reasons.append('SINGLE_BASKET_OCCUPIED')
     if bundle.get('index')!=index or bundle.get('positions_complete') is not True:
         reasons.append('COMPLETE_INDEX_POSITION_EVIDENCE_REQUIRED')
@@ -54,7 +96,12 @@ def evaluate(cfg, index, bundle, now, *, occupied=False):
     values={}
     for key,unit,daily,sessions in (('spot','index_points',False,0),('ma20','index_points',True,20),
             ('ma50','index_points',True,50),('adx14','index_score',True,28)):
-        try: values[key]=research._feature(bundle,key,unit,now,daily=daily,sessions=sessions)
+        try:
+            values[key]=research._feature(bundle,key,unit,now,daily=daily,sessions=sessions)
+            feature=bundle['features'][key]
+            result['trend_inputs'][key]=dict(status='AVAILABLE',value=values[key],unit=unit,
+                observed_at=feature['observed_at'],
+                **({k:feature[k] for k in ('history_end_at','sessions') if k in feature} if daily else {}))
         except (KeyError,ValueError,TypeError): reasons.append('CURRENT_TREND_INPUT_REQUIRED:'+key)
     if len(values)==4:
         if 0<=values['adx14']<=100 and values['adx14']>=cfg['trend_adx_min']:
@@ -115,16 +162,21 @@ def evaluate(cfg, index, bundle, now, *, occupied=False):
                 prepared_at=now.isoformat(),normal_policy_sha256=identity(cfg),
                 execution_enabled=False,broker_writes=False))
     if candidates:
+        # Owner preference: highest *net* quoted max expiry profit that has
+        # already passed explicit Groww margin, cash and maximum-loss gates.
+        # Margin efficiency breaks ties; this is not an expected-return claim.
         result.update(status='CANDIDATE',candidate=max(candidates,key=lambda c:(
-            c['net_max_expiry_profit_inr']/c['worst_case_loss_inr'],-c['basket_requirement_inr'],c['key'])))
+            c['net_max_expiry_profit_inr'],-c['basket_requirement_inr'],
+            -c['worst_case_loss_inr'],c['key'])))
     else:result.update(status='NO_TRADE',reasons=['POSITIVE_THETA_LIQUID_HEDGED_BASKET_WITHIN_RISK_REQUIRED'])
     return result
 
 
 def update(store,cfg,now,*,persist=True):
     occupied=bool(store.read("SELECT 1 FROM pc_orders WHERE state<>'CLOSED' LIMIT 1"))
-    value=dict(at=now.isoformat(),policy=cfg,indices={i:evaluate(cfg,i,
-        store.meta('normal-theta-evidence-'+i,{}),now,occupied=occupied) for i in cfg['indices']},
-        execution_enabled=False,broker_writes=False)
+    value=dict(at=now.isoformat(),policy=cfg,indices={i:dict(
+        evaluate(cfg,i,store.meta('normal-theta-evidence-'+i,{}),now,occupied=occupied),
+        basket_scan=store.meta('normal-theta-contracts-'+i,{}).get('scan',{})
+    ) for i in cfg['indices']},execution_enabled=False,broker_writes=False)
     if persist: store.set_meta(KEY,value)
     return value

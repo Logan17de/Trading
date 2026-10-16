@@ -1,15 +1,40 @@
 {
   "format": "normal-theta-v1",
-  "indices": ["NIFTY", "SENSEX"],
+  "indices": [
+    "NIFTY",
+    "SENSEX"
+  ],
   "maximum_lots": 2,
   "risk_limit_inr": 1000,
-  "entry_window_jst": ["14:00", "19:00"],
-  "short_dte": [14, 45],
+  "entry_window_jst": [
+    "14:00",
+    "19:00"
+  ],
+  "short_dte": [
+    14,
+    45
+  ],
   "close_dte": 7,
-  "short_abs_delta": [0.15, 0.25],
+  "short_abs_delta": [
+    0.15,
+    0.25
+  ],
   "trend_adx_min": 25,
   "take_profit_fraction": 0.5,
   "stop_credit_multiple": 1.5,
-  "maximum_relative_quote_spread": 0.10,
-  "historical_iv_required": false
+  "maximum_relative_quote_spread": 0.1,
+  "historical_iv_required": false,
+  "research_enabled": false,
+  "record_market_data": false,
+  "protection_type": "ORDINARY_TRAILING_SL",
+  "latest_entry_jst": "18:30",
+  "forced_exit_jst": "18:44",
+  "flat_deadline_jst": "19:00",
+  "weekday_index_jst": [
+    "NIFTY",
+    "NIFTY",
+    "SENSEX",
+    "SENSEX",
+    "NIFTY"
+  ]
 }

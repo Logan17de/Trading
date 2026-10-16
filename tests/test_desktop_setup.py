@@ -81,6 +81,64 @@ def test_new_release_can_archive_only_a_reconciled_cancelled_test(app):
     assert store.meta(KEY+'-archive-'+old['plan_id'])['pending_action']=='submit'
 
 
+@pytest.mark.parametrize('unsafe', [
+    'authorized', 'attempted', 'pending', 'uncertain', 'submitted_status',
+])
+def test_obsolete_missing_preview_local_retire_never_erases_order_evidence(app,unsafe):
+    ctl,store,calls,cfg=app
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET',broker_writes=False)
+    assert ctl.command({'action':'preview','spec':spec()})['status']=='OWNER_SETUP_BLOCKED'
+    saved=store.meta(KEY)
+    if unsafe=='authorized':saved['plan_hash']=HASH
+    elif unsafe=='attempted':saved['attempted_writes']=['submit']
+    elif unsafe=='pending':saved['pending_action']='submit'
+    elif unsafe=='uncertain':saved['uncertain']=True
+    elif unsafe=='submitted_status':saved['result']['status']='BUY_ACCEPTED'
+    store.set_meta(KEY,saved)
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='PREVIEW_PLAN_FIRST')
+    result=ctl.command({'action':'retire'})
+    assert result['status']=='OWNER_SETUP_BLOCKED'
+    assert result['reason']=='PREVIEW_PLAN_FIRST'
+    assert store.meta(KEY)==saved
+    assert store.meta(KEY+'-archive-'+saved['plan_id']) is None
+
+
+def test_obsolete_rejected_preview_archived_only_after_oracle_confirms_missing(app):
+    ctl,store,calls,cfg=app
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET',broker_writes=False)
+    assert ctl.command({'action':'preview','spec':spec()})['status']=='OWNER_SETUP_BLOCKED'
+    old=store.meta(KEY)
+    assert old['attempted_writes']==[] and old.get('plan_hash') is None
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='PREVIEW_PLAN_FIRST')
+    result=ctl.command({'action':'retire'})
+    assert result['status']=='PRIOR_TEST_RETIRED'
+    assert result['reason']=='ORPHANED_UNSUBMITTED_PREVIEW'
+    assert result['broker_writes'] is False
+    assert result['allowed_actions']==['status','preview']
+    assert store.meta(KEY)=={}
+    archive=store.meta(KEY+'-archive-'+old['plan_id'])
+    assert archive['spec']==old['spec']
+    assert archive['retirement']['remote_reason']=='PREVIEW_PLAN_FIRST'
+    assert archive['retirement']['broker_writes'] is False
+
+
+def test_orphaned_preview_refusal_if_remote_broker_write_possible(app):
+    ctl,store,calls,cfg=app
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='COMMISSIONING_CURRENT_MASTER_MISMATCH')
+    ctl.command({'action':'preview','spec':spec()})
+    original=store.meta(KEY)
+    ctl.run=lambda *args,**kw: response('OWNER_SETUP_BLOCKED',
+        reason='PREVIEW_PLAN_FIRST',broker_writes=True)
+    result=ctl.command({'action':'retire'})
+    assert result['status']=='OWNER_SETUP_BLOCKED'
+    assert store.meta(KEY)==original
+
+
 def test_fixed_preview_stdin_returns_only_owner_spec_and_hash(app):
     ctl,store,calls,cfg=app
     result=preview(app)
@@ -92,6 +150,22 @@ def test_fixed_preview_stdin_returns_only_owner_spec_and_hash(app):
     assert result['plan_hash']==HASH and result['plan_spec']==spec()
     assert {'StrictHostKeyChecking=yes','ClearAllForwardings=yes','IdentityAgent=none','BatchMode=yes'}<=set(args)
     assert {'submit','status','capture'}<=set(result['allowed_actions'])
+
+
+def test_manual_buy_attempt_blocks_both_manual_and_automatic_buy_paths(app):
+    ctl,store,calls,cfg=app
+    value=dict(spec(),entry_mode='LIMIT',trigger_price='10.05',sell_limit_price='12.00')
+    ready=ctl.command({'action':'preview','spec':value})
+    assert {'manual-buy','buy-protect'}<=set(ready['allowed_actions'])
+    saved=store.meta(KEY)
+    # Even if a remote response still describes the old PREVIEW, the durable
+    # original manual BUY attempt must block the alternate BUY+protect entry.
+    saved['attempted_writes']=['manual-buy']
+    store.set_meta(KEY,saved)
+    public=ctl.public()
+    assert 'manual-buy' not in public['allowed_actions']
+    assert 'buy-protect' not in public['allowed_actions']
+    assert len(calls)==1
 
 
 def test_direct_buy_is_owner_click_only_and_not_repeated_after_restart(app):
@@ -119,6 +193,60 @@ def test_contract_lookup_is_read_only_and_filters_private_fields(app):
     result=ctl.command({'action':'lookup','spec':{'index':'NIFTY','symbol':spec()['contract']['symbol']}})
     assert result['contract']==spec()['contract'] and result['quote']['offer_price']==10
     assert store.meta(KEY)==before and 'PRIVATE' not in str(result)
+
+
+@pytest.mark.parametrize('remote_reason,should_fallback', [
+    ('TURN_ALGO_OFF_BEFORE_SETUP',True),
+    ('COMMISSIONING_CURRENT_MASTER_MISMATCH',False),
+])
+def test_lookup_falls_back_to_public_master_only_for_algo_intent_block(app, monkeypatch, remote_reason, should_fallback):
+    from nifty_engine.agent_engine import dashboard
+    ctl, store, calls, cfg = app
+    before=store.meta(KEY)
+    fetched=[]
+    csv_text=('trading_symbol,underlying_symbol,segment,exchange,expiry_date,lot_size,tick_size,strike_price\n'
+              'SENSEX26O1576000CE,SENSEX,FNO,BSE,2026-10-15,20,0.05,76000\n')
+    monkeypatch.setattr(dashboard,'download_instrument_text',lambda: (fetched.append(True),csv_text)[1])
+    ctl.run=lambda *args,**kw:response('OWNER_SETUP_BLOCKED',reason=remote_reason,broker_writes=False)
+    result=ctl.command({'action':'lookup','spec':{'index':'SENSEX','symbol':'SENSEX26O1576000CE'}})
+    if should_fallback:
+        assert result['status']=='OWNER_CONTRACT_FOUND'
+        assert result['contract']['expiry']=='2026-10-15'
+        assert result['contract']['lot_size']==20
+        assert result['egress_ip'] is None and result['quote']=={}
+        assert result['source']=='GROWW_PUBLIC_INSTRUMENT_MASTER'
+        assert result['broker_writes'] is False
+        assert fetched
+    else:
+        assert result['status']=='OWNER_SETUP_BLOCKED' and result['reason']==remote_reason
+        assert not fetched
+    assert store.meta(KEY)==before
+
+
+def test_public_master_fallback_rejects_missing_contract_without_fabrication(app,monkeypatch):
+    from nifty_engine.agent_engine import dashboard
+    ctl, store, calls, cfg = app
+    monkeypatch.setattr(dashboard,'download_instrument_text',
+                        lambda:'trading_symbol,underlying_symbol,segment,exchange,expiry_date,lot_size,tick_size,strike_price\n')
+    ctl.run=lambda *args,**kw:response('OWNER_SETUP_BLOCKED',reason='TURN_ALGO_OFF_BEFORE_SETUP')
+    result=ctl.command({'action':'lookup','spec':{'index':'SENSEX','symbol':'SENSEX26O1576000CE'}})
+    assert result['status']=='OWNER_SETUP_BLOCKED'
+    assert result['reason']=='COMMISSIONING_CURRENT_MASTER_MISMATCH'
+    assert 'contract' not in result
+    assert store.meta(KEY) is None
+
+
+def test_public_master_fetch_failure_preserves_real_oracle_block_reason(app,monkeypatch):
+    from nifty_engine.agent_engine import dashboard
+    ctl,store,calls,cfg=app
+    def unavailable():
+        raise TimeoutError('synthetic master outage')
+    monkeypatch.setattr(dashboard,'download_instrument_text',unavailable)
+    ctl.run=lambda *args,**kw:response('OWNER_SETUP_BLOCKED',reason='TURN_ALGO_OFF_BEFORE_SETUP')
+    result=ctl.command({'action':'lookup','spec':{'index':'SENSEX','symbol':'SENSEX26O1576000CE'}})
+    assert result['reason']=='TURN_ALGO_OFF_BEFORE_SETUP'
+    assert result['status']=='OWNER_SETUP_BLOCKED'
+    assert store.meta(KEY) is None
 
 
 def test_archived_draft_survives_page_restart_without_broker_request(app):
@@ -451,10 +579,15 @@ def test_one_lot_above_old_purchase_cap_reaches_oracle_preview_unchanged(app):
     assert len(calls)==1 and ' preview-stdin ' in calls[0][0][-1]
 
 
-def test_rejected_price_preview_is_editable_but_still_checks_original_plan(app):
+@pytest.mark.parametrize('blocked_reason', [
+    'COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET',
+    'COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG',
+    'TURN_ALGO_OFF_BEFORE_SETUP',
+])
+def test_rejected_price_preview_is_editable_but_still_checks_original_plan(app, blocked_reason):
     ctl,store,calls,cfg=app
     def blocked(*a,**kw):
-        return response('OWNER_SETUP_BLOCKED',reason='COMMISSIONING_TRIGGER_MUST_START_ABOVE_MARKET')
+        return response('OWNER_SETUP_BLOCKED',reason=blocked_reason)
     ctl.run=blocked
     result=ctl.command({'action':'preview','spec':spec()})
     assert 'preview' in result['allowed_actions'] and 'submit' not in result['allowed_actions']

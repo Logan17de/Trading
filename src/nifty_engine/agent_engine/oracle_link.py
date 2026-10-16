@@ -231,14 +231,74 @@ class RemoteViewer:
                 for k in ("price","change","change_pct","high","low"):market[k]=None
                 for option in market["options"]:
                     for k in ("last_price","bid","ask","open_pnl_inr"):option[k]=None
-            for k in list(view.get("funds",{})):
-                if k.endswith("_inr"):view["funds"][k]=None
-            if "funds" in view:view["funds"]["status"]="STALE"
+            # A market/position snapshot older than 15 seconds does not make
+            # independently timestamped Groww funds older than their 45-second
+            # limit. revalidate() above already blanks expired money. A failed
+            # Oracle heartbeat still blanks money regardless of its age.
+            if self.status!="HEALTHY" and "funds" in view:
+                for k in list(view["funds"]):
+                    if k.endswith("_inr"):view["funds"][k]=None
+                view["funds"]["status"]="STALE"
             algo=view.get("control",{}).get("algo")
             if algo:
                 algo["execution_enabled"]=False
                 algo["blockers"]=list(dict.fromkeys(algo.get("blockers",[])+["VM_UNHEALTHY_OR_STALE"]))
         return view
+
+    def prepare_owner_live(self):
+        """Only an owner-clicked Algo On may invoke the fixed privileged setup.
+
+        Never called by polling, refresh, research, schedules or background work.
+        The root command only reads the broker and changes local mode/pause; it
+        does not place orders, invent stop-fill proof or set Algo On.
+        """
+        config=settings(self.config)
+        ssh=Path(os.environ.get('SYSTEMROOT','C:/Windows'))/'System32/OpenSSH/ssh.exe'
+        fixed=[str(ssh),'-F','NUL','-T','-i',config['identity_file'],
+            '-o','BatchMode=yes','-o','StrictHostKeyChecking=yes',
+            '-o','UpdateHostKeys=no','-o','IdentitiesOnly=yes',
+            '-o','IdentityAgent=none','-o','PasswordAuthentication=no',
+            '-o','KbdInteractiveAuthentication=no','-o','ClearAllForwardings=yes',
+            '-o','ConnectTimeout=8','-o','LogLevel=ERROR',config['user']+'@'+config['host']]
+        def execute(action,digest=None):
+            command='sudo -n '+config['python']+' -I -m nifty_engine.agent_engine.owner_setup '+action
+            if digest:
+                if not re.fullmatch('[a-f0-9]{64}',digest):raise ValueError('INVALID_LIVE_CONFIRM_DIGEST')
+                command+=' --confirm '+digest
+            result=subprocess.run(fixed+[command],input='',capture_output=True,text=True,
+                timeout=240,**({'creationflags':subprocess.CREATE_NO_WINDOW} if os.name=='nt' else {}))
+            if len(result.stdout)>4096:raise ConnectionError('LIVE_SETUP_RESPONSE_TOO_LARGE')
+            try:payload=json.loads(result.stdout)
+            except (ValueError,TypeError):raise ConnectionError('LIVE_SETUP_RESPONSE_UNAVAILABLE') from None
+            if (result.returncode or not isinstance(payload,dict)
+                    or not isinstance(payload.get('status'),str)):
+                return dict(status='OWNER_LIVE_SETUP_BLOCKED',
+                            reason=payload.get('reason','REVIEW_FAILED') if isinstance(payload,dict) else 'REVIEW_FAILED')
+            return payload
+        preview=execute('live-preview')
+        if preview.get('status')!='LIVE_STRATEGY_REVIEW_READY':
+            return dict(status='OWNER_LIVE_SETUP_BLOCKED',reason=preview.get('reason','REVIEW_UNAVAILABLE'))
+        digest=preview.get('evidence_digest')
+        if not isinstance(digest,str) or not re.fullmatch('[a-f0-9]{64}',digest):
+            return dict(status='OWNER_LIVE_SETUP_BLOCKED',reason='REVIEW_DIGEST_INVALID')
+        result=execute('live-enable',digest)
+        if result.get('status')!='LIVE_PREPARED_ALGO_OFF':
+            return dict(status='OWNER_LIVE_SETUP_BLOCKED',reason=result.get('reason','LIVE_RESTART_UNCONFIRMED'))
+        # Retry READ ONLY while the owner-authorized service restart settles.
+        for _ in range(6):
+            try:
+                view=request(config,{'action':'read'})
+                setup=view.get('live_setup',{})
+                if (setup.get('mode')=='live' and setup.get('paused') is False
+                    # The account identity remains unread until the next
+                    # broker collection window. Root already confirmed the
+                    # immutable owner receipt and live state before returning.
+                    and view.get('control',{}).get('algo',{}).get('desired_enabled') is False):
+                    return dict(status='LIVE_PREPARED_ALGO_OFF',broker_writes=False)
+            except (ConnectionError,OSError,ValueError,subprocess.TimeoutExpired):
+                pass
+            time.sleep(2)
+        return dict(status='OWNER_LIVE_SETUP_BLOCKED',reason='LIVE_RUNTIME_NOT_CONFIRMED')
 
     def set_intent(self,enabled):
         if type(enabled) is not bool:raise ValueError("explicit owner boolean required")
@@ -275,7 +335,7 @@ class RemoteViewer:
         return result
 
     def run(self,stop):
-        threading.Thread(target=self.impulse_watch,args=(stop,),daemon=True).start()
+        # Premium research/stream collection was retired by the owner.
         while not stop.is_set():
             start=time.monotonic()
             self.poll()

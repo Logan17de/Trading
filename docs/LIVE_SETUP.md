@@ -1,5 +1,55 @@
 # Owner setup for real trading
 
+## Algo Start: first real trade managed by the strategy
+
+The Options Trader desktop has an explicit REAL MONEY confirmation on **Algo
+Start**. For the first use, the PC securely requests a live preflight, then
+prepares the Oracle observer's LIVE mode while Algo remains Off. It next
+records the owner's On instruction. The broker executor only places a hedged
+Normal Theta basket if live price, volume/depth, expiry, funds, order,
+margin, strategy, timing and risk checks pass. No manual test BUY/SELL is
+submitted by this startup action.
+
+This new owner-authorized route deliberately does **not** pretend a real Groww
+order or protective GTT has already been validated. The first live basket is
+uncommissioned and may lose more than its theoretical ₹1,000 bounded payoff
+because of gaps, separate leg execution, stop rejects or an unfilled close.
+The service must be trading on the exact immutable approved release with complete classified F&O positions and no pending orders or active
+stop/GTT/OCO. Existing manual positions are never adopted or closed by the algo. Unsupported or
+incomplete readings block startup without turning Algo On. The original global
+trader pause remains untouched. The independent Supabase watchdog is not
+commissioned by this click.
+
+The manual commissioning controls below remain optional for deeper provider
+validation. They are no longer mandatory prerequisites to the separately
+owner-authorized first strategy trade.
+
+## Simple BUY / SELL / SL test
+
+The default PC page at `http://127.0.0.1:8765/live-setup` now shows three
+explicit actions (BUY, SET SL, SELL). Advanced commissioning/recovery is at
+`/advanced-setup`.
+
+- Load the exact contract and choose BUY, SELL and SL limit prices. A public
+  master lookup provides only expiry/lot/tick; Oracle independently validates
+  quote, account, IP, price and available funds at the real order preview.
+- First BUY click produces a read-only broker preview. A separate owner-confirmed
+  BUY issues **one** ordinary DAY LIMIT long option purchase. It has no automatic
+  target watcher or auto stop submission.
+- After a verified **full fill**, explicit SET SL attaches an independent Groww
+  SELL DOWN stop-limit GTT. Until acknowledged, the long is unprotected.
+- SELL never opens a naked short. If an SL is active, SELL first cancels it and
+  requires broker readback; press SELL again only after the SL is confirmed
+  inactive to submit the exact saved closing LIMIT SELL. It can remain unfilled.
+- No retry after uncertain broker responses, partial fills or unconfirmed stops.
+  Refresh/check the original order in Groww before proceeding.
+- The original owner test/production release gates remain intact. Global Algo
+  intent must be Off, runtime must be in paper/paused mode, and the owner must
+  confirm each real broker write. This UI is not permission to enable the strategy.
+- An expiry-day direct test has the previously reviewed early-session deadline.
+  The maximum loss on a purchased option can include its entire premium plus
+  fees, and neither SL nor exit execution is guaranteed.
+
 The normal executor and desktop Start control are installed. One-time broker
 commissioning verifies the actual provider behavior before preparing live mode.
 These actions are for the owner to run. Only an explicit **Buy + protect** starts
@@ -18,8 +68,14 @@ There is no fixed INR purchase cap for this owner-chosen one-lot test. The quote
 purchase amount must fit the actual Groww option-buy balance; keep charges available
 as well. It does not sell a naked option, choose an instrument,
 change the owner's prices to force a fill, or use a pre-existing manual position.
-Only NIFTY/SENSEX FNO NRML, one current-master lot and a non-expiry-day contract
-are accepted. Keep the purchase amount and charges available. A test may remain
+Only NIFTY/SENSEX FNO NRML and one current-master lot are accepted. The direct
+LIMIT Buy + protect test also accepts an option expiring TODAY only when reviewed
+before 12:30 IST and with BUY submission expiring by 13:00 IST (maximum 30-minute
+window). The exact contract still must exist in the current Groww instrument master.
+Past expiries and same-day GTT BUY entries remain blocked. On expiry day the option
+can lose its full paid premium, and Groww may reject or fail to fill the stop/exit.
+Protection is not guaranteed. The simulator/regular strategy never inherits this
+exception. Keep the purchase amount and charges available. A test may remain
 pending if its limit does not fill. Advanced GTT mode remains available.
 
 ## Use the desktop app

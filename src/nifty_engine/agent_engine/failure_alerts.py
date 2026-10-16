@@ -36,6 +36,8 @@ MESSAGES = {
     'OWNER_ON_EXECUTION_BLOCKED': ('Live setup', 'Owner intent is On, but live setup or strategy selection still prevents execution.'),
     'DAILY_EMAIL_FAILED': ('Daily report', 'The daily report sender recorded a delivery failure.'),
     'RESEARCH_ARCHIVE_FAILED': ('Research archive', 'The one-way research archive reported a synchronization failure.'),
+    'NORMAL_DATA_WORKER_FAILED': ('Normal strategy inputs', 'The current trend/contract reader failed or stopped advancing.'),
+    'JOURNAL_BACKUP_FAILED': ('Trade journal backup', 'The most recent journal backup failed verification.'),
     'ALERT_TEST': ('Alert transport test', 'This is a requested notification test. No broker order was sent.'),
     'OWNER_TEST_FAILED': ('Owner broker test', 'The owner test needs attention. Check its entry, stop-loss and remaining position in Groww.'),
 }
@@ -110,6 +112,11 @@ def faults(view, now, health='HEALTHY'):
         if funds.get('status') != 'AVAILABLE' or not recent(funds.get('received_at')): add('FUNDS_UNAVAILABLE', funds)
         if view.get('positions_status') != 'AVAILABLE': add('POSITIONS_UNAVAILABLE')
         if view.get('orders_status') != 'AVAILABLE': add('ORDERS_UNAVAILABLE')
+        worker=view.get('normal_data_worker')
+        if isinstance(worker,dict) and (worker.get('status')=='FAILED' or not recent(worker.get('checked_at'),180)):
+            add('NORMAL_DATA_WORKER_FAILED',worker.get('failure',{'stage':'CURRENT_INPUT_WORKER_STALE'}))
+    backup=view.get('backup_status',{})
+    if backup.get('status')=='FAILED': add('JOURNAL_BACKUP_FAILED',backup.get('failure',{}))
     mail = view.get('daily_email', {})
     status = str(mail.get('status', ''))
     if status in ('FAILED', 'RETRY', 'RETRY_PENDING', 'REVIEW_REQUIRED', 'MAIL_NOT_CONFIGURED',

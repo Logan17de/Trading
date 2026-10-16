@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="local-token" content="__LOCAL_TOKEN__">
+<title>Manual Order Test · Options Trader</title>
+<link rel="stylesheet" href="/dashboard.css"><link rel="stylesheet" href="/manual-order.css">
+<script defer src="/manual-order.js"></script></head>
+<body>
+<header class="masthead"><a class="brand" href="/"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span><strong>Options Trader</strong><small>MANUAL ORDER TEST</small></span></a><a class="button" href="/">Dashboard</a></header>
+<main class="test-page">
+<div class="test-heading"><div><h1>Test BUY, SELL &amp; SL</h1><p>One lot. Three manual actions. No automatic strategy, target or repeat orders.</p></div><span class="status-pill" id="runtime-mode">Checking…</span></div>
+<section class="card test-card">
+ <div class="test-fields">
+ <label>Index<select id="index"><option value="SENSEX">SENSEX</option><option value="NIFTY">NIFTY</option></select></label>
+ <label class="span-2">Trading symbol<input id="symbol" autocomplete="off" maxlength="50" placeholder="SENSEX26O1576000CE"></label>
+ <button class="button span-3" id="load" type="button">Load exact contract</button>
+ </div>
+ <p class="contract-result" id="contract">Choose an option and load its listed contract.</p>
+ <div class="test-fields prices">
+ <label>BUY limit ₹<input id="buy-price" type="number" min=".05" step=".05" placeholder="4.00"></label>
+ <label>SELL limit ₹<input id="sell-price" type="number" min=".05" step=".05" placeholder="4.10"></label>
+ <label>SL trigger ₹<input id="sl-price" type="number" min=".05" step=".05" placeholder="3.90"></label>
+ <label>SL SELL limit ₹<input id="sl-limit" type="number" min=".05" step=".05" placeholder="3.85"></label>
+ </div>
+ <details class="test-details"><summary>Contract and connection</summary>
+ <div class="test-fields details-inner"><label>Expiry<input id="expiry" type="date" readonly></label>
+ <label>One lot / quantity<input id="qty" type="number" readonly></label>
+ <label>Tick size ₹<input id="tick" type="number" readonly></label>
+ <label>Oracle Groww-approved IPv4<input id="egress-ip" autocomplete="off" placeholder="Verified on real preview"></label></div></details>
+ <div class="test-actions">
+ <button id="buy" type="button" class="trade-button buy">BUY</button>
+ <button id="set-sl" type="button" class="trade-button sl" disabled>SET SL</button>
+ <button id="sell" type="button" class="trade-button sell" disabled>SELL</button>
+ </div>
+ <p class="help">BUY first verifies the exact contract, prices and account without an order. A second confirmed BUY places one LIMIT order. SL is attached only after a verified full fill. SELL closes only the owned long position, never opens a short. An active SL must be cancelled and verified first.</p>
+ <div class="feedback" id="feedback" role="status" aria-live="polite">No real order requested.</div>
+ </section>
+ <section class="card status-card"><div class="status-head"><h2>Broker status</h2><button class="button" id="refresh" type="button">Refresh from Groww</button></div>
+ <strong id="state">Loading…</strong><p id="reason"></p>
+ <div id="order-summary" class="order-summary"></div>
+ <details class="test-details"><summary>Recovery and advanced controls</summary><div class="recovery">
+ <p>If a response is uncertain, check the original order in Groww. Never repeat BUY to resolve a timeout.</p>
+ <button class="button" type="button" id="cancel" disabled>Cancel pending order</button>
+ <button class="button" type="button" id="retire" disabled>Reconcile cancelled test</button>
+ <a href="/advanced-setup">Advanced commissioning view</a>
+ </div></details>
+ </section>
+ <p class="bottom-note">Orders use the protected Oracle connection and require Algo Off, paper mode and exact owner confirmation. Prices are never changed automatically. SL and SELL limits may remain unfilled. You can lose the full premium and charges, particularly on expiry day.</p>
+</main>
+</body></html>
