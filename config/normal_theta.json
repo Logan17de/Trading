@@ -28,7 +28,7 @@
   "record_market_data": false,
   "protection_type": "ORDINARY_TRAILING_SL",
   "latest_entry_jst": "18:30",
-  "forced_exit_jst": "18:45",
+  "forced_exit_jst": "18:44",
   "flat_deadline_jst": "19:00",
   "weekday_index_jst": [
     "NIFTY",

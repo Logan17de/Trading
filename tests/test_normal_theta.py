@@ -350,7 +350,7 @@ def test_jst_weekday_index_schedule(weekday,index):
 @pytest.mark.parametrize('time_text,allowed,exit_due',[
     ('13:59',False,False),('14:00',True,False),
     ('18:29',True,False),('18:30',False,False),
-    ('18:44',False,False),('18:45',False,True),
+    ('18:43',False,False),('18:44',False,True),('18:45',False,True),
     ('18:59',False,True),('19:00',False,True),
     ('20:00',False,True)])
 def test_normal_entry_and_forced_exit_boundaries(time_text,allowed,exit_due):
@@ -369,15 +369,17 @@ def test_index_route_for_execution_requires_scheduled_index(tmp_path):
     assert not s.broker.writes
 
 
-def test_exit_force_starts_before_1900_and_never_marks_flat_early(tmp_path):
-    s=NormalSession(tmp_path,index='NIFTY')
+@pytest.mark.parametrize('index',['NIFTY','SENSEX'])
+@pytest.mark.parametrize('regime',['BULLISH','BEARISH'])
+def test_scheduled_1844_exit_never_marks_flat_early(tmp_path,index,regime):
+    s=NormalSession(tmp_path,index=index,regime=regime)
     s.monitoring()
     state=s.executor._state()
     assert state['phase']=='REPORT_MONITORING'
-    s.now=s.now.replace(hour=18,minute=44,second=53)
-    first=s.tick()  # 18:44:58 JST
+    s.now=s.now.replace(hour=18,minute=43,second=53)
+    first=s.tick()  # 18:43:58 JST
     assert s.executor._state()['phase']=='REPORT_MONITORING'
-    second=s.tick() # 18:45:03 JST
+    second=s.tick() # 18:44:03 JST: first monitoring tick after the scheduled time
     state=s.executor._state()
     assert state['exit_reason']=='DAILY_1900_FLAT_DEADLINE'
     assert state['phase'] in ('REPORT_EXIT_SHORTS','REPORT_EXIT_HEDGES')
@@ -387,3 +389,7 @@ def test_exit_force_starts_before_1900_and_never_marks_flat_early(tmp_path):
     assert s.executor._state()['exit_reason']=='DAILY_1900_FLAT_DEADLINE'
     assert [row['transaction_type'] for kind,row in s.broker.writes if kind=='ORDER']==[
         'BUY','SELL','BUY','SELL']
+    writes=len(s.broker.writes)
+    s.tick()
+    assert s.executor._state()['phase']=='CLOSED'
+    assert len(s.broker.writes)==writes  # No successor after the 18:30 entry cutoff.

@@ -25,7 +25,7 @@ def load(root):
     cfg = json.loads(path.read_text(encoding='utf-8-sig'))
     expected = dict(format='normal-theta-v1', indices=['NIFTY','SENSEX'],
         maximum_lots=2, risk_limit_inr=1000, entry_window_jst=['14:00','19:00'],
-        latest_entry_jst='18:30',forced_exit_jst='18:45',flat_deadline_jst='19:00',
+        latest_entry_jst='18:30',forced_exit_jst='18:44',flat_deadline_jst='19:00',
         weekday_index_jst=['NIFTY','NIFTY','SENSEX','SENSEX','NIFTY'],
         short_dte=[14,45], close_dte=7, short_abs_delta=[.15,.25],
         trend_adx_min=25, take_profit_fraction=.5, stop_credit_multiple=1.5,

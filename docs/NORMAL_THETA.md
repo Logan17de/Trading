@@ -31,15 +31,46 @@ Owner-defined weekday routing is active: **NIFTY on Monday, Tuesday and Friday; 
 | Risk | Quoted expiry loss after estimated round-trip charges ≤₹1,000; hedge-only debit plus costs also ≤₹1,000 |
 | Selection | Highest estimated net maximum expiry profit among bounded, margin-verified, affordable baskets, then lower margin; not a global optimum or expected-return estimate |
 | Entry | Correct weekday index, 14:00 inclusive–18:30 exclusive JST, confirmed broker session and all execution gates |
-| Exit | 18:45 JST initiate mandatory owned-basket unwind, with 19:00 JST target flat deadline; also profit/loss and DTE exits. Cancel/confirm protective stop before short close, short before hedge. Fills cannot be guaranteed |
+| Exit | 18:44 JST initiate mandatory owned-basket unwind, with 19:00 JST target flat deadline; also profit/loss and DTE exits. Cancel/confirm protective stop before short close, short before hedge. Fills cannot be guaranteed |
 
-Both NSE and BSE F&O regular sessions close at 15:40 IST (19:10 JST as of August 2026). The owner-specified **19:00 JST deadline is earlier than exchange close**. The system initiates short-first liquidation at 18:45 JST; it must report unsettled positions instead of asserting they are closed. Global Algo Off/paused execution can prevent order submission or exit. No new spreads begin at or after 18:30.
+Both NSE and BSE F&O regular sessions close at 15:40 IST (19:10 JST as of August 2026). The owner-specified **19:00 JST deadline is earlier than exchange close**. The system initiates short-first liquidation at 18:44 JST; it must report unsettled positions instead of asserting they are closed. Global Algo Off/paused execution can prevent order submission or exit. No new spreads begin at or after 18:30.
 
 Held exact-owned baskets are reviewed outside the fresh-entry window while the
 exchange is open. Disabling their strategy stops new entries/incomplete entry,
 but retains completed-basket protection/exits while global Algo remains On.
 Global Off/pause/paper deny all engine writes, including exits. Already armed
 broker instructions can still act independently. No manual trade is adopted.
+
+## Current exit and next-basket rules
+
+The 18:44 JST rule starts the existing short-first unwind on the first eligible
+fresh monitoring tick at or after that time. A clock trigger is not proof of a
+fill; the existing 19:00 target remains a reconciliation/flatness target, and
+unfilled orders must remain visible. New entries still stop at 18:30 JST.
+
+Normal exits the whole owned spread when any of these applies:
+
+- Net executable basket P&L reaches 50% of the actual entry credit after estimated
+  round-trip costs. For example, a INR 1,000 net credit basis targets INR 500.
+- Basket loss reaches the smaller of INR 1,000 or 1.5 times gross entry credit.
+  This is a per-basket trigger, not a guaranteed fill or cumulative daily-loss cap.
+- A tightened trailing stop is hit, or the broker stop has filled/partly triggered.
+- Seven or fewer calendar days remain to the held contract's actual expiry.
+- The scheduled 18:44 JST unwind is due, or an incomplete entry/protection failure
+  requires the existing cancel/reconcile/unwind path.
+
+Before another basket, reconcile pending entries, cancel/read back the exact SL,
+buy back the remaining short, sell the remaining hedge and confirm terminal
+orders/flat owned positions. Only then can the slot be reused. If Algo remains
+On, it rechecks the currently scheduled index, 14:00–18:30 entry window, trend,
+quotes/theta, actual basket margin/charges, cash and risk. It may select the same
+strike pair again if that is still the best qualifying sampled basket; there is
+no forced next-strike progression or automatic loss-based cooldown in Normal.
+
+The old fixed NIFTY INR 8 / SENSEX INR 32 short roll and 60% premium reduction
+belong to retired Everyday entries. Normal does not use them, does not keep an
+old hedge while rolling a short, and does not reopen after the 18:44 time exit.
+Manual/unknown trades remain protected throughout.
 
 ## One-click real Algo On (owner consent)
 

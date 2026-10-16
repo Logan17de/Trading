@@ -32,7 +32,7 @@ desktop viewer remain in use. No real orders are sent during maintenance.
 
 Trailing follows fresh five-second observer samples and broker replies, not
 every exchange tick. Network delay can extend this interval. DAY stops do not
-protect overnight. Mandatory unwind begins 18:45 JST with a 19:00 flat target.
+protect overnight. Mandatory unwind begins 18:44 JST with a 19:00 flat target.
 Off/pause/paper deny all engine writes including exits. Accepted broker orders
 can still act. Fills, loss limits, profit and exit time are not guaranteed. The
 strategy remains unbacktested.

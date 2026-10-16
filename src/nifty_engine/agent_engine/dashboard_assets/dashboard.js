@@ -237,7 +237,7 @@ function algoChecklistModel(view, now=new Date()) {
   const weekday=['Mon','Tue','Wed','Thu','Fri'].indexOf(parts.weekday),scheduled=cfg.weekday_index_jst?.[weekday];
   const clock=parts.hour+':'+parts.minute,windowOpen=weekday>=0&&clock>=(cfg.entry_window_jst?.[0]||'14:00')&&clock<(cfg.latest_entry_jst||'18:30');
   row('Time & index',evaluated?(windowOpen&&index===scheduled?'passed':'waiting'):'unknown',
-    `${scheduled||'No index'} scheduled today · entries 14:00–18:30 JST · exits begin 18:45 JST.`);
+    `${scheduled||'No index'} scheduled today · entries 14:00–${cfg.latest_entry_jst||'18:30'} JST · exits begin ${cfg.forced_exit_jst||'18:44'} JST.`);
   const positions=evaluated&&view.positions_status==='AVAILABLE'&&view.orders_status==='AVAILABLE'&&
     !reasons.includes('COMPLETE_INDEX_POSITION_EVIDENCE_REQUIRED')&&!reasons.includes('MANUAL_PROTECTION_EVIDENCE_REQUIRED');
   row('Positions & ownership',positions?(control.slot?.new_entry_blocked?'waiting':'passed'):'unknown',

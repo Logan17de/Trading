@@ -1,5 +1,12 @@
 # Trading workspace
 
+- October 16 owner changed Normal's scheduled owned-position exit to 18:44 JST.
+  Keep the 18:30 new-entry cutoff and existing 19:00 flat-monitoring target.
+  Begin closing on the first eligible fresh monitoring tick at/after 18:44;
+  never claim a guaranteed fill at that exact clock time. Normal's basket
+  profit/loss/trailing/DTE rules remain current. Do not restore retired fixed
+  INR 8 / INR 32 short-roll rules merely when explaining exit behavior.
+
 - October 16 owner supersedes research/archive/GTT requirements below. Active
   runtime is Normal Theta only. Do not start research campaigns, impulse feeds,
   event/IV collection or Supabase uploads. Current inputs and live chart/P&L

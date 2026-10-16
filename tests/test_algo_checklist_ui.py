@@ -24,7 +24,7 @@ function base(){return {
  execution_controller:{phase:'IDLE',blockers:['REPORT_INPUTS_OR_STRATEGY_SELECTION_REQUIRED'],execution_enabled:false},
  control:{algo:{desired_enabled:true,index:'NIFTY',blockers:['REPORT_INPUTS_OR_STRATEGY_SELECTION_REQUIRED']},
   slot:{new_entry_blocked:false},strategy_controls:{enabled:{normal_theta:true}},
-  strategy_rules:{weekday_index_jst:['NIFTY','NIFTY','SENSEX','SENSEX','NIFTY']}},
+  strategy_rules:{weekday_index_jst:['NIFTY','NIFTY','SENSEX','SENSEX','NIFTY'],forced_exit_jst:'18:44'}},
  normal_theta:{indices:{NIFTY:{at,status:'WAIT',regime:'UNKNOWN',reasons:['NO_CONFIRMED_DIRECTIONAL_TREND'],basket_scan:{status:'NO_CONFIRMED_TREND'}}}},
  markets:[{index:'NIFTY',price:23100,series:[{at:'2026-10-16T06:29:55Z',value:23099},{at,value:23100}]}]
 };}
@@ -34,6 +34,7 @@ let view=base(),before=JSON.stringify(view),m=model(view);
 assert.equal(m.heading,'Waiting for NIFTY trend');assert.equal(m.badge,'On · waiting for trend');
 assert.equal(m.rows.find(r=>r.title==='Groww basket margin').state,'not_checked');
 assert.equal(m.rows.find(r=>r.title==='Confirmed trend').state,'waiting');
+assert.match(m.rows.find(r=>r.title==='Time & index').detail,/exits begin 18:44 JST/);
 assert.equal(JSON.stringify(view),before,'presentation must not change state');
 for(const blocker of ['REPOSITORY_PAUSED','BROKER_PROTECTION_RECONCILIATION_REQUIRED','REPORT_EXECUTION_INPUT_UNAVAILABLE','FRESH_COMPLETE_BROKER_STATE_REQUIRED']){
  view=base();view.execution_controller.blockers.push(blocker);m=model(view);
