@@ -232,6 +232,8 @@ function renderControl() {
   /* Research and stream status are retired. */
   $("impulse-status").hidden=true;
   $("impulse-research-status").hidden=true;
+  if(policy?.protection_type==='ORDINARY_TRAILING_SL'&&setup&&$("live-setup-status"))
+    $("live-setup-status").textContent=`${setup.mode==='live'?'Live':'Paper'} · ${setup.paused?'paused':'unpaused'}. Start reviews real-trading setup. Ordinary trailing SL follows a confirmed short fill; no GTT test is required for Normal.`;
   const impulse=data.premium_impulse;
   $("impulse-status").textContent=impulse?`Stream: ${impulse.transport_status||impulse.status} · ${Object.entries(impulse.indices||{}).map(([index,r])=>`${index}: ${r.score??'—'}/100 (${r.status}, ${r.known_points}/100 evidence)`).join(' · ')||'waiting for current events and history'} · ${impulse.processing_ms??'—'} ms local processing · read-only`:'Streaming breakout detector: waiting for Oracle evidence';
   const lastImpulse=impulse?.recent_confirmations?.at(-1);

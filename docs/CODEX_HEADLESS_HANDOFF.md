@@ -31,8 +31,50 @@ ordinary-order lifecycle tests passed for both indices/directions. The offline
 demo completed two synthetic jobs and queued one unsent report. Config and JS
 syntax checks passed. Synthetic tests are not live broker fill verification.
 
-Deployment verification will be recorded below after the paused/Off rollout.
-Do not activate, submit test orders or change owner intent during maintenance.
+Final full local run passed **973 tests with six platform skips**. A subsequent
+stop/modify race addition passed all 16 ordinary trailing tests. Oracle's final
+21 focused checks passed (synthetic temp databases in tmpfs), including the
+actual installed SDK request/HTTP guard contract, with no real requests.
+Existing PC and Oracle SDK builds both report 1.5.0 but differ on the legacy
+smart-modify verb. Its capability now binds the installed explicit SDK helper
+(known POST/PUT variants only), failing closed on unknown wrappers. Normal's
+ordinary order/modify path uses POST on both. An earlier broad Oracle run passed
+43 checks and exposed that legacy mismatch; the final 21-check run verified it
+after correction. The first stdin-based test transport stalled and was stopped
+locally; it is not a completed test run. No provider fill proof was created.
+
+Installed observer and independent alert release:
+`76e74ec28436a4047907ef51ee77a381e9aeefad`. The isolated venv reuses the
+read-only pytest dependency directory from staged release `6f786793...`; runtime
+source resolves to the installed release first. No shared environment was changed.
+The PC connection pin was corrected to this release and the hidden viewer was
+restarted. The final client-only caption clarifies that Normal's owner Start
+does not require the retired GTT test. No Codex schedule was created.
+
+Paused/Off deployment held the owner setup lock and refused active/unsettled
+execution. It checkpointed the old journal, copied and verified operational
+tables into a new file, retained all 47 protected symbols, capital, owner intent,
+broker-test provenance and nine report rows, then preserved the original database
+at `/var/lib/trading-observer/.agent-state/archives/research-retired-20261016T060207Z/journal.sqlite3`.
+The active journal is approximately 1 MB. A new online backup passed full
+integrity checking. Both pause markers, paper mode, Algo Off, environment bytes
+and shared-service identities were preserved. Research selection was retired as
+requested; Normal selection/intent were not enabled. No real orders were sent.
+
+At 06:04 UTC / 15:04 JST the observer's sequence had advanced to 22, current
+Groww funds/positions/orders and index timestamps were available, the Normal
+input worker was CURRENT for both indices, NRestarts was zero, and the protected
+PC viewer reported HEALTHY. Bulk observations, P&L rows, impulse ticks, snapshots
+and research upload queue remained zero. Observed service memory was about
+82 MiB versus approximately 170 MiB before rollout; this is a sampled reading,
+not a guaranteed ceiling. The independent watchdog was CURRENT/HEALTHY with
+historical incidents recovered. Existing mail quiet hours remain unchanged.
+
+Edge browser automation was denied by the app's LOCAL_ACCESS_ONLY guard; the
+guard was preserved. Local HTTP assets and live API response were verified, but
+current visual verification in Edge is not claimed. The ordinary stop/fill/exit
+path remains untested with real broker orders. Algo stays Off; the owner's
+explicit Start is required for real-trading authorization and qualifying entries.
 
 ## October 13 GitHub publication and Codex schedule removal
 
