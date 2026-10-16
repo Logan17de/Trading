@@ -20,6 +20,11 @@ class OrdinaryStopProtection:
 
     def _save(self, operation, value): self.journal.store.set_meta(self.key(operation), value)
 
+    def _unknown(self, operation, record):
+        record['status']='PROTECTION_RECONCILIATION_REQUIRED'
+        self._save(operation,record)
+        return dict(status=record['status'],ordinary_stop=True)
+
     def _order_record(self, record):
         return self.journal.store.meta('prepared-order-' + identity({'operation': record['child_key']}))
 
@@ -63,15 +68,22 @@ class OrdinaryStopProtection:
                 desired = dict(prepared['order'], **record['modify_pending'])
                 if (row.get('groww_order_id') != prepared['broker_id']
                         or row.get('order_reference_id') != prepared['reference']
-                        or row.get('segment') != 'FNO' or row.get('validity') != 'DAY'
-                        or any(row.get(k) != v for k, v in desired.items())):
-                    return {'status': 'PROTECTION_RECONCILIATION_REQUIRED'}
+                        or row.get('segment') != 'FNO' or row.get('validity') != 'DAY'):
+                    return self._unknown(operation,record)
+                if any(row.get(k) != v for k,v in desired.items()):
+                    # A fill/cancel can beat the modify. Only exact terminal
+                    # original fields prove that no later modify can apply.
+                    from .execution import TERMINAL
+                    if (row.get('order_status') not in TERMINAL
+                            or any(row.get(k)!=v for k,v in prepared['order'].items())):
+                        return self._unknown(operation,record)
+                    desired=prepared['order']
                 prepared.update(order=desired, fingerprint=identity(desired))
                 self.journal.store.set_meta(prepared['operation_key'], prepared)
                 record['request'] = desired
                 record.pop('modify_pending')
             except Exception:
-                return {'status': 'PROTECTION_RECONCILIATION_REQUIRED'}
+                return self._unknown(operation,record)
         result = self.gateway.reconcile(record['child_key'])
         prepared = self._order_record(record)
         states = {'NO_BROKER_SUBMISSION': 'NO_PROTECTION_ABORTED_BEFORE_WRITE',

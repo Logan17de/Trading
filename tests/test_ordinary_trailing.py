@@ -15,7 +15,7 @@ from test_premium_execution import SimulatedBroker
 class StandardBroker(SimulatedBroker):
     def __init__(self):
         super().__init__()
-        self.reject_stop=False; self.modify_reply_lost=False; self.modify_unreadable=False
+        self.reject_stop=False; self.modify_reply_lost=False; self.modify_unreadable=False; self.modify_fills=False
 
     def place_order(self, **args):
         auto=self.autofill
@@ -31,6 +31,10 @@ class StandardBroker(SimulatedBroker):
 
     def modify_order(self, **args):
         self.writes.append(('MODIFY_SL',copy.deepcopy(args)))
+        if self.modify_fills:
+            row=self.get_order_detail(**args)
+            row.update(order_status='EXECUTED',filled_quantity=row['quantity'],average_fill_price=row['trigger_price'])
+            raise TimeoutError('private provider body')
         if not self.modify_unreadable:
             row=self.get_order_detail(**args)
             row.update(trigger_price=args['trigger_price'],price=args['price'])
@@ -108,6 +112,16 @@ def test_modify_uncertainty_reads_exact_original_without_retry(tmp_path,lost_rep
     assert len([r for r in s.broker.orders.values() if r['order_type']=='SL'])==1
     if not lost_reply:
         assert 'RECONCILIATION_REQUIRED' in s.journal.store.meta('premium-executor-status')['reason']
+        record=next(iter(s.executor._state()['protections'].values()))
+        assert s.protection.record(record['key'])['status']=='PROTECTION_RECONCILIATION_REQUIRED'
+
+
+def test_fill_racing_a_modify_reconciles_terminal_original_and_closes_hedge(tmp_path):
+    s=StandardSession(tmp_path);s.monitoring();s.broker.modify_fills=True
+    s.books[s.short_leg()['symbol']].update(bid=30.95,ask=31)
+    s.close()
+    assert s.executor._net(s.executor._state())=={}
+    assert len([r for k,r in s.broker.writes if k=='MODIFY_SL'])==1
 
 
 @pytest.mark.parametrize('fault',['off','pause','paper','manual'])
