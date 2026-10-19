@@ -1,6 +1,6 @@
 # Current Trading handoff
 
-## October 19 intraday Normal direction — implementation prepared
+## October 19 intraday Normal direction — installed, Algo Off
 
 Owner explicitly confirmed the last 30 minutes of completed five-minute prices,
 with daily MA20/MA50 retained as context. Normal now uses the versioned
@@ -24,9 +24,29 @@ each returned 12 completed intervals. At approximately 14:21 JST the proposed
 rule returned WAIT for both because the sampled movement was mixed. This is not
 a backtest or evidence of fills/profit. No order, activation or fake provider
 verification was involved. A read-only deployment preflight confirmed owner Off
-and no unresolved owned orders/tests. Full regression and immutable rollout
-results will be recorded below after completion; the old release remains active
-until that rollout succeeds.
+and no unresolved owned orders/tests.
+
+The full local run passed **1,004 tests with six platform skips**. After a
+concrete startup/cache timing correction, all 33 focused current-input/timing
+checks and two final UI/range checks passed. The initial staged Oracle source
+passed 122 synthetic policy/execution/ownership/stop/input tests; final immutable
+source `4b352ed3da9826d1f0f1c1a53b5521b12d297ac5` passed all 33 affected
+input/cache/timing checks. The approximately minute-based preparation worker may
+only reuse a history receipt for 15 seconds, so startup phase differences cannot
+skip a cycle into the unchanged 90-second freshness limit. Each index requests
+history against the actual current clock. Receipt timestamps are never refreshed
+without a successful provider response. JavaScript/config/diff checks and the
+offline demo passed (two synthetic jobs, one unsent queued report).
+
+Both paused/Off rollouts held the owner setup lock, refused unsettled ownership
+or tests, made SQLite backup-API snapshots with integrity `ok`, preserved exact
+owner controls/capital/receipts/manual exclusions and original shared pause, and
+verified unchanged shared-service identities. Only the observer and PC viewer
+restarted. The independent alert release was not upgraded. Final observer and
+private PC pin match `4b352ed3da9826d1f0f1c1a53b5521b12d297ac5`; mode is paper,
+runtime pause present and Algo Off. The owner's next explicit Start must renew
+source/policy/account consent. No real order or email was submitted. These tests
+do not constitute a strategy backtest or real fill/stop verification.
 
 ## October 19 fixed Strategy graph range — desktop only
 
