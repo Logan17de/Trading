@@ -48,6 +48,14 @@ runtime pause present and Algo Off. The owner's next explicit Start must renew
 source/policy/account consent. No real order or email was submitted. These tests
 do not constitute a strategy backtest or real fill/stop verification.
 
+Final readback at approximately 14:33 JST showed HEALTHY, RECENT data, advancing
+heartbeat sequence (5 to 16), CURRENT input worker with no input failures, and
+freshly advanced history receipts for both indices across the next preparation
+cycle. Both actual signals remained WAIT for mixed movement. Owner Edge visibly
+displayed the actual 30-minute change, agreeing steps, consistency threshold and
+daily context labels. The private screenshot is
+`.agent-state/intraday-trend-edge-20261019.png`. Paper/paused/Off remained intact.
+
 ## October 19 fixed Strategy graph range — desktop only
 
 The Strategy graph now fixes its vertical scale to the first actual observed
