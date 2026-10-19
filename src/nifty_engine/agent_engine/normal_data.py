@@ -47,7 +47,9 @@ class NormalData(ReportData):
         key='normal-theta-intraday-'+index
         saved=self.store.meta(key,{})
         try:
-            if saved.get('received_at') and fresh(saved['received_at'],now,55):return saved
+            # The worker runs roughly every minute. A longer cache reuse could
+            # skip a cycle and exceed the independent 90-second receipt limit.
+            if saved.get('received_at') and fresh(saved['received_at'],now,15):return saved
         except (TypeError,ValueError):pass
         day=now.astimezone(IST).date()
         raw=self.call(self.market.groww.get_historical_candles,
@@ -65,7 +67,7 @@ class NormalData(ReportData):
         for index in self.cfg['indices']:
             faults = []
             context_warnings=[]
-            try:self.intraday(index,now)
+            try:self.intraday(index,self.clock())
             except Exception:faults.append('INTRADAY_HISTORY_UNAVAILABLE')
             try: self.history(index, now)
             except Exception: context_warnings.append('DAILY_CONTEXT_UNAVAILABLE')

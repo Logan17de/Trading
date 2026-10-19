@@ -358,6 +358,8 @@ function strategyGraphModel(view, now=new Date()) {
     entry.regime==='BULLISH'?'30-minute uptrend confirmed → hedged put spread':
     entry.regime==='BEARISH'?'30-minute downtrend confirmed → hedged call spread':
     (graph.signal.reasons||[]).map(algoReason).join(' ')||'Waiting for a sustained 30-minute direction';
+  if(current&&graph.signal?.bar_count===6&&known(graph.signal.change_points)&&known(graph.signal.efficiency))
+    graph.state+=` · 30 min ${graph.signal.change_points>=0?'+':''}${graph.signal.change_points.toFixed(2)} pts · ${graph.signal.agreeing_bars}/6 agree · ${(graph.signal.efficiency*100).toFixed(0)}% consistency / 60% required`;
   for(const key of ['ma20','ma50','adx14']) {
     const feature=entry.trend_inputs?.[key];
     if(current&&feature?.status==='AVAILABLE'&&known(feature.value))graph.indicators[key]=feature.value;

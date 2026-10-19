@@ -97,9 +97,10 @@ def test_real_reader_request_cache_and_snapshot_bridge_are_ram_only(tmp_path):
     value,spot=window();calls=[]
     def candles(**kwargs):calls.append(kwargs);return payload(value)
     market=SimpleNamespace(limiter=SimpleNamespace(wait=lambda:None),groww=SimpleNamespace(get_historical_candles=candles))
-    reader=NormalData(market,SimpleNamespace(store=store),CFG,clock=lambda:NOW)
+    clock=[NOW]
+    reader=NormalData(market,SimpleNamespace(store=store),CFG,clock=lambda:clock[0])
     first=reader.intraday('NIFTY',NOW)
-    reader.intraday('NIFTY',NOW+timedelta(seconds=30))
+    reader.intraday('NIFTY',NOW+timedelta(seconds=10))
     assert len(calls)==1 and calls[0]['candle_interval']=='5minute'
     assert calls[0]['groww_symbol']=='NSE-NIFTY' and calls[0]['timeout']==5
     assert calls[0]['start_time'].endswith('09:15:00')
@@ -107,3 +108,7 @@ def test_real_reader_request_cache_and_snapshot_bridge_are_ram_only(tmp_path):
     assert store.meta('normal-theta-evidence-NIFTY')['intraday']==first
     assert journal.store.meta('normal-theta-intraday-NIFTY') is None
     assert OperationalStore(journal.store).meta('normal-theta-intraday-NIFTY') is None
+    clock[0]=NOW+timedelta(seconds=16)
+    reader.intraday('NIFTY',clock[0])
+    assert len(calls)==2,'a minute-based worker must not skip a cycle on a 44-second-old cache'
+    assert store.meta('normal-theta-intraday-NIFTY')['received_at']==clock[0].isoformat()
