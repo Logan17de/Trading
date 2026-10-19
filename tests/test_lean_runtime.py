@@ -7,7 +7,7 @@ from nifty_engine.agent_engine.lean_state import operational_copy
 from nifty_engine.agent_engine.pc_control import PcJournal
 from nifty_engine.agent_engine.normal_data import connect_snapshot
 from test_report_data import NOW, snapshot
-from test_normal_theta import CFG, evidence
+from test_normal_theta import CFG, evidence, intraday_evidence
 
 
 def test_current_reader_uses_only_normal_inputs_and_refreshes_real_books(tmp_path):
@@ -24,6 +24,8 @@ def test_current_reader_uses_only_normal_inputs_and_refreshes_real_books(tmp_pat
     def history(index,now):
         store.set_meta('report-history-status-'+index,dict(day=now.date().isoformat(),status='AVAILABLE'))
         store.set_meta('report-daily-features-'+index,evidence(index)['features'])
+    def intraday(index,now):
+        store.set_meta('normal-theta-intraday-'+index,intraday_evidence(index,now))
     def expiries(index,now):
         value=dict(status='CONFIRMED_CURRENT_MASTER',day_jst=now.date().isoformat(),expiries=['2026-11-10'],received_at=now.isoformat())
         store.set_meta('report-expiries-'+index,value);return value
@@ -33,7 +35,7 @@ def test_current_reader_uses_only_normal_inputs_and_refreshes_real_books(tmp_pat
     def margins(index,rows,*args,**kwargs):
         clock[0]+=timedelta(seconds=6);margin_at.append(clock[0].isoformat())
         return {'exact-basket':{'received_at':margin_at[-1]}}
-    reader.history=history;reader.expiries=expiries;reader.books=books;reader.margins=margins
+    reader.history=history;reader.intraday=intraday;reader.expiries=expiries;reader.books=books;reader.margins=margins
     result=reader.check(latest())
     assert result['status']=='CURRENT' and calls==['SENSEX','SENSEX']
     current=store.meta('normal-theta-evidence-SENSEX')

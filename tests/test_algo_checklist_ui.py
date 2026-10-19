@@ -74,6 +74,14 @@ assert.match(m.basket,/margin INR 20000/);assert.match(m.basket,/profit INR 2000
 assert.equal(m.rows.find(r=>r.title==='Groww basket margin').state,'passed');
 view.trade_audit={events:[{kind:'ORDER',at,side:'BUY',symbol:'EXACT_OPTION',status:'FULLY_FILLED',filled_quantity:65}]};
 assert.match(model(view).activity,/EXACT_OPTION.*filled 65/);
+view=base();view.normal_theta.indices.NIFTY.trend_signal={method:'intraday-price-action-v1',status:'CONFIRMED',regime:'BEARISH',bar_count:6,change_points:-12,agreeing_bars:5,efficiency:.8,reasons:[]};
+view.normal_theta.indices.NIFTY.regime='BEARISH';view.normal_theta.indices.NIFTY.reasons=[];
+m=model(view);assert.match(m.rows.find(r=>r.title==='Confirmed trend').detail,/Last 30 min: -12.00.*5\/6.*context only/);
+assert.match(graph(view).state,/30-minute downtrend confirmed/);
+view.normal_theta.indices.NIFTY.trend_signal={method:'intraday-price-action-v1',status:'WAIT',regime:'UNKNOWN',reasons:['INTRADAY_TREND_WARMUP']};
+view.normal_theta.indices.NIFTY.regime='UNKNOWN';
+assert.match(model(view).rows.find(r=>r.title==='Confirmed trend').detail,/six completed/);
+assert.match(graph(view).state,/six completed/);
 """
     result = subprocess.run([node, '-e', script, str(source)], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr

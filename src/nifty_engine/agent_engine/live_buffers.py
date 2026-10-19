@@ -13,7 +13,7 @@ class OperationalStore:
     Order reservations, receipts, ownership, controls, capital and email outbox
     still use the original durable store. A restart must fetch new market inputs.
     """
-    PREFIXES = ('normal-theta-evidence-', 'normal-theta-contracts-',
+    PREFIXES = ('normal-theta-evidence-', 'normal-theta-contracts-', 'normal-theta-intraday-',
         'report-daily-features-', 'report-history-status-', 'report-expiries-',
         'report-execution-preparation')
 

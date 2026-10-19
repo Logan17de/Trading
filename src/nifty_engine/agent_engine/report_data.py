@@ -94,6 +94,7 @@ def connect_snapshot(store, snapshot, cfg, now, normal_cfg=None):
             cache=store.meta('normal-theta-contracts-'+index,{})
             normal['contracts']=copy.deepcopy(cache.get('contracts',[]))
             normal['margins']=copy.deepcopy(cache.get('margins',{}))
+            normal['intraday']=store.meta('normal-theta-intraday-'+index,{})
             store.set_meta('normal-theta-evidence-'+index,normal)
 
 

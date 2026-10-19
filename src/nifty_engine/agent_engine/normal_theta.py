@@ -14,6 +14,7 @@ from .contracts import identity, number, stamp
 from .execution import fresh
 from .pc_control import JST
 from . import report_strategies as research
+from . import intraday_trend
 
 ID = 'normal_theta'
 KEY = 'normal-theta-evaluations'
@@ -28,7 +29,7 @@ def load(root):
         latest_entry_jst='18:30',forced_exit_jst='18:44',flat_deadline_jst='19:00',
         weekday_index_jst=['NIFTY','NIFTY','SENSEX','SENSEX','NIFTY'],
         short_dte=[14,45], close_dte=7, short_abs_delta=[.15,.25],
-        trend_adx_min=25, take_profit_fraction=.5, stop_credit_multiple=1.5,
+        trend_policy=intraday_trend.POLICY, take_profit_fraction=.5, stop_credit_multiple=1.5,
         maximum_relative_quote_spread=.10, historical_iv_required=False,
         research_enabled=False, record_market_data=False, protection_type='ORDINARY_TRAILING_SL')
     if cfg != expected: raise ValueError('DECLARED_NORMAL_THETA_POLICY_REQUIRED')
@@ -62,12 +63,7 @@ def confirmed_trend(cfg, index, bundle, now):
     if index not in cfg['indices']: return 'UNKNOWN'
     try:
         spot=research._feature(bundle,'spot','index_points',now)
-        ma20=research._feature(bundle,'ma20','index_points',now,daily=True,sessions=20)
-        ma50=research._feature(bundle,'ma50','index_points',now,daily=True,sessions=50)
-        adx=research._feature(bundle,'adx14','index_score',now,daily=True,sessions=28)
-        if not 0<=adx<=100 or adx<cfg['trend_adx_min']:return 'UNKNOWN'
-        if spot>ma20>ma50:return 'BULLISH'
-        if spot<ma20<ma50:return 'BEARISH'
+        return intraday_trend.assess(index,bundle.get('intraday',{}),spot,now,cfg['trend_policy'])['regime']
     except (KeyError,ValueError,TypeError):
         pass
     return 'UNKNOWN'
@@ -102,12 +98,14 @@ def evaluate(cfg, index, bundle, now, *, occupied=False):
             result['trend_inputs'][key]=dict(status='AVAILABLE',value=values[key],unit=unit,
                 observed_at=feature['observed_at'],
                 **({k:feature[k] for k in ('history_end_at','sessions') if k in feature} if daily else {}))
-        except (KeyError,ValueError,TypeError): reasons.append('CURRENT_TREND_INPUT_REQUIRED:'+key)
-    if len(values)==4:
-        if 0<=values['adx14']<=100 and values['adx14']>=cfg['trend_adx_min']:
-            if values['spot']>values['ma20']>values['ma50']: result['regime']='BULLISH'
-            elif values['spot']<values['ma20']<values['ma50']: result['regime']='BEARISH'
-        if result['regime']=='UNKNOWN': reasons.append('NO_CONFIRMED_DIRECTIONAL_TREND')
+        except (KeyError,ValueError,TypeError):
+            if key=='spot':reasons.append('CURRENT_TREND_INPUT_REQUIRED:spot')
+    signal=intraday_trend.assess(index,bundle.get('intraday',{}),values.get('spot'),now,cfg['trend_policy'])
+    result['trend_signal']=signal
+    result['regime']=signal['regime']
+    if result['regime']=='UNKNOWN':
+        reasons.extend(signal['reasons'])
+        reasons.append('NO_CONFIRMED_DIRECTIONAL_TREND')
     try:
         funds=bundle['funds']
         if not fresh(funds['received_at'],now,10): raise ValueError()

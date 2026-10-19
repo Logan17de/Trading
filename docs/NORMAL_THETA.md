@@ -15,13 +15,42 @@ The original four preferences and exact position ownership remain provenance.
 
 ## Normal policy
 
+October 19 replaces daily-MA/ADX entry alignment with the owner's confirmed
+**last 30 minutes** of completed five-minute Groww index prices. MA20/MA50 and
+daily ADX are optional graph context; neither their alignment nor ADX 25 gates
+new Normal entries. No fixed 100/200/300-point move is required.
+
+The declared `intraday-price-action-v1` hypothesis uses six consecutive completed
+five-minute OHLC intervals from the current exchange session. It compares their
+closing-price steps from the first interval's open: at least four of six steps
+must agree with the net direction, and net movement divided by total absolute
+step movement must be at least 60%. Net movement must be at least 2.5 basis points
+(0.025%) of the window's starting price, a small noise floor, not a profit target.
+The fresh live quote must retain at least half that directional move. For example,
+at an index level of 23,000 the noise floor is 5.75 points; a sustained 12-point
+move can pass without crossing a daily average. These settings are declared
+engineering hypotheses, not empirically optimized or backtested probabilities.
+
+The history response must have its original receipt within 90 seconds and the
+last completed interval must end no more than 390 seconds ago. Partial/future,
+wrong-session, duplicate, missing or malformed intervals never become a trend.
+Sideways/tiny/isolated jumps wait; missing/stale inputs remain UNKNOWN. A restart
+fetches current session history into bounded RAM, at most 12 completed bars per
+index, with no database tick history, Supabase upload or research campaign.
+Read-only preparation refreshes at its existing approximately one-minute cadence;
+the collector/executor still target five seconds. New bar confirmation can lag a
+close by the preparation/network delay; do not claim instant trend prediction.
+The current OHLC request/response contract follows
+[Groww's historical-candles documentation](https://groww.in/trade-api/docs/python-sdk/backtesting).
+That API documentation does not validate the chosen direction thresholds.
+
 This is a new, unbacktested hypothesis for both NIFTY and SENSEX, evaluated when
 fresh evidence is available. It does not guarantee a daily trade or profit.
 Owner-defined weekday routing is active: **NIFTY on Monday, Tuesday and Friday; SENSEX on Wednesday and Thursday**. There is no fixed ₹20/₹80 target, expiry-only entry or automatic rollover.
 
 | Check | Rule |
 | --- | --- |
-| Direction | Fresh spot above prior MA20 above MA50, ADX14 ≥25: bull put. Below both in reverse order: bear call. Otherwise NO_TRADE. |
+| Direction | Sustained 30-minute rise: bull put. Sustained fall: bear call. Six completed five-minute prices, declared consistency/noise checks and fresh live quote; otherwise WAIT/UNKNOWN. Daily MAs/ADX are context only. |
 | Short | Out-of-the-money option with signed absolute delta .15–.25 |
 | Hedge | Equal quantity, same actual expiry; lower put or higher call. Buy first and verify its fill before selling. |
 | Expiry | API/current-master intersection, 14–45 calendar days remaining; no weekday assumption |

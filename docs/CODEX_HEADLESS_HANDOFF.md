@@ -1,5 +1,64 @@
 # Current Trading handoff
 
+## October 19 intraday Normal direction — implementation prepared
+
+Owner explicitly confirmed the last 30 minutes of completed five-minute prices,
+with daily MA20/MA50 retained as context. Normal now uses the versioned
+`intraday-price-action-v1` policy in config and `intraday_trend.py`. Daily MA
+alignment and ADX 25 no longer determine Normal direction. See NORMAL_THETA.md
+for the exact six-interval direction/efficiency/noise/current-quote rules. These
+are declared unbacktested hypotheses; no normal-day range or profit is assured.
+
+Both Normal's pre-scan and final candidate validation use the same pure signal.
+Current-session Groww OHLC is fetched read-only by the existing preparation
+worker, kept to 12 completed bars per index in RAM, and bridged without redating
+provider receipts. Restart fetches new input. Daily-history failure is optional
+context, not a direction veto. Missing/stale/gapped/incomplete prices cannot
+authorize a candidate. The UI retains the fixed index ranges and actual daily
+reference lines, and displays the actual 30-minute move, agreeing steps and
+direction consistency when the installed engine supplies the new signal.
+
+An isolated read-only Oracle probe used the proposed pure module against real
+Groww five-minute history for both indices. Authentication and both reads worked;
+each returned 12 completed intervals. At approximately 14:21 JST the proposed
+rule returned WAIT for both because the sampled movement was mixed. This is not
+a backtest or evidence of fills/profit. No order, activation or fake provider
+verification was involved. A read-only deployment preflight confirmed owner Off
+and no unresolved owned orders/tests. Full regression and immutable rollout
+results will be recorded below after completion; the old release remains active
+until that rollout succeeds.
+
+## October 19 fixed Strategy graph range — desktop only
+
+The Strategy graph now fixes its vertical scale to the first actual observed
+session price: NIFTY plus/minus 500 points, SENSEX plus/minus 1,500. The dashboard
+does not currently expose the official opening quote; label this anchor **First
+observed**, not exchange open. Two small public index anchors in browser tab
+session storage retain the scale through refresh and rolling RAM-cache eviction;
+the JST session date resets them. This does not store market tick history.
+
+Observed index price and current validated daily MA20/MA50 have colored labels
+inside the graph. A dashed start-price reference and exact five price-axis ticks
+make the range visible. Out-of-range paths are clipped to the plotting area;
+their endpoint labels retain actual values with up/down arrows. Indicators never
+expand the fixed range or get moved to false price levels. Missing/stale numeric
+indicators remain absent, historical price lines remain labelled, and observation
+gaps are preserved. Weekday routing and all trading policy remain unchanged.
+
+20 focused UI/active-position chart checks passed, including both index scales,
+refresh/cache eviction, JST date rollover, invalid anchors, narrow/wide chart
+geometry, off-range labels, missing indicators and unbridged gaps. JavaScript
+syntax and diff checks passed. The offline demo completed two synthetic jobs and
+queued one unsent report. Owner Edge visibly showed the fixed NIFTY axis, live
+line and both MA labels. The private proof image is in `.agent-state`.
+
+Desktop assets are served directly and were refreshed in the existing owner tab.
+No Oracle deployment or service restart was required. Installed observer release
+remains `fdd603f1028e05b0075d102116350e3e1187a108`. The read-only view showed LIVE
+mode with owner Algo Off; owner intent, runtime pause, source/account receipts,
+manual trades, journals, vault and shared services were not changed. No broker
+order or email was submitted by this change.
+
 ## October 16 scheduled exit changed to 18:44 JST
 
 Owner changed Normal's scheduled owned-basket exit from 18:45 to **18:44 JST**.

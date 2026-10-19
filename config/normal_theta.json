@@ -19,7 +19,17 @@
     0.15,
     0.25
   ],
-  "trend_adx_min": 25,
+  "trend_policy": {
+    "format": "intraday-price-action-v1",
+    "lookback_minutes": 30,
+    "bar_minutes": 5,
+    "minimum_directional_bars": 4,
+    "minimum_efficiency": 0.6,
+    "minimum_move_bps": 2.5,
+    "receipt_max_age_seconds": 90,
+    "bar_max_age_seconds": 390,
+    "live_retention_fraction": 0.5
+  },
   "take_profit_fraction": 0.5,
   "stop_credit_multiple": 1.5,
   "maximum_relative_quote_spread": 0.1,

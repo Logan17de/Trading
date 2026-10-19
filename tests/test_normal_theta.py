@@ -16,6 +16,16 @@ from test_report_execution import ReportSession, LEGACY
 CFG=theta.load(Path(__file__).parents[1])
 
 
+def intraday_evidence(index,now,spot=25100,regime='BULLISH'):
+    direction=1 if regime=='BULLISH' else -1
+    end=now.replace(minute=now.minute//5*5,second=0,microsecond=0)
+    prices=[spot-direction*(30-i*5) for i in range(7)]
+    return dict(format='groww-intraday-bars-v1',index=index,source='GROWW_5MIN_OHLC',
+        received_at=now.isoformat(),interval_minutes=5,bars=[dict(
+            at=(end-timedelta(minutes=30-i*5)).isoformat(),open=prices[i],
+            high=max(prices[i:i+2])+1,low=min(prices[i:i+2])-1,close=prices[i+1]) for i in range(6)])
+
+
 def test_view_evaluation_rechecks_current_inputs_without_journal_writes(tmp_path):
     journal = PcJournal(tmp_path/'view.sqlite3')
     journal.store.set_meta(theta.KEY, {'at':'prior-worker-result'})
@@ -36,6 +46,7 @@ def test_view_evaluation_rechecks_current_inputs_without_journal_writes(tmp_path
 def evidence(index='NIFTY',regime='BULLISH'):
     b=priced_bundle(index,regime)
     b['features']['spot']['value']=25100 if regime=='BULLISH' else 24700
+    b['intraday']=intraday_evidence(index,NOW,b['features']['spot']['value'],regime)
     # No historical-IV features and no event-free horizon are invented.
     b['features'].pop('iv30');b['features'].pop('iv_percentile');b['features'].pop('rv30')
     b['event_calendar']={'status':'UNKNOWN'}
@@ -73,7 +84,7 @@ def test_missing_adverse_or_unaffordable_evidence_does_not_select(fault):
     if fault=='expiry':b['expiry_evidence']['day_jst']='2026-10-06'
     if fault=='manual':b['protected_symbols']=[b['contracts'][0]['symbol']]
     if fault=='occupied':occupied=True
-    if fault=='trend':b['features']['adx14']['value']=15
+    if fault=='trend':b['intraday']['bars']=[]
     if fault=='costs':
         for m in b['margins'].values():m['round_trip_charges_inr']=1001
     if fault=='margin':
@@ -119,6 +130,8 @@ class NormalSession(ReportSession):
         self.data['received_at']=self.now.isoformat();self.data['funds']['received_at']=self.now.isoformat()
         self.data['expiry_evidence'].update(day_jst=self.now.date().isoformat(),received_at=self.now.isoformat())
         for row in self.data['features'].values():row['observed_at']=self.now.isoformat()
+        self.data['intraday']=intraday_evidence(self.data['index'],self.now,
+            self.data['features']['spot']['value'],'BULLISH' if self.data['features']['spot']['value']==25100 else 'BEARISH')
         for row in self.data['contracts']:row.update(self.books[row['symbol']],greeks_received_at=self.now.isoformat())
         for m in self.data['margins'].values():m['received_at']=self.now.isoformat()
         self.journal.store.set_meta('normal-theta-evidence-'+self.data['index'],self.data)
@@ -263,6 +276,8 @@ def test_trend_confirmation_is_directional_and_rejects_stale_or_flat():
     b=evidence('SENSEX','BEARISH')
     assert theta.confirmed_trend(CFG,'SENSEX',b,NOW)=='BEARISH'
     b['features']['adx14']['value']=8
+    assert theta.confirmed_trend(CFG,'SENSEX',b,NOW)=='BEARISH','daily ADX is context only'
+    b['intraday']['bars']=[]
     assert theta.confirmed_trend(CFG,'SENSEX',b,NOW)=='UNKNOWN'
     b=evidence()
     b['features']['spot']['observed_at']=(NOW-timedelta(seconds=45)).isoformat()
@@ -337,7 +352,7 @@ def test_graph_indicator_projection_is_validated_read_only_and_keeps_missing_unk
     b['features']['ma20']['observed_at']=(NOW+timedelta(seconds=1)).isoformat()
     value=theta.evaluate(CFG,'NIFTY',b,NOW)
     assert value['trend_inputs']['ma20']==dict(status='UNKNOWN')
-    assert value['candidate'] is None
+    assert value['candidate'] is not None,'missing daily context must not veto a current intraday trend'
 
 @pytest.mark.parametrize('weekday,index',[
     (0,'NIFTY'),(1,'NIFTY'),(2,'SENSEX'),(3,'SENSEX'),(4,'NIFTY'),

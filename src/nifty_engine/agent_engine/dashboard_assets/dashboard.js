@@ -25,21 +25,25 @@ function emptyChart(container, title, subtitle="") {
   container.onpointermove=null; container.onpointerleave=null;
   container.innerHTML = `<div class="empty-chart"><svg class="icon" aria-hidden="true"><use href="#icon-bars"/></svg><strong>${escapeHTML(title)}</strong><small>${escapeHTML(subtitle)}</small></div>`;
 }
-function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=false, label="Chart",levels=[],fiveMinuteGrid=false,gapSeconds=Infinity,lines=[],indexPoints=false}={}) {
+function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=false, label="Chart",levels=[],fiveMinuteGrid=false,gapSeconds=Infinity,lines=[],indexPoints=false,fixedRange=null}={}) {
   const rows = (points || []).filter(p => known(p.value) && Number.isFinite(Date.parse(p.at)));
   if (!rows.length || (mini && rows.length < 2)) {emptyChart(container, rows.length ? "Waiting for more observations" : "No chart data", "No prices are filled in or simulated."); return;}
   const markers=levels.filter(p=>known(p.price)&&p.price>0&&['ENTRY','SL','TARGET'].includes(p.kind));
   // Match the drawing to CSS pixels so a single wide panel cannot stretch type/strokes.
   const width=Math.max(160,Math.round(container.clientWidth)||640), height=Math.max(60,Math.round(container.clientHeight)||(mini?68:280));
   const premium=container.classList.contains('option-chart');
-  const signature=JSON.stringify({rows,color,area,mini,pnl,label,markers,timeZone,fiveMinuteGrid,gapSeconds,width,height,lines,indexPoints});
+  const fixed=known(fixedRange?.low)&&known(fixedRange?.high)&&fixedRange.high>fixedRange.low;
+  const signature=JSON.stringify({rows,color,area,mini,pnl,label,markers,timeZone,fiveMinuteGrid,gapSeconds,width,height,lines,indexPoints,fixedRange});
   if(container.dataset.chartSignature===signature) return;
   container.dataset.chartSignature=signature;
-  const left=mini?2:indexPoints?68:48, right=mini?3:premium?76:14, top=mini?5:28, bottom=mini?5:32;
+  const left=mini?2:indexPoints?78:48, right=mini?3:premium?76:fixed?(width<480?108:134):14, top=mini?5:28, bottom=mini?5:32;
   const domain=[...rows.map(r=>r.value),...markers.map(p=>p.price),...lines.flatMap(s=>s.points.filter(p=>known(p.value)).map(p=>p.value))];
   let low=Math.min(...domain), high=Math.max(...domain);
   if (pnl) {low=Math.min(low,0); high=Math.max(high,0);}
-  let span=high-low || Math.max(Math.abs(high)*.02,1); low-=span*.09; high+=span*.09; if(!pnl) low=Math.max(0,low); span=high-low;
+  let span=high-low || Math.max(Math.abs(high)*.02,1);
+  if(fixed){low=fixedRange.low;high=fixedRange.high;}
+  else {low-=span*.09;high+=span*.09;if(!pnl)low=Math.max(0,low);}
+  span=high-low;
   const first=Date.parse(rows[0].at), last=Date.parse(rows.at(-1).at), duration=last-first||1;
   const inset=0;
   const x=r=>rows.length===1?(width+left-right)/2:left+inset+(Date.parse(r.at)-first)/duration*(width-left-right-2*inset), y=v=>top+(high-v)/span*(height-top-bottom);
@@ -51,9 +55,10 @@ function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=
   if (!mini) {
     const rawStep=span/4, scale=10**Math.floor(Math.log10(rawStep));
     const step=[1,2,2.5,5,10].find(n=>n*scale>=rawStep)*scale;
-    for(let value=Math.ceil(low/step)*step;value<=high;value+=step) {
-      const at=y(value), tick=indexPoints?new Intl.NumberFormat('en-IN',{maximumFractionDigits:step<1?2:step<10?1:0}).format(value):Math.abs(value)>=1000?(value/1000).toFixed(Math.abs(value)>=10000?0:1)+"k":value.toFixed(step<1?2:step<10?1:0);
-      grid+=`<line x1="${left}" y1="${at}" x2="${width-right}" y2="${at}" stroke="#e8eeeb" vector-effect="non-scaling-stroke"/><text x="${left-10}" y="${at+4}" text-anchor="end" fill="#526980" font-size="12">${tick}</text>`;
+    const ticks=fixed?Array.from({length:5},(_,i)=>low+span*i/4):Array.from({length:Math.floor((high-Math.ceil(low/step)*step)/step)+1},(_,i)=>Math.ceil(low/step)*step+i*step);
+    for(const value of ticks) {
+      const at=y(value), tick=fixed?numeric.format(value):indexPoints?new Intl.NumberFormat('en-IN',{maximumFractionDigits:step<1?2:step<10?1:0}).format(value):Math.abs(value)>=1000?(value/1000).toFixed(Math.abs(value)>=10000?0:1)+"k":value.toFixed(step<1?2:step<10?1:0);
+      grid+=`<line x1="${left}" y1="${at}" x2="${width-right}" y2="${at}" stroke="#e8eeeb" vector-effect="non-scaling-stroke"/><text data-axis-value="${value}" x="${left-10}" y="${at+4}" text-anchor="end" fill="#526980" font-size="12">${tick}</text>`;
     }
     const tickCount=Math.max(2,Math.floor((width-left-right)/100));
     const minimumMinutes=duration/60000/tickCount;
@@ -85,7 +90,17 @@ function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=
   const gaps=premium?rows.slice(1).map((r,i)=>Date.parse(r.at)-Date.parse(rows[i].at)>gapSeconds*1000?`<g class="data-gap"><title>No observations ${clockSeconds(rows[i].at)}–${clockSeconds(r.at)}</title><rect x="${x(rows[i])}" y="${top}" width="${x(r)-x(rows[i])}" height="${height-top-bottom}" fill="#f1f4f3"/>${x(r)-x(rows[i])>65?`<text x="${(x(r)+x(rows[i]))/2}" y="${height-bottom-10}" text-anchor="middle" fill="#526980" font-size="11">No data</text>`:''}</g>`:'').join(''):'';
   const lastRow=rows.at(-1), lastY=y(lastRow.value);
   const lastLabel=premium?`<line x1="${left}" x2="${width-right}" y1="${lastY}" y2="${lastY}" stroke="${color}" stroke-opacity=".35" stroke-dasharray="2 5" vector-effect="non-scaling-stroke"/><rect x="${width-right+8}" y="${lastY-11}" width="64" height="22" rx="4" fill="#172d48"/><text x="${width-right+40}" y="${lastY+4}" text-anchor="middle" fill="white" font-size="12" font-weight="600">${lastRow.value.toFixed(2)}</text>`:'';
-  container.innerHTML=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeHTML(label)} · ${rows.length} observations"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".12"/><stop offset="1" stop-color="${color}" stop-opacity=".015"/></linearGradient></defs>${gaps}${grid}${area&&!hasGaps?`<path d="${fill}" fill="url(#${id})"/>`:""}${pnl?`<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#bdcec3"/>`:""}${levelLines}${lastLabel}${segments}${mini||lines.length?"":`<circle cx="${x(lastRow)}" cy="${lastY}" r="3" fill="${color}" stroke="white" stroke-width="1.5"/>`}<g class="chart-crosshair" visibility="hidden"><line y1="${top}" y2="${height-bottom}" stroke="#789082" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"/><circle r="4" fill="white" stroke="${color}" stroke-width="1.5"/></g></svg>`;
+  const clipId='plot-'+container.id;
+  const baseline=fixed&&known(fixedRange.start)?`<line class="session-start-line" x1="${left}" x2="${width-right}" y1="${y(fixedRange.start)}" y2="${y(fixedRange.start)}" stroke="#8b9aa8" stroke-dasharray="4 5"><title>First observed session price ${numeric.format(fixedRange.start)}</title></line>`:'';
+  const labels=fixed?lines.map(s=>({s,last:s.points.filter(r=>known(r.value)&&Number.isFinite(Date.parse(r.at))).at(-1)})).filter(r=>r.last).map(r=>({...r,position:Math.max(top+10,Math.min(height-bottom-10,y(r.last.value)))})).sort((a,b)=>a.position-b.position):[];
+  labels.forEach((r,i)=>{r.labelY=Math.max(r.position,i?labels[i-1].labelY+24:top+10);});
+  const overflow=labels.length?Math.max(0,labels.at(-1).labelY-(height-bottom-10)):0;
+  const seriesLabels=labels.map(({s,last,labelY,position})=>{
+    const outside=last.value>high?'above':last.value<low?'below':'',arrow=outside==='above'?' ↑':outside==='below'?' ↓':'';
+    const text=`${s.label||s.key.toUpperCase()} ${numeric.format(last.value)}${arrow}`,cy=labelY-overflow;
+    return `<g class="series-label" data-series-label="${escapeHTML(s.key)}" data-outside="${outside}"><title>${escapeHTML(s.name)}: ${numeric.format(last.value)}${outside?' · '+outside+' displayed range':''}</title><path d="M${width-right},${position} L${width-right+7},${cy}" stroke="${s.color}" fill="none"/><rect x="${width-right+7}" y="${cy-10}" width="${right-10}" height="20" rx="3" fill="#fff" stroke="${s.color}" stroke-opacity=".25"/><text x="${width-right+12}" y="${cy+4}" fill="${s.color}" font-size="11" font-weight="600">${escapeHTML(text)}</text></g>`;
+  }).join('');
+  container.innerHTML=`<svg viewBox="0 0 ${width} ${height}" ${fixed?`data-y-min="${low}" data-y-max="${high}"`:''} preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeHTML(label)} · ${rows.length} observations"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".12"/><stop offset="1" stop-color="${color}" stop-opacity=".015"/></linearGradient>${fixed?`<clipPath id="${clipId}"><rect x="${left}" y="${top}" width="${width-left-right}" height="${height-top-bottom}"/></clipPath>`:''}</defs>${gaps}${grid}<g ${fixed?`clip-path="url(#${clipId})"`:''}>${baseline}${area&&!hasGaps?`<path d="${fill}" fill="url(#${id})"/>`:""}${pnl?`<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#bdcec3"/>`:""}${levelLines}${lastLabel}${segments}${mini||lines.length?"":`<circle cx="${x(lastRow)}" cy="${lastY}" r="3" fill="${color}" stroke="white" stroke-width="1.5"/>`}</g>${seriesLabels}<g class="chart-crosshair" ${fixed?`clip-path="url(#${clipId})"`:''} visibility="hidden"><line y1="${top}" y2="${height-bottom}" stroke="#789082" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"/><circle r="4" fill="white" stroke="${color}" stroke-width="1.5"/></g></svg>`;
   if(mini) return;
   const tooltip=document.createElement("div"); tooltip.className="chart-tooltip"; tooltip.hidden=true; container.append(tooltip);
   container.onpointermove=event=> {
@@ -171,7 +186,11 @@ function drawOption(side, option) {
 }
 function algoReason(code) {
   const labels={
-    NO_CONFIRMED_DIRECTIONAL_TREND:'The moving averages and ADX do not confirm a directional trend.',
+    NO_CONFIRMED_DIRECTIONAL_TREND:'Current prices do not confirm a sustained directional trend.',
+    INTRADAY_TREND_WARMUP:'Waiting for six completed five-minute intervals.',
+    INTRADAY_MOVE_BELOW_NOISE_FLOOR:'The 30-minute move is below the small-move noise threshold.',
+    INTRADAY_DIRECTION_NOT_SUSTAINED:'The recent move is too mixed or choppy to confirm direction.',
+    INTRADAY_DIRECTION_REVERSED:'The live price has retraced the confirmed direction.',
     CURRENT_TREND_INPUT_REQUIRED:'Current trend inputs are unavailable.',
     CURRENT_SNAPSHOT_AND_API_MASTER_EXPIRY_REQUIRED:'Current market data and API/master expiry confirmation are required.',
     CURRENT_MARGIN_BALANCES_REQUIRED:'Current Groww option-buy and option-sell balances are required.',
@@ -244,8 +263,12 @@ function algoChecklistModel(view, now=new Date()) {
     positions?(control.slot?.new_entry_blocked?'An existing owned basket holds the slot.':'Positions/orders checked. Manual and unknown trades are excluded. One algo basket only.'):
     'Waiting for complete current broker positions, orders and manual-trade exclusions.');
   const missingTrend=reasonsFor('CURRENT_TREND_INPUT_REQUIRED');
+  const signal=entry.trend_signal,intraday=signal?.method==='intraday-price-action-v1';
+  const intradayDetail=!evaluated||missingTrend.length?'Waiting for current spot and contiguous completed five-minute prices.':
+    signal?.bar_count===6&&known(signal.change_points)&&known(signal.efficiency)?`Last 30 min: ${signal.change_points>=0?'+':''}${signal.change_points.toFixed(2)} points · ${signal.agreeing_bars}/6 intervals agree · ${(signal.efficiency*100).toFixed(0)}% direction consistency. ${entry.regime==='BULLISH'?'Uptrend → hedged put spread.':entry.regime==='BEARISH'?'Downtrend → hedged call spread.':(signal.reasons||[]).map(algoReason).join(' ')} Daily MAs/ADX are context only.`:
+    'Waiting for six completed five-minute intervals. Daily MAs/ADX are context only.';
   row('Confirmed trend',!evaluated||missingTrend.length?'unknown':entry.regime==='BULLISH'||entry.regime==='BEARISH'?'passed':'waiting',
-    !evaluated||missingTrend.length?'Waiting for current spot, MA20, MA50 and ADX14.':
+    intraday?intradayDetail:!evaluated||missingTrend.length?'Waiting for current spot, MA20, MA50 and ADX14.':
     entry.regime==='BULLISH'?'Price > MA20 > MA50 and ADX ≥25 → sell a hedged put spread.':
     entry.regime==='BEARISH'?'Price < MA20 < MA50 and ADX ≥25 → sell a hedged call spread.':
     'Needs price > MA20 > MA50, or price < MA20 < MA50, with ADX ≥25. Not confirmed.');
@@ -300,18 +323,41 @@ function algoChecklistModel(view, now=new Date()) {
   return {heading,badge,tone,detail,rows,basket,activity,at:entry.at,on,evaluated};
 }
 
+function strategyGraphRange(index, rows) {
+  const half=index==='NIFTY'?500:index==='SENSEX'?1500:null,first=rows[0];
+  if(!half||!first||!known(first.value)||first.value<=0)return null;
+  const sessionOf=at=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(at));
+  const session=sessionOf(first.at),storageKey='trading-strategy-anchors-v1';
+  let cache=strategyGraphRange.cache;
+  if(!cache){try{cache=JSON.parse(sessionStorage.getItem(storageKey));}catch{}}
+  if(!cache||cache.session!==session||!cache.anchors||typeof cache.anchors!=='object')cache={session,anchors:{}};
+  let anchor=cache.anchors[index];
+  if(!anchor||!known(anchor.value)||anchor.value<=0||!Number.isFinite(Date.parse(anchor.at))||sessionOf(anchor.at)!==session||Date.parse(first.at)<Date.parse(anchor.at)){
+    anchor={at:first.at,value:first.value};cache.anchors[index]=anchor;
+    // Only two public index anchors for this browser tab/session, not tick history.
+    cache.anchors=Object.fromEntries(['NIFTY','SENSEX'].filter(k=>cache.anchors[k]).map(k=>[k,cache.anchors[k]]));
+    try{sessionStorage.setItem(storageKey,JSON.stringify(cache));}catch{}
+  }
+  strategyGraphRange.cache=cache;
+  return {low:anchor.value-half,high:anchor.value+half,start:anchor.value,at:anchor.at,half};
+}
+
 function strategyGraphModel(view, now=new Date()) {
   const index=normalScheduledIndex(view,now),entry=view.normal_theta?.indices?.[index]||{};
   const market=(view.markets||[]).find(r=>r.index===index),fresh=view.vm?.status==='HEALTHY'&&view.freshness==='RECENT';
   const rows=(market?.series||[]).filter(r=>known(r.value)&&Number.isFinite(Date.parse(r.at)));
   const current=algoChecklistModel(view,now).evaluated;
   const missingTrend=(entry.reasons||[]).some(r=>r.startsWith('CURRENT_TREND_INPUT_REQUIRED'));
-  const graph={index,points:rows,current,price:current?market?.price:null,hasProjection:Boolean(entry.trend_inputs),
+  const graph={index,points:rows,range:strategyGraphRange(index,rows),current,price:current?market?.price:null,hasProjection:Boolean(entry.trend_inputs),
     state:!current||missingTrend?'Current trend unknown':entry.regime==='BULLISH'?'Bullish trend confirmed → hedged put spread':
       entry.regime==='BEARISH'?'Bearish trend confirmed → hedged call spread':'Waiting for MA alignment and ADX ≥25',
     // These reference values are optional read-only engine evidence, never
     // derived from the intraday line or estimated by the viewer.
-    indicators:{},received_at:rows.at(-1)?.at};
+    indicators:{},signal:entry.trend_signal,received_at:rows.at(-1)?.at};
+  if(graph.signal?.method==='intraday-price-action-v1')graph.state=!current||missingTrend?'Current intraday trend unknown':
+    entry.regime==='BULLISH'?'30-minute uptrend confirmed → hedged put spread':
+    entry.regime==='BEARISH'?'30-minute downtrend confirmed → hedged call spread':
+    (graph.signal.reasons||[]).map(algoReason).join(' ')||'Waiting for a sustained 30-minute direction';
   for(const key of ['ma20','ma50','adx14']) {
     const feature=entry.trend_inputs?.[key];
     if(current&&feature?.status==='AVAILABLE'&&known(feature.value))graph.indicators[key]=feature.value;
@@ -321,24 +367,27 @@ function strategyGraphModel(view, now=new Date()) {
 
 function renderStrategyGraph() {
   const graph=strategyGraphModel(data),indicator=graph.indicators;
+  const intraday=graph.signal?.method==='intraday-price-action-v1',context=intraday?' · context':'';
   const missing=graph.hasProjection?'unknown':'not supplied';
   $('strategy-graph-title').textContent=`Strategy graph${graph.index?' · '+graph.index:''}`;
   $('strategy-graph-state').textContent=graph.state;
   $('strategy-graph-price').textContent=known(graph.price)?numeric.format(graph.price):'—';
   $('strategy-graph-legend').innerHTML=[
     {name:'Index price',color:'#2473b5'},
-    {name:known(indicator.ma20)?'Daily MA20 '+numeric.format(indicator.ma20):'Daily MA20 · '+missing,color:'#9b62b6'},
-    {name:known(indicator.ma50)?'Daily MA50 '+numeric.format(indicator.ma50):'Daily MA50 · '+missing,color:'#d18221'},
-    {name:known(indicator.adx14)?'Daily ADX '+indicator.adx14.toFixed(1)+' / 25 required':'Daily ADX · '+missing,color:'#526980'},
+    ...(graph.range?[{name:'First observed '+numeric.format(graph.range.start)+' · ±'+graph.range.half+' pts',color:'#8b9aa8'}]:[]),
+    {name:(known(indicator.ma20)?'Daily MA20 '+numeric.format(indicator.ma20):'Daily MA20 · '+missing)+context,color:'#9b62b6'},
+    {name:(known(indicator.ma50)?'Daily MA50 '+numeric.format(indicator.ma50):'Daily MA50 · '+missing)+context,color:'#d18221'},
+    {name:known(indicator.adx14)?'Daily ADX '+indicator.adx14.toFixed(1)+(intraday?' · context':' / 25 required'):'Daily ADX · '+missing,color:'#526980'},
   ].map(s=>`<span><i style="background:${s.color}"></i>${escapeHTML(s.name)}</span>`).join('');
   if(graph.points.length) {
-    const lines=[{key:'spot',name:'Observed index price',color:'#2473b5',points:graph.points}];
+    const lines=[{key:'spot',label:graph.index,name:'Observed index price',color:'#2473b5',points:graph.points}];
     for(const [key,color] of [['ma20','#9b62b6'],['ma50','#d18221']])if(known(indicator[key]))
       // Daily references are constant throughout this session, not fake ticks.
       lines.push({key,name:'Prior daily '+key.toUpperCase(),color,points:graph.points.map(r=>({at:r.at,value:indicator[key]}))});
-    chart($('strategy-graph'),graph.points,{color:'#2473b5',label:`${graph.index} strategy graph · observed index price`,lines,fiveMinuteGrid:true,gapSeconds:20,indexPoints:true});
+    chart($('strategy-graph'),graph.points,{color:'#2473b5',label:`${graph.index} strategy graph · observed index price`,lines,fiveMinuteGrid:true,gapSeconds:20,indexPoints:true,fixedRange:graph.range});
   }else emptyChart($('strategy-graph'),'Waiting for actual index observations','No simulated prices or indicators.');
-  $('strategy-graph-caption').textContent=`${graph.received_at?'Observed through '+clockSeconds(graph.received_at):'No observations yet'} · 5-second refresh target · daily MA20/MA50 and ADX, not 20/50 intraday ticks.${graph.current?'':' Current readings are unknown; any displayed line is historical.'}${!known(indicator.ma20)||!known(indicator.ma50)||!known(indicator.adx14)?graph.hasProjection?' Waiting for current validated indicator readings.':' This Oracle release does not supply numeric indicators; they are not plotted.':''}`;
+  const outside=graph.range&&[...graph.points.map(r=>r.value),indicator.ma20,indicator.ma50].some(v=>known(v)&&(v<graph.range.low||v>graph.range.high));
+  $('strategy-graph-caption').textContent=`${graph.received_at?'Observed through '+clockSeconds(graph.received_at):'No observations yet'} · 5-second refresh target${graph.range?' · fixed range '+numeric.format(graph.range.low)+'–'+numeric.format(graph.range.high)+' from first observed price at '+clock(graph.range.at):''}${intraday?' · direction uses the last 30 completed minutes; daily MAs/ADX are context only.':' · daily MA20/MA50 and ADX.'}${outside?' ↑/↓ labels mark values outside this range.':''}${graph.current?'':' Current readings are unknown; any displayed line is historical.'}${!known(indicator.ma20)||!known(indicator.ma50)||!known(indicator.adx14)?intraday?' Some daily context is unavailable.':graph.hasProjection?' Waiting for current validated indicator readings.':' This Oracle release does not supply numeric indicators; they are not plotted.':''}`;
 }
 
 function renderControl() {

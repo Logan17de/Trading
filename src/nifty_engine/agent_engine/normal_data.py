@@ -2,12 +2,13 @@
 import copy
 from datetime import date, datetime, timezone
 
-from .contracts import number
+from .contracts import EXCHANGES, number
 from .execution import fresh
 from .pc_control import JST
 from .dashboard import IST
 from .report_data import ReportData
 from .normal_theta import confirmed_trend, scheduled_index, entry_window
+from . import intraday_trend
 
 
 def connect_snapshot(store, snapshot, cfg, now):
@@ -34,6 +35,7 @@ def connect_snapshot(store, snapshot, cfg, now):
                 and snapshot.get('execution_observation', {}).get('complete') is True,
             funds=copy.deepcopy(snapshot.get('funds', {})), protected_symbols=sorted(protected),
             expiry_evidence=store.meta('report-expiries-'+index, {}), features=features,
+            intraday=store.meta('normal-theta-intraday-'+index, {}),
             contracts=cache.get('contracts', []), margins=cache.get('margins', {})))
 
 
@@ -41,14 +43,32 @@ class NormalData(ReportData):
     def __init__(self, market, journal, cfg, **kwargs):
         super().__init__(market, journal, cfg, normal_cfg=cfg, initialize_calendar=False, **kwargs)
 
+    def intraday(self,index,now):
+        key='normal-theta-intraday-'+index
+        saved=self.store.meta(key,{})
+        try:
+            if saved.get('received_at') and fresh(saved['received_at'],now,55):return saved
+        except (TypeError,ValueError):pass
+        day=now.astimezone(IST).date()
+        raw=self.call(self.market.groww.get_historical_candles,
+            exchange=EXCHANGES[index],segment='CASH',groww_symbol=EXCHANGES[index]+'-'+index,
+            start_time=f'{day} 09:15:00',end_time=now.astimezone(IST).strftime('%Y-%m-%d %H:%M:%S'),
+            candle_interval='5minute')
+        value=intraday_trend.history(raw,index,self.clock())
+        self.store.set_meta(key,value)
+        return value
+
     def check(self, snapshot):
         now = self.clock()
         statuses={}
         connect_snapshot(self.store, snapshot, self.cfg, now)
         for index in self.cfg['indices']:
             faults = []
+            context_warnings=[]
+            try:self.intraday(index,now)
+            except Exception:faults.append('INTRADAY_HISTORY_UNAVAILABLE')
             try: self.history(index, now)
-            except Exception: faults.append('DAILY_HISTORY_UNAVAILABLE')
+            except Exception: context_warnings.append('DAILY_CONTEXT_UNAVAILABLE')
             # Re-read actual funds/positions after slow history calls.
             latest = self.snapshot_reader() if self.snapshot_reader else snapshot
             connect_snapshot(self.store, latest, self.cfg, self.clock())
@@ -82,7 +102,7 @@ class NormalData(ReportData):
             except Exception: faults.append('CURRENT_CONTRACT_INPUT_UNAVAILABLE')
             self.store.set_meta('normal-theta-contracts-'+index, dict(contracts=books, margins=margins, scan=scan))
             self.store.set_meta('normal-data-status-'+index, dict(status='PARTIAL' if faults else 'CURRENT',
-                reasons=faults, checked_at=self.clock().isoformat(), broker_writes=False))
+                reasons=faults, context_warnings=context_warnings, checked_at=self.clock().isoformat(), broker_writes=False))
             statuses[index]=faults
         connect_snapshot(self.store, self.snapshot_reader() if self.snapshot_reader else snapshot, self.cfg, self.clock())
         return dict(status='FAILED' if any(statuses.values()) else 'CURRENT',

@@ -1,5 +1,14 @@
 # Trading workspace
 
+- October 19 owner approved the last 30 minutes of completed five-minute prices
+  for Normal direction. `intraday_trend.py` and config declare the versioned
+  price-action checks; daily MA20/MA50/ADX are context only, never entry gates.
+  Do not restore daily-MA crosses or ADX 25 as Normal blockers. Six contiguous
+  current-session intervals and a fresh live quote are required. No incomplete,
+  missing or stale prices may be filled in. Current history is bounded RAM only;
+  no research/Supabase/bulk recorder. Keep fixed Strategy graph index ranges and
+  daily context labels. This is an unbacktested hypothesis, not profit evidence.
+
 - October 16 owner changed Normal's scheduled owned-position exit to 18:44 JST.
   Keep the 18:30 new-entry cutoff and existing 19:00 flat-monitoring target.
   Begin closing on the first eligible fresh monitoring tick at/after 18:44;
