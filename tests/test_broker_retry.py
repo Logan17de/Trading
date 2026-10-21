@@ -22,7 +22,7 @@ RATE_LIMIT = dict(ok=False, error_type='RateLimited', code='429')
 def test_rate_limit_backoff_survives_restart_and_only_real_success_clears(tmp_path):
     store = Store(tmp_path/'journal.sqlite3')
     retry = BrokerRetry(store)
-    for delay in (300, 900, 1800, 3600, 3600):
+    for delay in (1800, 1800, 1800, 1800, 1800):
         retry.failed(RATE_LIMIT, NOW, stage='TOKEN')
         restarted = BrokerRetry(Store(store.path))
         assert restarted.error == RATE_LIMIT
@@ -35,11 +35,11 @@ def test_rate_limit_backoff_survives_restart_and_only_real_success_clears(tmp_pa
     assert retry.public(NOW, connected=True)['status'] == 'CONNECTED'
 
 
-def test_approval_failure_waits_fifteen_minutes_and_honors_longer_retry_after(tmp_path):
+def test_approval_failure_waits_thirty_minutes_and_honors_longer_retry_after(tmp_path):
     retry = BrokerRetry(Store(tmp_path/'j.sqlite3'))
     retry.failed(dict(RATE_LIMIT, code='403'), NOW, stage='TOKEN')
-    assert not retry.ready(NOW + timedelta(minutes=14))
-    assert retry.ready(NOW + timedelta(minutes=15))
+    assert not retry.ready(NOW + timedelta(minutes=29))
+    assert retry.ready(NOW + timedelta(minutes=30))
     retry.failed(RATE_LIMIT, NOW, stage='TOKEN', retry_after_seconds=7200)
     assert not retry.ready(NOW + timedelta(seconds=7199))
     assert retry.ready(NOW + timedelta(hours=2))
@@ -59,6 +59,31 @@ def test_rolling_token_budget_is_committed_before_request_and_not_reset_by_resta
     assert len(store.meta(KEY)['attempts']) == 1
     # A backward clock cannot make recorded future attempts disappear.
     assert restarted.public(NOW, connected=False)['local_token_attempts_24h'] == 1
+
+
+def test_no_connection_before_1300_jst_and_restart_cannot_request_tokens_often(tmp_path):
+    retry=BrokerRetry(Store(tmp_path/'j.sqlite3'))
+    before=NOW.replace(hour=3,minute=59,second=59)
+    assert not retry.ready(before)
+    assert retry.ready(before+timedelta(seconds=1))
+    retry.reserve_token(NOW)
+    restarted=BrokerRetry(retry.store)
+    assert not restarted.ready(NOW+timedelta(minutes=29),needs_token=True)
+    assert restarted.ready(NOW+timedelta(minutes=30),needs_token=True)
+    assert restarted.ready(NOW+timedelta(seconds=5)), 'healthy five-second reads continue'
+    # Friday's late retry waits for Monday 13:00 JST.
+    friday=NOW.replace(day=23,hour=10,minute=30)
+    retry.failed(RATE_LIMIT,friday,stage='TOKEN')
+    assert retry.value['retry_at']=='2026-10-26T04:00:00+00:00'
+
+
+def test_upgrade_extends_old_short_retry_without_another_token_attempt(tmp_path):
+    store=Store(tmp_path/'j.sqlite3')
+    store.set_meta(KEY,dict(attempts=[],failures=1,failure=RATE_LIMIT,failed_at=NOW.isoformat(),
+        retry_at=(NOW+timedelta(minutes=5)).isoformat()))
+    value=BrokerRetry(store)
+    assert not value.ready(NOW+timedelta(minutes=29))
+    assert not value.value['attempts']
 
 
 def runtime(tmp_path):

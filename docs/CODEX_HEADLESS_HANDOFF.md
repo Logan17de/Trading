@@ -15,9 +15,13 @@ inference, not a provider-confirmed reset time.
 existing journal. The observer allows at most 48 token attempts per rolling
 24 hours, committed before each request and retained across restarts. This is
 an observer-local budget, not a measurement of the owner's other clients or
-remaining Groww quota. HTTP 403/401 waits 15 minutes; 429 backs off 5, 15, 30,
-then 60 minutes, respecting a longer bounded numeric/HTTP-date Retry-After.
-Other failures back off from 60 seconds to 15 minutes. Same-day session tokens
+remaining Groww quota. The owner's latest instruction supersedes the initial
+short backoff: all failed reconnections wait **at least 30 minutes**, starting
+no earlier than **13:00 JST** weekdays, until the existing 19:45 collection
+cutoff. Later retries move to the next weekday at 13:00. Longer bounded numeric/
+HTTP-date Retry-After still takes precedence. Persisted token attempts also
+prevent a restart from generating a fresh token within 30 minutes of the last
+attempt. Healthy current-data polling continues at five seconds. Same-day tokens
 stay in RAM and are reused for temporary read failures, invalidated for actual
 401/403 or refreshed on the existing UTC-day rollover. No token enters SQLite,
 Git, reports or prompts. The transport audit is bounded to 64 RAM records.
@@ -29,11 +33,23 @@ while retaining original timestamps and historical lines. The dashboard shows
 the sanitized HTTP error and actual scheduled retry, separately from VM health.
 It never claims a quota reset or current data from a fresh failure snapshot.
 
+The independent failure monitor now groups continuous collector failures into
+one incident, including 403-to-429 changes and source-line changes. It preserves
+actual delivery receipts and updates current diagnostic details. Associated
+funds/positions/orders/market/input failures stay recorded but do not send extra
+emails for the same connection outage. Existing duplicate records are labelled
+notification-suppressed, never falsely marked recovered. Independently uncertain
+orders/protection still notify. An observed recovery allows a later outage to
+notify separately. Email quiet hours remain unchanged; no Codex schedule is
+created. Repeated accepted notifications are not resent.
+
 Local validation: 126 focused retry/owner/execution/trailing/input tests passed,
 then 24 final retry/observer/transport/UI checks passed after the immediate cached
-view invalidation refinement. JavaScript syntax and diff checks passed. All
-brokers were synthetic. Deployment/readback results are recorded below after
-the immutable paused/Off rollout; provider data recovery is still unconfirmed.
+view invalidation refinement. The first Oracle rollout passed 121 tests with one
+Node-dependent skip. The owner then requested the 30-minute/no-repeat-email
+policy; its 56 focused retry/monitor/quiet-hour/observer checks passed locally.
+All brokers and email transports in tests were synthetic. Final rollout and
+provider readback results are recorded below; recovery is still unconfirmed.
 
 Primary limit reference: [Groww authentication](https://groww.in/trade-api/docs/curl).
 

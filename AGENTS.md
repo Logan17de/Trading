@@ -2,6 +2,11 @@
 
 - October 21 connection recovery: keep `broker_retry.py`'s operational retry
   budget/cooldown across restarts. Never restore per-minute token generation.
+  The owner requires failed reconnection attempts at least 30 minutes apart,
+  starting no earlier than 13:00 JST weekdays, within the existing collection
+  end time. Healthy five-second reads continue. One continuous collector outage
+  gets one notification; dependent missing-data alerts stay recorded/suppressed,
+  while independent broker reconciliation/protection failures still alert.
   Tokens stay in RAM and can be reused after temporary read faults; an actual
   401/403 invalidates them. A heartbeat or Approved key page does not prove a
   successful broker read. Keep connection faults visible and cached cash/quotes

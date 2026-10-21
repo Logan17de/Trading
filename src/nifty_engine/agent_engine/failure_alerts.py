@@ -45,6 +45,8 @@ SETUP_BLOCKERS = {'LIVE_ENVIRONMENT_NOT_ACTIVATED', 'REPOSITORY_PAUSED',
     'REVIEWED_LIVE_ACTIVATION_REQUIRED', 'ALL_EXECUTABLE_STRATEGIES_OFF'}
 RECONCILIATION_BLOCKERS = {'BROKER_PROTECTION_RECONCILIATION_REQUIRED',
     'SELF_CLOSE_RECONCILIATION_REQUIRED', 'EXECUTOR_WORKER_RECONCILIATION_REQUIRED'}
+CONNECTION_DEPENDENTS = {'MARKET_DATA_STALE','FUNDS_UNAVAILABLE','POSITIONS_UNAVAILABLE',
+                         'ORDERS_UNAVAILABLE','NORMAL_DATA_WORKER_FAILED'}
 
 
 def diagnostics(value):
@@ -141,7 +143,7 @@ def envelope(incident, sender, recipient):
             f"<p>UTC {incident['detected_at']}<br>Incident {incident['id']}</p>"
             f"<pre style='padding:16px;background:#f1f6f5;white-space:pre-wrap'>{detail}</pre>"
             "<p>Check Options Trader and Groww. The monitor has not placed, cancelled or modified orders.</p>"
-            "<p>Codex incident checks are scheduled; this email does not confirm a wake-up or repair.</p></div>")}
+            "<p>This email does not confirm a Codex wake-up or repair.</p></div>")}
 
 
 class Monitor:
@@ -169,18 +171,36 @@ class Monitor:
     def record(self, found, now, *, complete=True):
         rows = self.state['incidents']
         present = set()
+        collector_key=None
         for code, fault in found.items():
             if code not in MESSAGES: raise ValueError('KNOWN_INCIDENT_REQUIRED')
             changing = {k:v for k,v in fault['details'].items() if k not in
                         ('received_at','heartbeat_at','heartbeat_sequence')}
-            key = identity([code, changing]); present.add(key)
+            key = identity([code, changing])
+            if code=='COLLECTOR_FAILED':
+                # Reuse the original continuous outage, including across error
+                # codes, source-line changes, reconnects and monitor restarts.
+                active=sorted(((k,r) for k,r in rows.items() if r['code']==code and r['state']=='OPEN'),
+                    key=lambda item:(item[1]['mail_status']!='ACCEPTED',item[1]['detected_at']))
+                key=active[0][0] if active else identity([code,'continuous-outage-v1',now.isoformat()])
+                collector_key=key
+            present.add(key)
             row = rows.get(key)
             if row is None or row['state']=='RECOVERED':
                 row = rows[key] = dict(fault, id=uuid.uuid4().hex, state='OPEN',
                     detected_at=now.isoformat(), last_seen_at=now.isoformat(),
                     mail_status='PENDING', attempts=0, next_attempt=0, inbox_verified=False)
             row['last_seen_at'] = now.isoformat()
+            if code=='COLLECTOR_FAILED':
+                row['details']=dict(fault['details'],affected_reads=sorted(CONNECTION_DEPENDENTS & found.keys()))
             row.pop('healthy_since', None)
+        for key,row in rows.items():
+            if row['state']!='OPEN':continue
+            if collector_key and key!=collector_key and (row['code']=='COLLECTOR_FAILED' or row['code'] in CONNECTION_DEPENDENTS & found.keys()):
+                row['notification_suppressed_by']=rows[collector_key]['id']
+                if row['code']=='COLLECTOR_FAILED':
+                    present.add(key);row.pop('healthy_since',None)
+            else:row.pop('notification_suppressed_by',None)
         if complete:
             for key, row in rows.items():
                 if key in present or row['state']!='OPEN': continue
@@ -197,7 +217,7 @@ class Monitor:
         # One frozen email per incident. A timeout retries the same envelope/key.
         rows = sorted(self.state['incidents'].values(), key=lambda r:(not r['immediate'], r['detected_at']))
         for row in rows:
-            if row['state']!='OPEN' or row['mail_status'] in ('ACCEPTED','DELIVERY_UNKNOWN') or row.get('healthy_since'): continue
+            if row['state']!='OPEN' or row['mail_status'] in ('ACCEPTED','DELIVERY_UNKNOWN') or row.get('healthy_since') or row.get('notification_suppressed_by'): continue
             if not row['immediate'] and (now-stamp(row['detected_at'])).total_seconds()<60: continue
             if row['next_attempt']>now.timestamp(): continue
             if row.get('first_attempt') and now.timestamp()-row['first_attempt']>=23*3600:
@@ -240,7 +260,7 @@ class Monitor:
 
     def public(self):
         fields=('id','code','component','message','details','state','detected_at','last_seen_at',
-            'recovered_at','mail_status','attempts','accepted_at','provider_event','recipient_server_accepted','inbox_verified')
+            'recovered_at','mail_status','attempts','accepted_at','provider_event','recipient_server_accepted','inbox_verified','notification_suppressed_by')
         return dict(format='trading-failure-monitor-v1',checked_at=self.state.get('checked_at'),
             health=self.state.get('health'),mail_window=self.state.get('mail_window'),broker_writes=False,
             incidents=[{k:r[k] for k in fields if k in r} for r in self.state['incidents'].values()])

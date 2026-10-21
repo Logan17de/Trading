@@ -586,7 +586,8 @@ class Runtime:
                 except Exception:pass
 
     def collection_step(self,now):
-        if not collection_window(now) or not self.broker_retry.ready(now):return
+        needs_token=self.access_token is None or self.access_token_day!=now.date()
+        if not collection_window(now) or not self.broker_retry.ready(now,needs_token=needs_token):return
         stage='TOKEN' if self.access_token is None or self.access_token_day!=now.date() else 'COLLECTION'
         audit_marker={}
         self.transport_audit.append(audit_marker)

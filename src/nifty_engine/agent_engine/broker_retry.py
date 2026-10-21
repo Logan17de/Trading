@@ -1,13 +1,24 @@
 """Small durable connection retry budget. Contains no tokens or credentials."""
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import time, timedelta, timezone
 
 from .contracts import stamp
+from .pc_control import JST
 
 KEY = 'groww-connection-retry-v1'
 WINDOW = timedelta(hours=24)
 MAX_TOKEN_ATTEMPTS = 48  # Local ceiling; other clients' provider usage is unknown.
+RETRY_SECONDS = 1800
+
+
+def next_window(at):
+    local=at.astimezone(JST)
+    if local.weekday()<5 and time(13)<=local.time()<time(19,45):return at
+    target=local.replace(hour=13,minute=0,second=0,microsecond=0)
+    if target<local:target+=timedelta(days=1)
+    while target.weekday()>=5:target+=timedelta(days=1)
+    return target.astimezone(timezone.utc)
 
 
 class LocalAuthBudgetExceeded(ConnectionError):
@@ -27,14 +38,24 @@ class BrokerRetry:
             stamp(at)
         if self.value.get('retry_at'):
             stamp(self.value['retry_at'])
+        if self.error and self.value.get('failed_at'):
+            earliest=next_window(stamp(self.value['failed_at'])+timedelta(seconds=RETRY_SECONDS))
+            if earliest>stamp(self.value['retry_at']):
+                self.value['retry_at']=earliest.isoformat()
+                self.store.set_meta(KEY,self.value)
 
     @property
     def error(self):
         return self.value.get('failure')
 
-    def ready(self, now):
-        at = self.value.get('retry_at')
-        return not at or now >= stamp(at)
+    def next_at(self, now, *, needs_token=False):
+        at=max(now,stamp(self.value['retry_at'])) if self.value.get('retry_at') else now
+        if needs_token and self.value['attempts']:
+            at=max(at,max(map(stamp,self.value['attempts']))+timedelta(seconds=RETRY_SECONDS))
+        return next_window(at)
+
+    def ready(self, now, *, needs_token=False):
+        return now>=self.next_at(now,needs_token=needs_token)
 
     def reserve_token(self, now):
         # Commit before the HTTP request. Crashes/restarts do not reset usage.
@@ -55,16 +76,16 @@ class BrokerRetry:
         failures = min(20, self.value['failures'] + 1 if same else 1)
         code = error.get('code')
         if code == '429':
-            delay = (300, 900, 1800, 3600)[min(failures - 1, 3)]
             reason = 'PROVIDER_RATE_LIMIT'
         elif code in ('401', '403'):
-            delay, reason = 900, 'APPROVAL_OR_ACCESS_REQUIRED'
+            reason = 'APPROVAL_OR_ACCESS_REQUIRED'
         else:
-            delay, reason = min(900, 60 * 2 ** min(failures - 1, 4)), 'CONNECTION_RETRY'
+            reason = 'CONNECTION_RETRY'
+        delay=RETRY_SECONDS
         if type(retry_after_seconds) in (int, float) and 0 <= retry_after_seconds <= 604800:
             delay = max(delay, retry_after_seconds)
         self.value.update(failures=failures, failure=error, failed_at=now.isoformat(),
-            retry_at=(now + timedelta(seconds=delay)).isoformat(), stage=stage, reason=reason)
+            retry_at=next_window(now + timedelta(seconds=delay)).isoformat(), stage=stage, reason=reason)
         self.store.set_meta(KEY, self.value)
 
     def succeeded(self, now):
@@ -78,9 +99,10 @@ class BrokerRetry:
     def public(self, now, *, connected):
         return dict(status=self.value.get('reason') if self.error else
                     'CONNECTED' if connected else 'NOT_CONNECTED',
-            failure=self.error, next_retry_at=self.value.get('retry_at') if self.error else None,
+            failure=self.error, next_retry_at=self.next_at(now,needs_token=not connected).isoformat() if self.error or not connected else None,
             failed_at=self.value.get('failed_at') if self.error else None,
             stage=self.value.get('stage') if self.error else None,
             local_token_attempts_24h=sum(stamp(at) > now - WINDOW for at in self.value['attempts']),
             local_token_attempt_limit=MAX_TOKEN_ATTEMPTS,
+            retry_interval_seconds=RETRY_SECONDS,retry_window_jst=['13:00','19:45'],
             provider_remaining_quota=None, broker_writes=False)
