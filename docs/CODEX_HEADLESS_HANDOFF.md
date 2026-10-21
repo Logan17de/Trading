@@ -47,9 +47,31 @@ Local validation: 126 focused retry/owner/execution/trailing/input tests passed,
 then 24 final retry/observer/transport/UI checks passed after the immediate cached
 view invalidation refinement. The first Oracle rollout passed 121 tests with one
 Node-dependent skip. The owner then requested the 30-minute/no-repeat-email
-policy; its 56 focused retry/monitor/quiet-hour/observer checks passed locally.
-All brokers and email transports in tests were synthetic. Final rollout and
-provider readback results are recorded below; recovery is still unconfirmed.
+policy; 66 final retry/monitor/quiet-hour/observer/owner checks passed locally.
+The final immutable release passed **159 Oracle tests with one Node-dependent
+skip**. JavaScript/diff checks passed. The offline demo completed two synthetic
+jobs and queued one unsent report. Brokers and test email transports were fake.
+
+Observer and independent alert unit now explicitly pin
+`a2f43ffc30bac486125f4e8fd48c9b727e952c82`. Their PC reader pins match. Each
+rollout made a private SQLite backup with integrity `ok`; exact owner controls,
+ownership/receipts/capital, protected environment, original shared pause and
+shared-service identities were preserved. The observer rollout left **Algo Off,
+paper and runtime pause present**. A later owner Start must renew source-bound
+consent. The alert update did not restart the observer or interrupt an in-flight
+email attempt. No broker order, activation, credential rotation or test email
+was performed.
+
+Readback around **17:41 JST October 21** showed advancing healthy Oracle
+heartbeats, a persistent HTTP 429 fault, zero new observer token attempts since
+the retry policy change, and the preserved next retry **17:58:09 JST**. That is
+an attempt time, not a promised provider reset/recovery. Data remains unavailable
+until a real successful read. The independent monitor was CURRENT and retained
+one accepted collector notification with dependent alerts suppressed. The
+provider reports recipient-server acceptance for that existing notification;
+inbox placement is not verified. No resend was requested. Owner Edge visibly
+shows the error and next retry, with unknown current money/quotes and Algo Off.
+Private proof: `.agent-state/groww-retry-policy-edge-20261021.png`.
 
 Primary limit reference: [Groww authentication](https://groww.in/trade-api/docs/curl).
 
