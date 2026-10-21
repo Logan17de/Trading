@@ -14,6 +14,7 @@ import threading
 import time
 import traceback
 import uuid
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -55,11 +56,29 @@ class Runtime:
         self.normal_catalog=normal_catalog(self.root)
         self.lean=bool(self.normal_catalog and not self.normal_catalog['research_enabled'])
         self.state=DashboardState(root,background=True,record_market_data=not self.lean)
-        self.stop=threading.Event();self.collector=None;self.next_auth=0;self.token_day=None
+        self.stop=threading.Event();self.collector=None;self.token_day=None
         self.boot_id=uuid.uuid4().hex;self.sequence=1;self.at=datetime.now(timezone.utc).isoformat();self.error=None
         self.mail=DailyMail(self.state.pnl_lines.store);self.next_mail=0
         self.mail_state={"status":"EOD_PREPARED_AFTER_CLOSE_SENT_NEXT_SESSION","provider_accepted":False,"inbox_verified":False}
         self.output=self.state.directory/"market-check-oracle-live.json"
+        from .broker_retry import BrokerRetry
+        self.broker_retry=BrokerRetry(self.state.pnl_lines.store)
+        # Upgrade an existing failed snapshot without immediately consuming
+        # another token. The failure is evidence, not a successful connection.
+        if not self.broker_retry.error:
+            from .dashboard import load_json
+            from .contracts import stamp
+            try:
+                old=load_json(self.output,8_000_000)
+                at=stamp(old.get('finished_at'))
+                if (old.get('status')=='BLOCKED' and isinstance(old.get('failure'),dict)
+                        and old['failure'].get('code') in ('401','403','429')
+                        and 0 <= (datetime.now(timezone.utc)-at).total_seconds() < 86400):
+                    self.broker_retry.failed(old['failure'],at,stage='PREVIOUS_CONNECTION_FAILURE')
+            except (OSError,ValueError,TypeError):pass
+        self.error=self.broker_retry.error
+        self.access_token=None;self.access_token_day=None
+        self.transport_audit=deque(maxlen=64)
         self.preparer=None
         self.report_data=None
         self.executor=None
@@ -136,8 +155,10 @@ class Runtime:
         view['runtime']['heartbeat_at']=self.at
         view['runtime']['initializing']=self.sequence==1
         view['runtime']['error']=self.error
-        if age>45:
-            view['runtime']['view_status']='STALE_RENDER'
+        view['runtime']['broker_connection']=self.broker_retry.public(now,connected=self.collector is not None)
+        if age>45 or self.error:
+            reason='BROKER_CONNECTION_UNAVAILABLE' if self.error else 'OBSERVER_VIEW_STALE'
+            view['runtime']['view_status']='BROKER_UNAVAILABLE' if self.error else 'STALE_RENDER'
             view['runtime']['orders_enabled']=False
             view['order_capability']=False
             if isinstance(view.get('control'),dict):
@@ -146,12 +167,26 @@ class Runtime:
                 if isinstance(algo,dict):
                     algo['execution_enabled']=False
                     algo['status']='ON_BLOCKED' if algo.get('desired_enabled') else 'OFF'
-                    algo['blockers']=list(dict.fromkeys(algo.get('blockers',[])+['OBSERVER_VIEW_STALE']))
+                    algo['blockers']=list(dict.fromkeys(algo.get('blockers',[])+[reason]))
             ex=view.get('execution_controller')
             if isinstance(ex,dict):
                 ex['execution_enabled']=False
                 ex['status']='BLOCKED'
-                ex['blockers']=list(dict.fromkeys(ex.get('blockers',[])+['OBSERVER_VIEW_STALE']))
+                ex['blockers']=list(dict.fromkeys(ex.get('blockers',[])+[reason]))
+            if self.error:
+                # Immediately invalidate a last-good cached render. Retain
+                # original timestamps/history, never stale money as current.
+                view.update(market_status='BLOCKED',positions_status='UNAVAILABLE',orders_status='UNAVAILABLE')
+                funds=view.get('funds',{})
+                funds['status']='UNAVAILABLE'
+                for key in funds:
+                    if key.endswith('_inr'):funds[key]=None
+                from .broker_pnl import public as pnl_public
+                view['broker_pnl']=dict(pnl_public({},now),series=view.get('broker_pnl',{}).get('series',[]))
+                for market in view.get('markets',[]):
+                    for key in ('price','change','change_pct','high','low'):market[key]=None
+                    for option in market.get('options',[]):
+                        for key in ('last_price','bid','ask','open_pnl_inr'):option[key]=None
         else:view['runtime']['view_status']='FRESH_RENDER'
         return view
 
@@ -172,6 +207,7 @@ class Runtime:
             execution['worker_failure']=self.execution_error
         view["runtime"]={"host":"ORACLE","boot_id":self.boot_id,"heartbeat_sequence":self.sequence,
             "heartbeat_at":self.at,"error":self.error,"orders_enabled":execution["execution_enabled"],"collector_host":"ORACLE"}
+        view['runtime']['broker_connection']=self.broker_retry.public(datetime.now(timezone.utc),connected=self.collector is not None)
         view["execution_controller"]=execution
         from .live_setup import public as live_setup_public
         view['live_setup']=live_setup_public(self.state.pnl_lines.store,self.gate)
@@ -330,7 +366,7 @@ class Runtime:
         from ..brokers.groww_data import GrowwMarketData
         from .smart_read import SmartOrderReader
         if importlib.metadata.version("growwapi")!=SDK_VERSION:raise ValueError("SDK pin mismatch")
-        token=GrowwAPI.get_access_token(api_key=os.environ["GROWW_OBSERVER_API_KEY"],secret=os.environ["GROWW_OBSERVER_API_SECRET"])
+        token=self.session_token(now)
         market=GrowwMarketData(token)
         from .contracts import identity
         try:
@@ -379,6 +415,14 @@ class Runtime:
         # lock after every REST sample couples account cadence to tick research.
         self.impulse.attach(market)
         self.token_day=now.date()
+
+    def session_token(self,now):
+        from growwapi import GrowwAPI
+        if self.access_token is None or self.access_token_day!=now.date():
+            self.broker_retry.reserve_token(now)
+            self.access_token=GrowwAPI.get_access_token(api_key=os.environ['GROWW_OBSERVER_API_KEY'],secret=os.environ['GROWW_OBSERVER_API_SECRET'])
+            self.access_token_day=now.date()
+        return self.access_token  # RAM only; temporary read faults reuse the session.
 
     def preparation_loop(self):
         # Analytical margin POSTs share the process's read-only HTTP guard. They
@@ -541,6 +585,61 @@ class Runtime:
                 try:self.state.pnl_lines.store.set_meta('oracle-backup-health',dict(status='FAILED',at=now.isoformat(),failure=observer_error(exc)))
                 except Exception:pass
 
+    def collection_step(self,now):
+        if not collection_window(now) or not self.broker_retry.ready(now):return
+        stage='TOKEN' if self.access_token is None or self.access_token_day!=now.date() else 'COLLECTION'
+        audit_marker={}
+        self.transport_audit.append(audit_marker)
+        try:
+            if self.collector is None or self.token_day!=now.date():
+                if self.collector:self.collector.close()
+                self.connect(now)
+            stage='COLLECTION'
+            # Serialize owned writes with raw ownership reads. Calculation and
+            # history workers remain independent of the five-second collector.
+            with self.executor.lock:
+                self.executor.reconcile_before_collection()
+                value=self.collector.sample()
+            write_snapshot(self.output,value)
+            if value.get('status')=='BLOCKED' or any(r.get('code') in ('401','403') for r in value.get('probes',{}).values()):
+                failed=next((r for r in value.get('probes',{}).values() if r.get('code') in ('401','403','429')),None)
+                error=ConnectionError('read unavailable')
+                if failed:error.code=failed['code']
+                raise error
+            if self.lean:
+                self.state.observed_lines.record(value,datetime.now(timezone.utc))
+                self.state.pnl_lines.record(value['broker_pnl'],datetime.now(timezone.utc))
+            from .dashboard import load_json
+            self.state.monitor.tick(load_json(self.output,8_000_000),
+                load_json(self.root/'config/owner_strategies.json',16384),datetime.now(timezone.utc))
+            self.broker_retry.succeeded(datetime.now(timezone.utc))
+            self.error=None
+        except Exception as exc:
+            self.error=observer_error(exc)
+            # The same request guard sees all workers. Find only a token 429
+            # when authentication failed; never copy raw responses or headers.
+            retry_after=None
+            for row in reversed(tuple(self.transport_audit)):
+                if row is audit_marker:break
+                if (row.get('http_status')==429 and
+                        (stage!='TOKEN' or row.get('path')=='/v1/token/api/access')):
+                    retry_after=row.get('retry_after_seconds');break
+            if self.error.get('code') in ('401','403'):
+                self.access_token=None;self.access_token_day=None
+            if self.collector:self.collector.close()
+            self.collector=None;self.preparer=None;self.report_data=None;self.executor=None
+            self.impulse.detach()
+            try:self.broker_retry.failed(self.error,datetime.now(timezone.utc),stage=stage,retry_after_seconds=retry_after)
+            except Exception as persist_error:
+                # Preserve a fail-closed memory latch even if operational storage
+                # fails. Do not keep making token requests without a budget.
+                from datetime import timedelta
+                self.error=observer_error(persist_error)
+                self.broker_retry.value.update(failure=self.error,reason='RETRY_STATE_UNAVAILABLE',
+                    retry_at=(datetime.now(timezone.utc)+timedelta(days=1)).isoformat())
+            write_snapshot(self.output,dict(finished_at=datetime.now(timezone.utc).isoformat(),
+                status='BLOCKED',failure=self.error,order_capability=False))
+
     def run(self):
         self.research_archive.start()
         self.cache_thread_active=True
@@ -550,45 +649,13 @@ class Runtime:
         if not self.lean: threading.Thread(target=self.retention_loop,daemon=True).start()
         with open(os.devnull,"w") as muted,contextlib.redirect_stdout(muted),contextlib.redirect_stderr(muted):
             logging.disable(logging.CRITICAL)
-            with readonly_transport([],history=True,dashboard=True,calculations=True,feed=True,timeout_seconds=5):
+            with readonly_transport(self.transport_audit,history=True,dashboard=True,calculations=True,feed=True,timeout_seconds=5):
                 self.impulse.start()
                 threading.Thread(target=self.preparation_loop,daemon=True).start()
                 threading.Thread(target=self.execution_loop,daemon=True).start()
                 while not self.stop.is_set():
                     started=time.monotonic();now=datetime.now(timezone.utc)
-                    try:
-                        if collection_window(now) and now.timestamp()>=self.next_auth:
-                            if self.collector is None or self.token_day!=now.date():
-                                if self.collector:self.collector.close()
-                                self.connect(now)
-                            # Serialize an owned write with raw ownership reads;
-                            # calculation/history workers remain independent.
-                            with self.executor.lock:
-                                self.executor.reconcile_before_collection()
-                                value=self.collector.sample()
-                            write_snapshot(self.output,value)
-                            if self.lean:
-                                self.state.observed_lines.record(value,datetime.now(timezone.utc))
-                                self.state.pnl_lines.record(value['broker_pnl'],datetime.now(timezone.utc))
-                            if value.get("status")=="BLOCKED" or any(r.get("code")=="403" for r in value.get("probes",{}).values()):
-                                raise ConnectionError("read unavailable")
-                        # Collection already persists observations. Building full
-                        # chart views here duplicates SSH-reader work and delays ticks.
-                        if self.collector:
-                            from .dashboard import load_json
-                            self.state.monitor.tick(load_json(self.output,8_000_000),
-                                load_json(self.root/"config/owner_strategies.json",16384),datetime.now(timezone.utc))
-                        self.error=None
-                    except Exception as exc:
-                        self.error=observer_error(exc)
-                        self.next_auth=now.timestamp()+60
-                        if self.collector:self.collector.close()
-                        self.collector=None
-                        self.preparer=None
-                        self.report_data=None
-                        self.executor=None
-                        self.impulse.detach()
-                        write_snapshot(self.output,{"finished_at":now.isoformat(),"status":"BLOCKED","failure":self.error,"order_capability":False})
+                    self.collection_step(now)
                     self.sequence+=1;self.at=datetime.now(timezone.utc).isoformat()
                     self.stop.wait(max(0,5-(time.monotonic()-started)))
 

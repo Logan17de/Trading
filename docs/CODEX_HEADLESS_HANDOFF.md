@@ -1,5 +1,42 @@
 # Current Trading handoff
 
+## October 21 missing data — connection retry repair
+
+The PC viewer and advancing Oracle heartbeat were reachable, but Groww token
+generation failed: earlier HTTP 403, then repeated HTTP 429. The existing Codex
+key was visibly Approved in the owner's Edge. One sanitized read-only probe at
+08:16:35 UTC confirmed 429 with no Retry-After header. Its generic rate-limit
+response did not identify the quota/reset. Groww documents 150 token requests
+per rolling 24 hours in addition to short-period limits; the old one-minute
+reauthentication loop could exhaust that allowance. Daily exhaustion remains an
+inference, not a provider-confirmed reset time.
+
+`broker_retry.py` now stores only small operational retry metadata in the
+existing journal. The observer allows at most 48 token attempts per rolling
+24 hours, committed before each request and retained across restarts. This is
+an observer-local budget, not a measurement of the owner's other clients or
+remaining Groww quota. HTTP 403/401 waits 15 minutes; 429 backs off 5, 15, 30,
+then 60 minutes, respecting a longer bounded numeric/HTTP-date Retry-After.
+Other failures back off from 60 seconds to 15 minutes. Same-day session tokens
+stay in RAM and are reused for temporary read failures, invalidated for actual
+401/403 or refreshed on the existing UTC-day rollover. No token enters SQLite,
+Git, reports or prompts. The transport audit is bounded to 64 RAM records.
+
+Only a completed successful collection clears the connection fault. Skipped
+ticks, quiet hours, heartbeat progression and token generation cannot clear it.
+Failed cached views immediately invalidate current cash/quotes/P&L/readiness
+while retaining original timestamps and historical lines. The dashboard shows
+the sanitized HTTP error and actual scheduled retry, separately from VM health.
+It never claims a quota reset or current data from a fresh failure snapshot.
+
+Local validation: 126 focused retry/owner/execution/trailing/input tests passed,
+then 24 final retry/observer/transport/UI checks passed after the immediate cached
+view invalidation refinement. JavaScript syntax and diff checks passed. All
+brokers were synthetic. Deployment/readback results are recorded below after
+the immutable paused/Off rollout; provider data recovery is still unconfirmed.
+
+Primary limit reference: [Groww authentication](https://groww.in/trade-api/docs/curl).
+
 ## October 19 intraday Normal direction — installed, Algo Off
 
 Owner explicitly confirmed the last 30 minutes of completed five-minute prices,

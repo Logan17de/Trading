@@ -491,15 +491,28 @@ function renderAccount() {
   const strategyHTML=data.strategies.map((s,i)=>`<tr><td><div class="strategy-info ${known(s.net_pnl_inr)&&s.net_pnl_inr<0?"negative":""}"><span class="strategy-number">${i+1}</span><div class="strategy-content"><div class="strategy-name">${escapeHTML(s.name)}</div>${data.control?.strategy_controls?`<button class="strategy-toggle" type="button" role="switch" aria-checked="${Boolean(s.desired_enabled)}" aria-label="${escapeHTML(s.name)} ${s.mode==='MONITOR_ONLY'?'monitoring':'new entries'}" data-strategy="${escapeHTML(s.id)}" ${strategySwitchPending||data.demo||data.vm?.status!=='HEALTHY'?'disabled':''}>${s.mode==='MONITOR_ONLY'?'Monitor ':''}${s.desired_enabled?'On':'Off'}</button><small class="strategy-route">${s.mode==='MONITOR_ONLY'?'Research only · no broker orders':'Guarded executor · see readiness above'}</small>`:''}${strategyReadinessHTML(s)}<p class="strategy-description">${escapeHTML(s.description)}</p><div class="outcome-track" role="img" aria-label="${escapeHTML(s.name)}: ${s.closed_trades?`${s.non_loss_pct.toFixed(1)}% non-losing, ${s.loss_pct.toFixed(1)}% losing, ${s.closed_trades} closed trades`:"No results"}"><span class="profit-segment" style="width:${s.non_loss_pct??0}%"></span><span class="loss-segment" style="width:${s.loss_pct??0}%"></span></div><span class="outcome-caption">${s.closed_trades?`${s.non_loss_pct.toFixed(0)}% non-loss · ${s.loss_pct.toFixed(0)}% loss · ${s.closed_trades} trades`:"No results"}</span></div></div></td><td class="${known(s.return_pct)?s.return_pct<0?"negative":"positive":""}">${percent(s.return_pct)}</td><td class="${known(s.net_pnl_inr)?s.net_pnl_inr<0?"negative":"positive":""}">${signed(s.net_pnl_inr)}</td></tr>`).join("");
   if($("strategy-rows").innerHTML!==strategyHTML) $("strategy-rows").innerHTML=strategyHTML;
 }
+function brokerConnectionMessage(view) {
+  const connection=view.runtime?.broker_connection,error=connection?.failure||view.runtime?.error;
+  if(!error) return null;
+  const code=String(error.code||''),reason=connection?.status;
+  const detail=code==='429'?'Groww rate limited (HTTP 429).':
+    ['401','403'].includes(code)?`Groww authentication/access failed (HTTP ${code}).`:
+    reason==='LOCAL_AUTH_BUDGET'?'Groww connection paused at the local token-request limit.':
+    'The Oracle Groww connection failed.';
+  const at=connection?.next_retry_at,valid=typeof at==='string'&&Number.isFinite(Date.parse(at));
+  const retry=valid?` Automatic retry: ${dateTime(at)} ${timeZone==='Asia/Tokyo'?'JST':'IST'}.`:'';
+  return `${detail}${retry} Market prices, positions and money remain unknown until a successful read.`;
+}
 function render() {
   if(!data) return;
   renderCapital(); renderIndices(); renderOptions(); renderAccount(); renderControl();
   const recent=data.freshness==="RECENT";
-  $("data-status").textContent=data.demo?"Sample data":data.freshness==="NO_DATA"?"No market data":recent?"Latest snapshot":"Saved snapshot";
-  $("data-status").className="status-pill"+(data.demo?" demo":!recent?" stale":"");
+  const connectionFailure=!data.demo&&brokerConnectionMessage(data);
+  $("data-status").textContent=data.demo?"Sample data":connectionFailure?'Groww unavailable':data.freshness==="NO_DATA"?"No market data":recent?"Latest snapshot":"Saved snapshot";
+  $("data-status").className="status-pill"+(data.demo?" demo":!recent||connectionFailure?" stale":"");
   $("as-of").textContent=data.as_of?`${dateTime(data.as_of)} ${timeZone==="Asia/Tokyo"?"JST":"IST"}`:"Refresh to read Groww data";
   $("footer-source").textContent=data.demo?"Design preview · all figures simulated":`Groww observations · ${timeZone==="Asia/Tokyo"?"JST":"IST"} · Viewing only`;
-  const message=data.demo?"DESIGN PREVIEW — sample prices and results. Switch off sample data in settings to return to your actual snapshots.":data.refresh_error||data.market_status==="BLOCKED"?"The latest data refresh failed. Values remain unknown until a current read succeeds.":data.offline?"Offline viewing. Showing saved observations; broker refresh is disabled.":data.market_status==="PARTIAL_MARKET_DATA"?"Some Groww quote reads failed. Missing values remain unavailable.":data.orders_status==="INCOMPLETE"?"Some orders or positions could not be fully checked. Only confirmed contracts are shown.":data.freshness==="STALE"?"Showing a saved snapshot. Refresh data to request a current read.":null;
+  const message=data.demo?"DESIGN PREVIEW — sample prices and results. Switch off sample data in settings to return to your actual snapshots.":connectionFailure||((data.refresh_error||data.market_status==="BLOCKED")?"The latest data refresh failed. Values remain unknown until a current read succeeds.":data.offline?"Offline viewing. Showing saved observations; broker refresh is disabled.":data.market_status==="PARTIAL_MARKET_DATA"?"Some Groww quote reads failed. Missing values remain unavailable.":data.orders_status==="INCOMPLETE"?"Some orders or positions could not be fully checked. Only confirmed contracts are shown.":data.freshness==="STALE"?"Showing a saved snapshot. Refresh data to request a current read.":null);
   $("notice").hidden=!message; $("notice").textContent=message||"";
   $("refresh").disabled=refreshPending||demo||data.offline;
   $("refresh").classList.toggle("loading",refreshPending);

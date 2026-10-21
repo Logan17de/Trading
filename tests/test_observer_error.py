@@ -102,6 +102,7 @@ def test_cached_observer_reads_do_not_wait_for_slow_renderer():
         'execution_controller':{'execution_enabled':False,'blockers':[]},
         'runtime':{},'as_of':r.view_cache_at.isoformat()}
     r.sequence=2;r.at=r.view_cache_at.isoformat();r.error=None
+    r.collector=None;r.broker_retry=SimpleNamespace(public=lambda *args,**kwargs:{'status':'NOT_CONNECTED'})
     def blocked_render():
         time.sleep(4)
         return {}
@@ -124,6 +125,7 @@ def test_stale_cached_oracle_view_fails_closed_and_revalidates_account():
     r.cache_thread_active=True;r.view_cache_lock=threading.Lock()
     past=datetime.now(timezone.utc)-timedelta(minutes=3)
     r.view_cache_at=past;r.sequence=4;r.at=past.isoformat();r.error=None
+    r.collector=None;r.broker_retry=SimpleNamespace(public=lambda *args,**kwargs:{'status':'NOT_CONNECTED'})
     r.view_cache={'format':'trading-dashboard-v1','order_capability':False,
         'markets':[],'funds':{'received_at':past.isoformat(),'status':'AVAILABLE',
             'option_buy_available_inr':123,'option_sell_available_inr':456},

@@ -1,5 +1,13 @@
 # Trading workspace
 
+- October 21 connection recovery: keep `broker_retry.py`'s operational retry
+  budget/cooldown across restarts. Never restore per-minute token generation.
+  Tokens stay in RAM and can be reused after temporary read faults; an actual
+  401/403 invalidates them. A heartbeat or Approved key page does not prove a
+  successful broker read. Keep connection faults visible and cached cash/quotes
+  unknown until collection succeeds. HTTP 429 does not disclose remaining quota
+  or a reset time unless the provider supplies one. Maintenance never trades.
+
 - October 19 owner approved the last 30 minutes of completed five-minute prices
   for Normal direction. `intraday_trend.py` and config declare the versioned
   price-action checks; daily MA20/MA50/ADX are context only, never entry gates.
