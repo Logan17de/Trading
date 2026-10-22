@@ -1,5 +1,33 @@
 # Current Trading handoff
 
+## October 22 — completely shut down at owner request
+
+The owner explicitly requested the entire trader be turned off. Durable Algo
+intent is Off, execution mode remains paper, and both the runtime pause and
+original shared pause are present. Do not resume any trader component without
+a new explicit owner request. This supersedes the retry schedule below.
+
+Oracle `trading-observer.service` and `trading-failure-watchdog.timer` are stopped
+and disabled; the watchdog service is stopped. The old Growing-Trader service
+and market-start/preopen-auth timers are also inactive and disabled; their
+static services are stopped. A final process/cron check found no remaining
+`nifty_engine` processes or matching cron launchers. Shared Qwen gateway, Zetbros
+mail, mail tunnel and Oracle tunnel services remain active with unchanged
+identities. The VM remains running. No credentials or broker permissions changed.
+
+The PC dashboard/monitor is stopped, port 8765 has no listener, and no local
+trader Python processes or enabled trader scheduled tasks remain. The owned
+Options Trader Monitor login shortcut was moved to a private reversible backup;
+the private installation record now marks logon startup disabled. App sources,
+manual launch shortcuts, private journals, protected vault and immutable releases
+are retained. Oracle's SQLite backup API snapshot passed integrity `ok`.
+
+Shutdown was verified around 14:01 JST October 22. No broker order/position was
+placed, modified, cancelled or closed. The local journal had no nonclosed owned
+order records, but complete live Groww account reads were unavailable; that is
+not proof that the owner's account has no manual positions or pending orders.
+Broker-held orders may still act independently; review them directly in Groww.
+
 ## October 21 missing data — connection retry repair
 
 The PC viewer and advancing Oracle heartbeat were reachable, but Groww token

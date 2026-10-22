@@ -1,5 +1,12 @@
 # Trading workspace
 
+- October 22: owner explicitly ordered the trader completely OFF. Oracle trader
+  services/timers and the PC app/logon startup are stopped and disabled. Keep
+  Algo Off, paper and pause. Do not restart collection, execution, reports,
+  failure emails or trader startup during diagnostics without a new explicit
+  owner request to resume. Preserve journals, credentials and shared Oracle
+  Qwen/mail/tunnel services; stopping this trader does not close broker trades.
+
 - October 21 connection recovery: keep `broker_retry.py`'s operational retry
   budget/cooldown across restarts. Never restore per-minute token generation.
   The owner requires failed reconnection attempts at least 30 minutes apart,
