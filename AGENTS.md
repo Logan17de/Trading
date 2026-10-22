@@ -1,5 +1,66 @@
 # Trading workspace
 
+- October 22: owner explicitly ordered the trader completely OFF. Oracle trader
+  services/timers and the PC app/logon startup are stopped and disabled. Keep
+  Algo Off, paper and pause. Do not restart collection, execution, reports,
+  failure emails or trader startup during diagnostics without a new explicit
+  owner request to resume. Preserve journals, credentials and shared Oracle
+  Qwen/mail/tunnel services; stopping this trader does not close broker trades.
+
+- October 21 connection recovery: keep `broker_retry.py`'s operational retry
+  budget/cooldown across restarts. Never restore per-minute token generation.
+  The owner requires failed reconnection attempts at least 30 minutes apart,
+  starting no earlier than 13:00 JST weekdays, within the existing collection
+  end time. Healthy five-second reads continue. One continuous collector outage
+  gets one notification; dependent missing-data alerts stay recorded/suppressed,
+  while independent broker reconciliation/protection failures still alert.
+  Tokens stay in RAM and can be reused after temporary read faults; an actual
+  401/403 invalidates them. A heartbeat or Approved key page does not prove a
+  successful broker read. Keep connection faults visible and cached cash/quotes
+  unknown until collection succeeds. HTTP 429 does not disclose remaining quota
+  or a reset time unless the provider supplies one. Maintenance never trades.
+
+- October 19 owner approved the last 30 minutes of completed five-minute prices
+  for Normal direction. `intraday_trend.py` and config declare the versioned
+  price-action checks; daily MA20/MA50/ADX are context only, never entry gates.
+  Do not restore daily-MA crosses or ADX 25 as Normal blockers. Six contiguous
+  current-session intervals and a fresh live quote are required. No incomplete,
+  missing or stale prices may be filled in. Current history is bounded RAM only;
+  no research/Supabase/bulk recorder. Keep fixed Strategy graph index ranges and
+  daily context labels. This is an unbacktested hypothesis, not profit evidence.
+
+- October 16 owner changed Normal's scheduled owned-position exit to 18:44 JST.
+  Keep the 18:30 new-entry cutoff and existing 19:00 flat-monitoring target.
+  Begin closing on the first eligible fresh monitoring tick at/after 18:44;
+  never claim a guaranteed fill at that exact clock time. Normal's basket
+  profit/loss/trailing/DTE rules remain current. Do not restore retired fixed
+  INR 8 / INR 32 short-roll rules merely when explaining exit behavior.
+
+- October 16 owner supersedes research/archive/GTT requirements below. Active
+  runtime is Normal Theta only. Do not start research campaigns, impulse feeds,
+  event/IV collection or Supabase uploads. Current inputs and live chart/P&L
+  points use bounded RAM caches. Keep operational ownership/orders/controls/
+  capital/mail durable. Historic data stays in a private offline archive.
+  New Normal entries use ordinary DAY LIMIT orders, hedge first. After verified
+  short fill, attach an ordinary DAY BUY SL LIMIT. Trail that exact order only
+  tighter as basket P&L improves, using the existing up-to-INR-1,000 distance.
+  No new GTT. Cancel/read back the exact SL before an independent close; short
+  before hedge, exact owned remaining quantity. Unknown writes never retry.
+  See ORDINARY_TRAILING.md. Keep Algo Off, paper and pause during maintenance;
+  synthetic tests do not prove real fills. Preserve manual trades and vault.
+
+- October 14: The owner explicitly chose the first real Normal Theta
+  strategy-owned order rather than a separate manual commissioning trade.
+  The protected owner-clicked Algo Start flow uses a broker-authenticated
+  complete-position/pending-order/GTT/margin check, binds consent to source and
+  account, prepares Oracle LIVE with Algo Off, verifies the observer, and
+  finally saves the owner's On instruction. No polling, refresh or maintenance
+  can invoke this action. The owner-live authorization receipt deliberately
+  marks the first broker stop and child order path uncommissioned. It is not
+  provider evidence. Preserve the original shared pause and never remove
+  Oracle runtime pause without explicit user confirmation. Failure must
+  restore paper/paused state. Read docs/NORMAL_THETA.md.
+
 - Owner **Buy + protect** uses the direct LIMIT test (plan v3) and starts only
   that exact authorized `owner_test_job` on Oracle. It submits once, attaches the
   declared stop after a full fill, and manages the declared target after verified

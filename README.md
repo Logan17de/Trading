@@ -1,5 +1,12 @@
 # Trading
 
+Current runtime: **Normal Theta only**, ordinary limit entries with an ordinary
+trailing SL after fill and exact owned-position exits. Research workers, bulk
+recording and Supabase uploads are retired. Live curves use bounded session
+memory; ownership, orders and capital remain durable. See
+[current execution guide](docs/ORDINARY_TRAILING.md). Algo stays Off during
+maintenance; deployment/test results are recorded in the current handoff.
+
 **Options Trader** is the owner's local PC viewer/controller for the existing
 Python engine on Oracle. Oracle runs Groww observation, premium-policy review,
 read-only basket preparation, a durable order controller, private accounting and

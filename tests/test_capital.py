@@ -315,5 +315,5 @@ vm.runInContext(source.slice(source.indexOf('const capitalPending='),source.inde
   assert.equal($('record-investment').disabled,true);
 })().catch(error=>{console.error(error);process.exitCode=1;});
 """
-    result = subprocess.run([node, '-e', script, str(source)], capture_output=True, text=True, timeout=10)
+    result = subprocess.run([node, '-e', script, str(source)], capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr

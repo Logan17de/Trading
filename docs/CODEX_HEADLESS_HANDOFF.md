@@ -1,5 +1,374 @@
 # Current Trading handoff
 
+## October 22 — completely shut down at owner request
+
+The owner explicitly requested the entire trader be turned off. Durable Algo
+intent is Off, execution mode remains paper, and both the runtime pause and
+original shared pause are present. Do not resume any trader component without
+a new explicit owner request. This supersedes the retry schedule below.
+
+Oracle `trading-observer.service` and `trading-failure-watchdog.timer` are stopped
+and disabled; the watchdog service is stopped. The old Growing-Trader service
+and market-start/preopen-auth timers are also inactive and disabled; their
+static services are stopped. A final process/cron check found no remaining
+`nifty_engine` processes or matching cron launchers. Shared Qwen gateway, Zetbros
+mail, mail tunnel and Oracle tunnel services remain active with unchanged
+identities. The VM remains running. No credentials or broker permissions changed.
+
+The PC dashboard/monitor is stopped, port 8765 has no listener, and no local
+trader Python processes or enabled trader scheduled tasks remain. The owned
+Options Trader Monitor login shortcut was moved to a private reversible backup;
+the private installation record now marks logon startup disabled. App sources,
+manual launch shortcuts, private journals, protected vault and immutable releases
+are retained. Oracle's SQLite backup API snapshot passed integrity `ok`.
+
+Shutdown was verified around 14:01 JST October 22. No broker order/position was
+placed, modified, cancelled or closed. The local journal had no nonclosed owned
+order records, but complete live Groww account reads were unavailable; that is
+not proof that the owner's account has no manual positions or pending orders.
+Broker-held orders may still act independently; review them directly in Groww.
+
+## October 21 missing data — connection retry repair
+
+The PC viewer and advancing Oracle heartbeat were reachable, but Groww token
+generation failed: earlier HTTP 403, then repeated HTTP 429. The existing Codex
+key was visibly Approved in the owner's Edge. One sanitized read-only probe at
+08:16:35 UTC confirmed 429 with no Retry-After header. Its generic rate-limit
+response did not identify the quota/reset. Groww documents 150 token requests
+per rolling 24 hours in addition to short-period limits; the old one-minute
+reauthentication loop could exhaust that allowance. Daily exhaustion remains an
+inference, not a provider-confirmed reset time.
+
+`broker_retry.py` now stores only small operational retry metadata in the
+existing journal. The observer allows at most 48 token attempts per rolling
+24 hours, committed before each request and retained across restarts. This is
+an observer-local budget, not a measurement of the owner's other clients or
+remaining Groww quota. The owner's latest instruction supersedes the initial
+short backoff: all failed reconnections wait **at least 30 minutes**, starting
+no earlier than **13:00 JST** weekdays, until the existing 19:45 collection
+cutoff. Later retries move to the next weekday at 13:00. Longer bounded numeric/
+HTTP-date Retry-After still takes precedence. Persisted token attempts also
+prevent a restart from generating a fresh token within 30 minutes of the last
+attempt. Healthy current-data polling continues at five seconds. Same-day tokens
+stay in RAM and are reused for temporary read failures, invalidated for actual
+401/403 or refreshed on the existing UTC-day rollover. No token enters SQLite,
+Git, reports or prompts. The transport audit is bounded to 64 RAM records.
+
+Only a completed successful collection clears the connection fault. Skipped
+ticks, quiet hours, heartbeat progression and token generation cannot clear it.
+Failed cached views immediately invalidate current cash/quotes/P&L/readiness
+while retaining original timestamps and historical lines. The dashboard shows
+the sanitized HTTP error and actual scheduled retry, separately from VM health.
+It never claims a quota reset or current data from a fresh failure snapshot.
+
+The independent failure monitor now groups continuous collector failures into
+one incident, including 403-to-429 changes and source-line changes. It preserves
+actual delivery receipts and updates current diagnostic details. Associated
+funds/positions/orders/market/input failures stay recorded but do not send extra
+emails for the same connection outage. Existing duplicate records are labelled
+notification-suppressed, never falsely marked recovered. Independently uncertain
+orders/protection still notify. An observed recovery allows a later outage to
+notify separately. Email quiet hours remain unchanged; no Codex schedule is
+created. Repeated accepted notifications are not resent.
+
+Local validation: 126 focused retry/owner/execution/trailing/input tests passed,
+then 24 final retry/observer/transport/UI checks passed after the immediate cached
+view invalidation refinement. The first Oracle rollout passed 121 tests with one
+Node-dependent skip. The owner then requested the 30-minute/no-repeat-email
+policy; 66 final retry/monitor/quiet-hour/observer/owner checks passed locally.
+The final immutable release passed **159 Oracle tests with one Node-dependent
+skip**. JavaScript/diff checks passed. The offline demo completed two synthetic
+jobs and queued one unsent report. Brokers and test email transports were fake.
+
+Observer and independent alert unit now explicitly pin
+`a2f43ffc30bac486125f4e8fd48c9b727e952c82`. Their PC reader pins match. Each
+rollout made a private SQLite backup with integrity `ok`; exact owner controls,
+ownership/receipts/capital, protected environment, original shared pause and
+shared-service identities were preserved. The observer rollout left **Algo Off,
+paper and runtime pause present**. A later owner Start must renew source-bound
+consent. The alert update did not restart the observer or interrupt an in-flight
+email attempt. No broker order, activation, credential rotation or test email
+was performed.
+
+Readback around **17:41 JST October 21** showed advancing healthy Oracle
+heartbeats, a persistent HTTP 429 fault, zero new observer token attempts since
+the retry policy change, and the preserved next retry **17:58:09 JST**. That is
+an attempt time, not a promised provider reset/recovery. Data remains unavailable
+until a real successful read. The independent monitor was CURRENT and retained
+one accepted collector notification with dependent alerts suppressed. The
+provider reports recipient-server acceptance for that existing notification;
+inbox placement is not verified. No resend was requested. Owner Edge visibly
+shows the error and next retry, with unknown current money/quotes and Algo Off.
+Private proof: `.agent-state/groww-retry-policy-edge-20261021.png`.
+
+Primary limit reference: [Groww authentication](https://groww.in/trade-api/docs/curl).
+
+## October 19 intraday Normal direction — installed, Algo Off
+
+Owner explicitly confirmed the last 30 minutes of completed five-minute prices,
+with daily MA20/MA50 retained as context. Normal now uses the versioned
+`intraday-price-action-v1` policy in config and `intraday_trend.py`. Daily MA
+alignment and ADX 25 no longer determine Normal direction. See NORMAL_THETA.md
+for the exact six-interval direction/efficiency/noise/current-quote rules. These
+are declared unbacktested hypotheses; no normal-day range or profit is assured.
+
+Both Normal's pre-scan and final candidate validation use the same pure signal.
+Current-session Groww OHLC is fetched read-only by the existing preparation
+worker, kept to 12 completed bars per index in RAM, and bridged without redating
+provider receipts. Restart fetches new input. Daily-history failure is optional
+context, not a direction veto. Missing/stale/gapped/incomplete prices cannot
+authorize a candidate. The UI retains the fixed index ranges and actual daily
+reference lines, and displays the actual 30-minute move, agreeing steps and
+direction consistency when the installed engine supplies the new signal.
+
+An isolated read-only Oracle probe used the proposed pure module against real
+Groww five-minute history for both indices. Authentication and both reads worked;
+each returned 12 completed intervals. At approximately 14:21 JST the proposed
+rule returned WAIT for both because the sampled movement was mixed. This is not
+a backtest or evidence of fills/profit. No order, activation or fake provider
+verification was involved. A read-only deployment preflight confirmed owner Off
+and no unresolved owned orders/tests.
+
+The full local run passed **1,004 tests with six platform skips**. After a
+concrete startup/cache timing correction, all 33 focused current-input/timing
+checks and two final UI/range checks passed. The initial staged Oracle source
+passed 122 synthetic policy/execution/ownership/stop/input tests; final immutable
+source `4b352ed3da9826d1f0f1c1a53b5521b12d297ac5` passed all 33 affected
+input/cache/timing checks. The approximately minute-based preparation worker may
+only reuse a history receipt for 15 seconds, so startup phase differences cannot
+skip a cycle into the unchanged 90-second freshness limit. Each index requests
+history against the actual current clock. Receipt timestamps are never refreshed
+without a successful provider response. JavaScript/config/diff checks and the
+offline demo passed (two synthetic jobs, one unsent queued report).
+
+Both paused/Off rollouts held the owner setup lock, refused unsettled ownership
+or tests, made SQLite backup-API snapshots with integrity `ok`, preserved exact
+owner controls/capital/receipts/manual exclusions and original shared pause, and
+verified unchanged shared-service identities. Only the observer and PC viewer
+restarted. The independent alert release was not upgraded. Final observer and
+private PC pin match `4b352ed3da9826d1f0f1c1a53b5521b12d297ac5`; mode is paper,
+runtime pause present and Algo Off. The owner's next explicit Start must renew
+source/policy/account consent. No real order or email was submitted. These tests
+do not constitute a strategy backtest or real fill/stop verification.
+
+Final readback at approximately 14:33 JST showed HEALTHY, RECENT data, advancing
+heartbeat sequence (5 to 16), CURRENT input worker with no input failures, and
+freshly advanced history receipts for both indices across the next preparation
+cycle. Both actual signals remained WAIT for mixed movement. Owner Edge visibly
+displayed the actual 30-minute change, agreeing steps, consistency threshold and
+daily context labels. The private screenshot is
+`.agent-state/intraday-trend-edge-20261019.png`. Paper/paused/Off remained intact.
+
+## October 19 fixed Strategy graph range — desktop only
+
+The Strategy graph now fixes its vertical scale to the first actual observed
+session price: NIFTY plus/minus 500 points, SENSEX plus/minus 1,500. The dashboard
+does not currently expose the official opening quote; label this anchor **First
+observed**, not exchange open. Two small public index anchors in browser tab
+session storage retain the scale through refresh and rolling RAM-cache eviction;
+the JST session date resets them. This does not store market tick history.
+
+Observed index price and current validated daily MA20/MA50 have colored labels
+inside the graph. A dashed start-price reference and exact five price-axis ticks
+make the range visible. Out-of-range paths are clipped to the plotting area;
+their endpoint labels retain actual values with up/down arrows. Indicators never
+expand the fixed range or get moved to false price levels. Missing/stale numeric
+indicators remain absent, historical price lines remain labelled, and observation
+gaps are preserved. Weekday routing and all trading policy remain unchanged.
+
+20 focused UI/active-position chart checks passed, including both index scales,
+refresh/cache eviction, JST date rollover, invalid anchors, narrow/wide chart
+geometry, off-range labels, missing indicators and unbridged gaps. JavaScript
+syntax and diff checks passed. The offline demo completed two synthetic jobs and
+queued one unsent report. Owner Edge visibly showed the fixed NIFTY axis, live
+line and both MA labels. The private proof image is in `.agent-state`.
+
+Desktop assets are served directly and were refreshed in the existing owner tab.
+No Oracle deployment or service restart was required. Installed observer release
+remains `fdd603f1028e05b0075d102116350e3e1187a108`. The read-only view showed LIVE
+mode with owner Algo Off; owner intent, runtime pause, source/account receipts,
+manual trades, journals, vault and shared services were not changed. No broker
+order or email was submitted by this change.
+
+## October 16 scheduled exit changed to 18:44 JST
+
+Owner changed Normal's scheduled owned-basket exit from 18:45 to **18:44 JST**.
+Current immutable Oracle release is
+`fdd603f1028e05b0075d102116350e3e1187a108`. Config, strict loader, current guides
+and the PC checklist agree. The checklist reads the configured time rather than
+hardcoding it. The new-entry cutoff is still 18:30 and the flat/reconciliation
+target remains 19:00. Closing starts on the first eligible fresh monitoring tick
+at/after 18:44; do not claim an exact-time guaranteed fill or reopen afterward.
+
+Current Normal exits on 50% of actual net entry credit after estimated round-trip
+costs, loss of min(INR 1,000, 1.5 times gross entry credit), trailing/protective
+stop, <=7 DTE or scheduled liquidation. Entry/protection faults use the existing
+settle/unwind path. The fixed INR 8 / INR 32 short rolls remain retired.
+After an earlier confirmed full closure, a new qualifying basket may be entered
+before 18:30 with Algo On and all fresh gates; the same strike pair can qualify
+again. No automatic cooldown or cumulative daily-loss lock is implemented.
+See NORMAL_THETA.md for the exact owned-short-before-hedge close sequence.
+
+84 local focused tests passed, followed by 14 final boundary/lifecycle checks.
+89 exact-release Oracle synthetic tests passed, covering both indices/directions,
+18:43:58 monitoring, 18:44:03 exit, flat/order confirmation and no successor entry
+after the cutoff. Config, JS and diff checks passed. Offline demo completed two
+jobs and queued one unsent report; no real broker orders or test email were sent.
+
+The first staging connection failed before creating its target; a read-only
+absence check preceded the successful retry. Deployment held the setup lock,
+verified owner Off and no unsettled ownership/tests, backed up SQLite with an
+integrity check, and preserved controls, capital, broker provenance, original
+pause and shared-service identities. Existing paper/runtime pause/Algo Off were
+preserved. Only the observer and PC viewer restarted; independent alert/shared
+services were not upgraded. PC source pin now matches the installed release.
+At approximately 15:55 JST, readback showed HEALTHY, advancing heartbeat, IDLE,
+Off/paper/paused and forced_exit_jst=18:44. Owner Edge visibly displayed 18:44.
+The owner must explicitly Start again for new-release real-trading authorization.
+
+## October 16 owner Start and strategy checklist / graph
+
+The owner clicked Algo Start at approximately 15:17 JST. Read-only PC evidence
+confirmed Oracle LIVE, runtime pause false, durable owner On and Normal selected.
+The original shared pause remains protected. The observer is healthy; the
+controller was IDLE, waiting for a confirmed NIFTY trend on the Friday route.
+Do not describe that as failed activation or change the owner's intent.
+Snapshot/margin freshness can independently become unknown between replies.
+
+The PC now replaces the old technical engine block with Algo status, a live
+Strategy graph, entry checklist, basket comparison and the last actual audit
+action. Ordinary trend/window/candidate waits have plain labels. Actual live
+setup, protection, worker and data faults remain attention/unknown states.
+The static "Execution paused" caption and Normal's generic "Live blocked"
+caption were corrected. Tools/reporting links are inside a disclosure.
+The graph uses actual observed index points on a five-minute grid, refreshes
+with the current view, preserves gaps, uses index-point labels and marks
+historical/stale readings. No ticks, fills or indicator lines are fabricated.
+
+Basket selection behavior was inspected, not changed: direction is confirmed
+first; the current scanner samples up to three short strikes near |delta| .20
+within .15–.25 and nearby outer hedges, then compares bounded exact Groww entry,
+hedge and exit margin/charge responses for one/two lots. It ranks qualifying
+affordable baskets by net quoted maximum expiry profit, then lower margin.
+This is not an exhaustive chain search or a forecast. There is no fixed
+10-strike ATM distance. The checklist displays exact selected strikes, actual
+basket margin and calculated net maximum expiry profit when available.
+
+The additive read-only `trend_inputs` projection for already validated
+spot/MA20/MA50/ADX14 preserves missing/future/stale inputs as UNKNOWN and changes
+no policy or order route. The owner explicitly switched Algo Off at approximately
+15:35 JST and authorized installation. Oracle now runs immutable release
+`04c3f5c8c65ae79f8c633f3251364a480c6f88f2`. Under the owner setup lock,
+deployment checked Off/closed ownership/resolved tests, stopped only the observer,
+rechecked its inactive state, backed up SQLite with verified integrity and
+installed the projection. The updated runtime is paper/paused/Algo Off; its next
+explicit owner Start performs the existing new-release/account live setup.
+Do not enable On or manufacture a new authorization receipt during maintenance.
+Owner controls, capital, exact ownership, original shared pause, existing receipts
+and shared-service identities were preserved. The independent alert release was
+not upgraded. The private PC connection pin and viewer were refreshed.
+
+At 15:43 JST the new heartbeat advanced, both indices had AVAILABLE spot,
+MA20/MA50/ADX14 evidence, the Normal reader was CURRENT without input failures,
+and actual price lines had accumulated fresh points after the RAM-cache restart.
+Owner Edge displayed the three price/reference lines and actual ADX reading.
+Daily MA references are deliberately flat throughout a session; they are not
+moving averages of the intraday ticks. The PC graph selects NIFTY Mon/Tue/Fri
+and SENSEX Wed/Thu directly from the declared JST weekday policy, including an
+already-open page crossing midnight. Weekends have no scheduled strategy index.
+Tests cover all seven days, stale/bad workers, missing indicators and live faults.
+
+130 local focused tests passed, including UI wait-versus-fault/stale behavior, graph
+evidence-only inputs, exact two-basket maximum-profit/affordability selection,
+read-only indicator projection, dashboard, owner setup and capital regressions.
+The staged Oracle release passed 85 synthetic policy/trailing/owner-setup checks.
+The final PC weekday/freshness/graph UI check passed after its final edits.
+JS syntax, declared Normal config and diff checks passed. The offline demo
+completed two synthetic jobs and queued one unsent report. Owner Edge displayed
+the new checklist and actual Strategy graph. No real order test was performed.
+
+## October 16 Normal-only runtime and ordinary trailing SL
+
+Owner retired research/data saving and requested ordinary orders, trailing SL
+after fill and owned-position exits. Read ORDINARY_TRAILING.md. This supersedes
+the research/GTT requirements in earlier handoff sections. Keep only Normal in
+the active dashboard, stop study/stream/event/IV workers and Supabase uploads.
+Current price/P&L curves and strategy inputs are bounded RAM caches; restart
+requires fresh data. Ownership/orders/controls/capital/mail remain durable.
+
+New Normal entry is ordinary executable DAY LIMIT hedge BUY, full fill/readback,
+then ordinary LIMIT short SELL. Attach ordinary DAY BUY SL LIMIT after the short
+fill; tighten the exact stop as best net basket P&L improves. Preserve the existing
+up-to-INR-1,000 loss distance and all margin/ownership/risk gates. No new GTT.
+Cancel/read back protection before an independent exit, close short before hedge,
+reconcile partial fills and terminal unfilled exits; never repeat unknown writes.
+Legacy protection records keep original IDs and manual positions stay protected.
+
+Preparation now fetches only current Normal inputs and checks the daily-history
+receipt belongs to this session. Worker failures and failed backups are exposed
+to the independent email watchdog. Research is retired as an owner choice;
+old private records are retained for provenance. Offline operational compaction
+creates a new verified journal while preserving the full old database privately.
+
+Initial full Windows suite: 970 passed, six platform skips, two failures. One was
+the existing legacy smart-order modify HTTP method mismatch with installed SDK
+1.5.0; the other was a synthetic October 15 contract test using the real October
+16 clock. Both were corrected and their focused regressions passed. The new
+ordinary-order lifecycle tests passed for both indices/directions. The offline
+demo completed two synthetic jobs and queued one unsent report. Config and JS
+syntax checks passed. Synthetic tests are not live broker fill verification.
+
+Final full local run passed **973 tests with six platform skips**. A subsequent
+stop/modify race addition passed all 16 ordinary trailing tests. Oracle's final
+21 focused checks passed (synthetic temp databases in tmpfs), including the
+actual installed SDK request/HTTP guard contract, with no real requests.
+Existing PC and Oracle SDK builds both report 1.5.0 but differ on the legacy
+smart-modify verb. Its capability now binds the installed explicit SDK helper
+(known POST/PUT variants only), failing closed on unknown wrappers. Normal's
+ordinary order/modify path uses POST on both. An earlier broad Oracle run passed
+43 checks and exposed that legacy mismatch; the final 21-check run verified it
+after correction. The first stdin-based test transport stalled and was stopped
+locally; it is not a completed test run. No provider fill proof was created.
+
+Installed observer and independent alert release:
+`76e74ec28436a4047907ef51ee77a381e9aeefad`. The isolated venv reuses the
+read-only pytest dependency directory from staged release `6f786793...`; runtime
+source resolves to the installed release first. No shared environment was changed.
+The PC connection pin was corrected to this release and the hidden viewer was
+restarted. The final client-only caption clarifies that Normal's owner Start
+does not require the retired GTT test. No Codex schedule was created.
+
+Paused/Off deployment held the owner setup lock and refused active/unsettled
+execution. It checkpointed the old journal, copied and verified operational
+tables into a new file, retained all 47 protected symbols, capital, owner intent,
+broker-test provenance and nine report rows, then preserved the original database
+at `/var/lib/trading-observer/.agent-state/archives/research-retired-20261016T060207Z/journal.sqlite3`.
+The active journal is approximately 1 MB. A new online backup passed full
+integrity checking. Both pause markers, paper mode, Algo Off, environment bytes
+and shared-service identities were preserved. Research selection was retired as
+requested; Normal selection/intent were not enabled. No real orders were sent.
+
+At 06:04 UTC / 15:04 JST the observer's sequence had advanced to 22, current
+Groww funds/positions/orders and index timestamps were available, the Normal
+input worker was CURRENT for both indices, NRestarts was zero, and the protected
+PC viewer reported HEALTHY. Bulk observations, P&L rows, impulse ticks, snapshots
+and research upload queue remained zero. Observed service memory was about
+82 MiB versus approximately 170 MiB before rollout; this is a sampled reading,
+not a guaranteed ceiling. The independent watchdog was CURRENT/HEALTHY with
+historical incidents recovered. Existing mail quiet hours remain unchanged.
+
+Edge browser automation was denied by the app's LOCAL_ACCESS_ONLY guard; the
+guard was preserved. Local HTTP assets and live API response were verified, but
+current visual verification in Edge is not claimed. The ordinary stop/fill/exit
+path remains untested with real broker orders. Algo stays Off; the owner's
+explicit Start is required for real-trading authorization and qualifying entries.
+
+Optional deletion of this task's local synthetic pytest directories under
+`.agent-state` was rejected by automatic approval review ("blocked by policy").
+They were left intact; do not claim local test-file cleanup completed. They are
+not active collection or runtime memory. The two synthetic Oracle tmpfs test
+directories were removed after tests. No operational journal or vault was purged.
+
 ## October 13 GitHub publication and Codex schedule removal
 
 Owner requested publication of all project code to Logan17de/Trading and removal

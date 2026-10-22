@@ -94,12 +94,13 @@ def connect_snapshot(store, snapshot, cfg, now, normal_cfg=None):
             cache=store.meta('normal-theta-contracts-'+index,{})
             normal['contracts']=copy.deepcopy(cache.get('contracts',[]))
             normal['margins']=copy.deepcopy(cache.get('margins',{}))
+            normal['intraday']=store.meta('normal-theta-intraday-'+index,{})
             store.set_meta('normal-theta-evidence-'+index,normal)
 
 
 class ReportData:
     """Independent bounded research reads using the collector's rate limiter."""
-    def __init__(self,market,journal,cfg,*,clock=lambda:datetime.now(timezone.utc),master=download_instrument_text,snapshot_reader=None,normal_cfg=None):
+    def __init__(self,market,journal,cfg,*,clock=lambda:datetime.now(timezone.utc),master=download_instrument_text,snapshot_reader=None,normal_cfg=None,initialize_calendar=True):
         self.market,self.store,self.cfg=market,journal.store,cfg
         self.clock,self.master=clock,master
         self.snapshot_reader=snapshot_reader
@@ -107,8 +108,9 @@ class ReportData:
         self._master_cache=None;self.next_history={}
         self.chains={}
         self.book_checks={}
+        self.margin_checks={}
         from .event_calendar import OfficialCalendar
-        self.calendar=OfficialCalendar(self.store)
+        self.calendar=OfficialCalendar(self.store) if initialize_calendar else None
 
     def call(self,method,**kwargs):
         self.market.limiter.wait()
@@ -204,7 +206,7 @@ class ReportData:
         if any(not fresh(at,now,3600) for at in master_times):raise ValueError('CURRENT_INSTRUMENT_MASTER_REQUIRED')
         return iv.save(self.store,iv.interpolate(index,terms,now),now)
 
-    def books(self,index,expiry,protected):
+    def books(self,index,expiry,protected,*,direction=None):
         rows,master_at=self.contracts(index,expiry)
         cached=self.chains.get((index,expiry))
         chain,greek_at=cached if cached and fresh(cached[1],self.clock(),10) else self.chain(index,expiry)
@@ -224,17 +226,24 @@ class ReportData:
                         candidates[-1].update(theta=number(r['greeks']['theta']),theta_unit='groww_native')
                     except (KeyError,ValueError,TypeError):pass
                 except (KeyError,ValueError,TypeError):continue
+        if direction not in (None,'CE','PE'):raise ValueError('SUPPORTED_TREND_SIDE_REQUIRED')
         wanted={}
-        for kind in ('CE','PE'):
+        # Normal: trend selects one *credit* side before any basket quote or
+        # margin request. Sample multiple liquid short strikes and wings;
+        # do not infer full-chain coverage from a bounded SDK request budget.
+        for kind in (('CE','PE') if direction is None else (direction,)):
             side=[r for r in candidates if r['symbol'].endswith(kind)]
-            shorts=sorted((r for r in side if .15<=abs(r['delta'])<=.25),key=lambda r:abs(abs(r['delta'])-.2))[:1]
+            shorts=sorted((r for r in side if .15<=abs(r['delta'])<=.25),
+                key=lambda r:(abs(abs(r['delta'])-.2),r['symbol']))[:3 if direction else 1]
             for short in shorts:
                 wanted[short['symbol']]=short
                 hedges=sorted((r for r in side if (r['strike']>short['strike'] if kind=='CE' else r['strike']<short['strike'])),
-                    key=lambda r:r['strike'] if kind=='CE' else -r['strike'])
-                for r in hedges[:2]:wanted[r['symbol']]=r
-            atm=sorted((r for r in side if .45<=abs(r['delta'])<=.55),key=lambda r:abs(abs(r['delta'])-.5))[:1]
-            for r in atm:wanted[r['symbol']]=r
+                    key=lambda r:(abs(r['strike']-short['strike']),r['symbol']))
+                for r in hedges[:3 if direction else 2]:wanted[r['symbol']]=r
+            if direction is None:
+                atm=sorted((r for r in side if .45<=abs(r['delta'])<=.55),
+                    key=lambda r:abs(abs(r['delta'])-.5))[:1]
+                for r in atm:wanted[r['symbol']]=r
         books=[]
         check=dict(expiry=expiry,signed_greek_contracts=len(candidates),sampled_quotes=len(wanted),
             available_books=0,missing_depth=0,invalid_books=0,read_failures=0,broker_writes=False)
@@ -255,7 +264,7 @@ class ReportData:
         # Bound independent GET concurrency. Each request still waits on the
         # collector's shared limiter and keeps its own actual response time.
         with ThreadPoolExecutor(max_workers=2) as pool:
-            for status,book in pool.map(quote,list(wanted.values())[:8]):
+            for status,book in pool.map(quote,list(wanted.values())[:14 if direction else 8]):
                 if book is not None:books.append(book)
                 else:check[status]+=1
         check.update(available_books=len(books),checked_at=self.clock().isoformat())
@@ -263,36 +272,107 @@ class ReportData:
         if not fresh(master_at,self.clock(),3600):raise ValueError('CURRENT_INSTRUMENT_MASTER_REQUIRED')
         return books
 
-    def margins(self,index,books,cfg=None):
-        cfg=cfg or self.cfg;now=self.clock();day=now.astimezone(JST).date()
+    def margins(self,index,books,cfg=None,*,direction=None,funds=None):
+        """Validate bounded trend-aligned option baskets with Groww margin API.
+
+        Read-only POST /v1/margins/detail/orders is not an order placement.
+        Only full, exact, two-legged hedged orders and cash affordance qualify.
+        Return independently timestamped provider replies; the entry executor
+        rechecks all values and positions immediately before committing.
+        """
+        cfg=cfg or self.cfg
+        now=self.clock();day=now.astimezone(JST).date()
+        if direction not in (None,'CE','PE'):raise ValueError('SUPPORTED_TREND_SIDE_REQUIRED')
         front=[r for r in books if cfg['short_dte'][0]<=(date.fromisoformat(r['expiry'])-day).days<=cfg['short_dte'][1]]
-        puts=list(policy._pairs(front,'PE',cfg));calls=list(policy._pairs(front,'CE',cfg))
-        condors=[] if cfg.get('format')=='normal-theta-v1' else [p+c for p,c in itertools.product(puts,calls) if p[1][0]['strike']<c[1][0]['strike'] and p[0][0]['expiry']==c[0][0]['expiry']]
-        margins={};attempts=0
+        puts=list(policy._pairs(front,'PE',cfg)) if direction in (None,'PE') else []
+        calls=list(policy._pairs(front,'CE',cfg)) if direction in (None,'CE') else []
+        condors=[] if cfg.get('format')=='normal-theta-v1' else [
+            p+c for p,c in itertools.product(puts,calls)
+            if p[1][0]['strike']<c[1][0]['strike'] and p[0][0]['expiry']==c[0][0]['expiry']]
+        margin_limit=12 if direction else 6
+        max_risk=cfg['risk_limit_inr']
+        diagnostics=dict(status='SCAN_COMPLETED',direction=direction or 'RESEARCH',
+            listed_contracts=len(front),potential_baskets=0,margin_requests=0,
+            verified_affordable=0,rejected_risk=0,rejected_cash=0,rejected_depth=0,
+            rejected_stale=0,provider_failures=0,request_budget=margin_limit,
+            full_chain_exhaustive=False,broker_writes=False,checked_at=None)
+        buy_cash=sell_cash=None
+        if direction:
+            try:
+                if not isinstance(funds,dict) or not fresh(funds['received_at'],now,15):
+                    raise ValueError('FRESH_MARGIN_BALANCES_REQUIRED')
+                buy_cash=number(funds['option_buy_available_inr'])
+                sell_cash=number(funds['option_sell_available_inr'])
+                if min(buy_cash,sell_cash)<=0:raise ValueError('INSUFFICIENT_MARGIN')
+            except (KeyError,TypeError,ValueError):
+                diagnostics['status']='CURRENT_MARGIN_BALANCES_REQUIRED'
+                diagnostics['checked_at']=self.clock().isoformat()
+                self.margin_checks['normal-'+index]=diagnostics
+                return {}
+        ideas=[]
         for legs in puts+calls+condors:
             if len({r['lot_size'] for r,_ in legs})!=1:continue
+            if direction:
+                if len(legs)!=2 or any(r.get('theta_unit')!='groww_native' for r,_ in legs):continue
+                hedge,short=legs[0][0],legs[1][0]
+                if (number(hedge.get('theta',0)) - number(short.get('theta',0)))<=0:continue
             width=max(abs(legs[i][0]['strike']-legs[i+1][0]['strike']) for i in range(0,len(legs),2))
             credit=sum(r['bid'] if side=='SELL' else -r['ask'] for r,side in legs)
             for lots in (1,2):
                 qty=legs[0][0]['lot_size']*lots
-                if attempts>=6:return margins
-                if not 0<credit<width or (width-credit)*qty>cfg['risk_limit_inr']:continue
-                if any(not fresh(r['received_at'],self.clock()) or not fresh(r['greeks_received_at'],self.clock())
-                    or (r['ask_quantity'] if side=='BUY' else r['bid_quantity'])<qty for r,side in legs):continue
-                attempts+=1
-                def order(r,side):
-                    return dict(trading_symbol=r['symbol'],exchange=EXCHANGES[index],product='NRML',transaction_type=side,
-                        quantity=qty,order_type='LIMIT',price=r['ask'] if side=='BUY' else r['bid'])
-                try:
-                    entry=self.call(self.market.groww.get_order_margin_details,segment='FNO',orders=[order(r,side) for r,side in legs])
-                    hedge=self.call(self.market.groww.get_order_margin_details,segment='FNO',orders=[order(r,side) for r,side in legs if side=='BUY'])
-                    exit=self.call(self.market.groww.get_order_margin_details,segment='FNO',orders=[order(r,'BUY' if side=='SELL' else 'SELL') for r,side in legs])
-                    requirement=number(entry['total_requirement']);cost=number(entry['brokerage_and_charges'])+number(exit['brokerage_and_charges'])
-                    if requirement<0 or cost<0:continue
-                    key=identity({'legs':[(r['symbol'],side) for r,side in legs],'quantity':qty})
-                    margins[key]=dict(received_at=self.clock().isoformat(),basket_requirement_inr=requirement,
-                        hedge_requirement_inr=number(hedge['total_requirement']),round_trip_charges_inr=cost)
-                except Exception:continue
+                diagnostics['potential_baskets']+=1
+                if not 0<credit<width or (width-credit)*qty>max_risk:
+                    diagnostics['rejected_risk']+=1;continue
+                hedge_debit=sum(r['ask']*qty for r,side in legs if side=='BUY')
+                if direction and hedge_debit>buy_cash:
+                    diagnostics['rejected_cash']+=1;continue
+                if any((r['ask_quantity'] if side=='BUY' else r['bid_quantity'])<qty for r,side in legs):
+                    diagnostics['rejected_depth']+=1;continue
+                ideas.append((credit*qty,hedge_debit,legs,qty))
+        # Owner's net-profit objective is evaluated after Groww returns costs;
+        # this prioritization limits the provider calls, not exchange prices.
+        ideas.sort(key=lambda x:(-x[0],x[1],
+                    tuple(r['symbol'] for r,_ in x[2]),x[3]))
+        margins={}
+        for gross,hedge_debit,legs,qty in ideas:
+            if diagnostics['margin_requests']>=margin_limit:break
+            if any(not fresh(r['received_at'],self.clock(),15)
+                   or not fresh(r.get('greeks_received_at',r['received_at']),self.clock(),15) for r,_ in legs):
+                diagnostics['rejected_stale']+=1;continue
+            diagnostics['margin_requests']+=1
+            def order(r,side):
+                return dict(trading_symbol=r['symbol'],exchange=EXCHANGES[index],product='NRML',
+                            transaction_type=side,quantity=qty,order_type='LIMIT',
+                            price=r['ask'] if side=='BUY' else r['bid'])
+            try:
+                entry=self.call(self.market.groww.get_order_margin_details,segment='FNO',
+                                orders=[order(r,side) for r,side in legs])
+                hedge=self.call(self.market.groww.get_order_margin_details,segment='FNO',
+                                orders=[order(r,side) for r,side in legs if side=='BUY'])
+                exit=self.call(self.market.groww.get_order_margin_details,segment='FNO',
+                               orders=[order(r,'BUY' if side=='SELL' else 'SELL') for r,side in legs])
+                requirement=number(entry['total_requirement'])
+                hedge_requirement=number(hedge['total_requirement'])
+                cost=number(entry['brokerage_and_charges'])+number(exit['brokerage_and_charges'])
+                net=gross-cost
+                risk=(max(abs(legs[i][0]['strike']-legs[i+1][0]['strike'])
+                      for i in range(0,len(legs),2))*qty)-gross+cost
+                if min(requirement,hedge_requirement,cost)<0 or not net>0 or not 0<risk<=max_risk:
+                    diagnostics['rejected_risk']+=1;continue
+                if direction and (requirement>sell_cash or max(hedge_requirement,hedge_debit)>buy_cash
+                                  or hedge_debit+cost>max_risk):
+                    diagnostics['rejected_cash']+=1;continue
+                key=identity({'legs':[(r['symbol'],side) for r,side in legs],'quantity':qty})
+                margins[key]=dict(received_at=self.clock().isoformat(),
+                    basket_requirement_inr=requirement,hedge_requirement_inr=hedge_requirement,
+                    round_trip_charges_inr=cost)
+                diagnostics['verified_affordable']+=1
+            except Exception:
+                diagnostics['provider_failures']+=1
+        diagnostics['checked_at']=self.clock().isoformat()
+        if direction:
+            diagnostics['status']='AFFORDABLE_FOUND' if margins else 'NO_AFFORDABLE_BASKET'
+        self.margin_checks[index if not direction else 'normal-'+index]=diagnostics
         return margins
 
     def check(self,snapshot):
@@ -319,8 +399,6 @@ class ReportData:
                 if self.snapshot_reader:
                     connect_snapshot(self.store,self.snapshot_reader(),self.cfg,self.clock())
                     b=self.store.meta(key,{})
-                try:self.iv_monitor(index,expiry,b)
-                except Exception:faults.append('MATCHED_IV30_MONITOR_UNAVAILABLE')
                 chosen=[]
                 for lo,hi in (self.cfg['short_dte'],self.cfg['calendar_long_dte']):
                     dates=[d for d in expiry['expiries'] if lo<=(date.fromisoformat(d)-day).days<=hi]
@@ -330,17 +408,36 @@ class ReportData:
                 if self.normal_cfg:
                     lo,hi=self.normal_cfg['short_dte']
                     normal_dates=[d for d in expiry['expiries'] if lo<=(date.fromisoformat(d)-day).days<=hi][:1]
-                # Publish Normal's dated inputs before slower research expiries
-                # and margin comparisons can age them out. Never reuse Normal
-                # timestamps to make research quotes appear fresh.
-                normal_books=[]
+                # Strategy ordering: verify trend BEFORE requesting any
+                # option quotes or read-only margin calculation for Normal.
+                # A neutral/unknown trend cannot become a trade candidate.
+                normal_books=[];normal_margins={}
                 if self.normal_cfg:
-                    for d in normal_dates:
-                        normal_books.extend(self.books(index,d,set(b['protected_symbols'])))
-                    normal_margins=self.margins(index,normal_books,self.normal_cfg)
-                    self.store.set_meta('normal-theta-contracts-'+index,dict(contracts=normal_books,margins=normal_margins))
+                    from .normal_theta import confirmed_trend, scheduled_index, entry_window
+                    chosen_today=scheduled_index(self.normal_cfg,self.clock())
+                    scanning_enabled=entry_window(self.normal_cfg,self.clock()) and index==chosen_today
+                    trend=confirmed_trend(self.normal_cfg,index,b,self.clock()) if scanning_enabled else 'UNKNOWN'
+                    direction='PE' if trend=='BULLISH' else 'CE' if trend=='BEARISH' else None
+                    block_reason=('INDEX_NOT_SCHEDULED_TODAY' if index!=chosen_today else
+                                  'ENTRY_WINDOW_CLOSED' if not scanning_enabled else 'NO_CONFIRMED_TREND')
+                    scan=dict(status=block_reason,direction=None,
+                        checked_at=self.clock().isoformat(),broker_writes=False,
+                        margin_requests=0,verified_affordable=0,full_chain_exhaustive=False)
+                    if direction and normal_dates:
+                        for d in normal_dates:
+                            normal_books.extend(self.books(index,d,set(b['protected_symbols']),direction=direction))
+                        normal_margins=self.margins(index,normal_books,self.normal_cfg,direction=direction,
+                                                  funds=b.get('funds'))
+                        scan=self.margin_checks.get('normal-'+index,scan)
+                    elif direction:
+                        scan['status']='NO_LISTED_NORMAL_EXPIRY'
+                    self.store.set_meta('normal-theta-contracts-'+index,dict(
+                        contracts=normal_books,margins=normal_margins,scan=scan))
                     connect_snapshot(self.store,self.snapshot_reader() if self.snapshot_reader else snapshot,
                         self.cfg,self.clock(),self.normal_cfg)
+                # Historical IV research has no bearing on Normal's decision.
+                try:self.iv_monitor(index,expiry,b)
+                except Exception:faults.append('MATCHED_IV30_MONITOR_UNAVAILABLE')
                 books=[]
                 for d in dict.fromkeys(chosen):
                     shared=[r for r in normal_books if r['expiry']==d]

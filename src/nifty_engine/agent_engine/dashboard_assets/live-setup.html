@@ -2,7 +2,8 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="local-token" content="__LOCAL_TOKEN__"><title>Real trading setup · Options Trader</title><link rel="stylesheet" href="/dashboard.css"><link rel="stylesheet" href="/live-setup.css"><script defer src="/live-setup.js"></script></head>
 <body><header class="masthead"><a class="brand" href="/"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span><strong>Options Trader</strong><small>REAL TRADING SETUP</small></span></a><a class="button" href="/">← Dashboard</a></header>
 <main class="setup-main">
-<div class="setup-heading"><div><h1>Test a trade</h1><p>Choose one option. Review the prices. Buy with a stop-loss and an exit plan.</p></div><span class="status-pill" id="runtime-status">Checking Oracle…</span></div>
+<div class="setup-heading"><div><h1>Advanced setup &amp; recovery</h1><p>Choose one option. Review the prices. Buy with a stop-loss and an exit plan.</p></div><span class="status-pill" id="runtime-status">Checking Oracle…</span></div>
+<div class="setup-notice" role="note"><strong>Want a simple order test?</strong> Use the <a href="/live-setup">BUY / SET SL / SELL screen</a>. This advanced page also displays historical saved plans and broker evidence; it is not the current simple order form.</div>
 <ol class="setup-steps" aria-label="Setup stages"><li><b>1</b> Preview contract</li><li><b>2</b> Verify broker test</li><li><b>3</b> Close &amp; confirm</li><li><b>4</b> Prepare live · Algo Off</li></ol>
 <div class="setup-layout">
 <section class="card setup-panel"><h2>Your test order</h2><p class="setup-muted">One lot. Oracle follows the test after your click, including when this page is closed.</p>
@@ -26,6 +27,7 @@
 <section class="card setup-panel setup-progress"><div class="setup-title"><h2>Broker verification</h2><button class="button" id="refresh-status" type="button">Refresh status</button></div>
 <div id="setup-state" role="status" aria-live="polite">Loading saved setup…</div><p id="setup-reason" class="setup-muted"></p>
 <p class="setup-next-action" id="next-action"></p>
+<div id="saved-plan-notice" class="setup-notice" role="status" hidden></div><div id="saved-plan-label" class="setup-muted" hidden>Saved historical broker test (not necessarily the current form)</div>
 <dl id="review-plan" class="setup-review" hidden></dl>
 <div id="test-effect" class="notice" hidden></div>
 <details class="setup-evidence-details"><summary>Broker evidence</summary><div id="evidence" class="setup-evidence"></div></details>

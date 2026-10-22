@@ -117,15 +117,63 @@ def test_no_retry_after_provider_dedup_window_and_no_fictional_delivery(tmp_path
     assert row['mail_status']=='DELIVERY_UNKNOWN' and row['inbox_verified'] is False
 
 
-def test_changed_failure_code_creates_new_incident_but_timestamps_do_not(tmp_path):
+def test_changed_collector_error_keeps_same_continuous_outage_and_latest_details(tmp_path):
     m=Monitor(Store(tmp_path/'j.sqlite3'));v=view();v['runtime']['error']={'code':'403','error_type':'HTTPError'}
     m.tick(v,NOW);first=next(r['id'] for r in m.public()['incidents'] if r['code']=='COLLECTOR_FAILED')
     v['runtime']['heartbeat_sequence']+=1;v['runtime']['heartbeat_at']=(NOW+timedelta(seconds=5)).isoformat()
     m.tick(v,NOW+timedelta(seconds=5))
     assert len(m.public()['incidents'])==1
     v['runtime']['error']['code']='500';m.tick(v,NOW+timedelta(seconds=10))
-    assert len(m.public()['incidents'])==2 and len({r['id'] for r in m.public()['incidents']})==2
+    assert len(m.public()['incidents'])==1 and len({r['id'] for r in m.public()['incidents']})==1
+    assert m.public()['incidents'][0]['details']['provider_code']=='500'
     assert first in {r['id'] for r in m.public()['incidents']}
+
+
+def test_connection_retries_and_dependent_read_failures_email_once_per_outage(tmp_path):
+    path=tmp_path/'j.sqlite3';monitor=Monitor(Store(path));sent=[]
+    def outage(at,code):
+        v=view(at);v['runtime']['error']={'code':code,'error_type':'HTTPError'}
+        v.update(positions_status='UNAVAILABLE',orders_status='UNAVAILABLE',as_of=None,
+            funds={'status':'UNAVAILABLE'},normal_data_worker={'status':'FAILED'})
+        return v
+    monitor.tick(outage(NOW,'403'),NOW)
+    monitor.deliver(NOW+timedelta(seconds=61),ENV,send=lambda *args:sent.append(args) or 'synthetic-id')
+    first=next(r for r in monitor.public()['incidents'] if r['code']=='COLLECTOR_FAILED')
+    for minutes in (30,60,90):
+        at=NOW+timedelta(minutes=minutes)
+        monitor=Monitor(Store(path));monitor.tick(outage(at,'429'),at)
+        monitor.deliver(at,ENV,send=lambda *args:pytest.fail('same outage must not send again'))
+        assert next(r['id'] for r in monitor.public()['incidents'] if r['code']=='COLLECTOR_FAILED')==first['id']
+    assert len(sent)==1
+    assert all(r['state']=='OPEN' for r in monitor.public()['incidents'])
+    assert all(r.get('notification_suppressed_by')==first['id'] for r in monitor.public()['incidents'] if r['code']!='COLLECTOR_FAILED')
+    # An uncertain broker order is an independent critical incident, not hidden.
+    at=NOW+timedelta(minutes=91);v=outage(at,'429')
+    v['execution_controller']['blockers'].append('BROKER_PROTECTION_RECONCILIATION_REQUIRED')
+    monitor.tick(v,at)
+    monitor.deliver(at,ENV,send=lambda *args:sent.append(args) or 'synthetic-order-alert')
+    assert len(sent)==2 and 'ORDER_RECONCILIATION_REQUIRED' in sent[-1][0]['subject']
+
+
+def test_legacy_duplicate_collector_notifications_suppressed_without_fake_recovery(tmp_path):
+    m=Monitor(Store(tmp_path/'j.sqlite3'));v=view();v['runtime']['error']={'code':'403','error_type':'HTTPError'}
+    m.tick(v,NOW)
+    key,row=next(iter(m.state['incidents'].items()))
+    row['mail_status']='ACCEPTED'
+    duplicate=copy.deepcopy(row);duplicate.update(id='synthetic-duplicate',mail_status='PENDING')
+    m.state['incidents']['legacy-duplicate']=duplicate;m.save()
+    at=NOW+timedelta(minutes=30);v=view(at);v['runtime']['error']={'code':'429','error_type':'HTTPError'}
+    m.tick(v,at)
+    m.deliver(at,ENV,send=lambda *args:pytest.fail('legacy duplicate must not send'))
+    assert duplicate['state']=='OPEN' and duplicate['notification_suppressed_by']==row['id']
+    # A true observed recovery permits a later, separately identified outage.
+    m.tick(view(at+timedelta(seconds=5)),at+timedelta(seconds=5))
+    m.tick(view(at+timedelta(seconds=70)),at+timedelta(seconds=70))
+    assert all(r['state']=='RECOVERED' for r in m.state['incidents'].values())
+    new_at=at+timedelta(minutes=2);v=view(new_at);v['runtime']['error']={'code':'403','error_type':'HTTPError'}
+    m.tick(v,new_at)
+    assert len(m.state['incidents'])==3
+    assert next(r['id'] for r in m.public()['incidents'] if r['state']=='OPEN')!=row['id']
 
 
 def test_journal_contains_only_monitor_state_and_diagnostics_are_bounded(tmp_path):

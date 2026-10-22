@@ -86,6 +86,20 @@ def readonly_transport(audit, *, history=False, dashboard=False, calculations=Fa
         response = original(session, method, url, **kwargs)
         item = {"method": method.upper(), "path": urlsplit(url).path,
                 "http_status": response.status_code, "json_response": False, "provider_code": None}
+        if response.status_code == 429:
+            # Only a bounded delay, never arbitrary provider header/body text.
+            retry = response.headers.get('Retry-After', '')
+            if re.fullmatch(r'[0-9]{1,6}', retry) and int(retry) <= 604800:
+                item['retry_after_seconds'] = int(retry)
+            else:
+                try:
+                    from email.utils import parsedate_to_datetime
+                    until = parsedate_to_datetime(retry)
+                    seconds = (until - datetime.now(timezone.utc)).total_seconds()
+                    if 0 <= seconds <= 604800:
+                        item['retry_after_seconds'] = seconds
+                except (ValueError, TypeError, OverflowError):
+                    pass
         try:
             if url == "https://growwapi-assets.groww.in/instruments/instrument.csv":
                 raise ValueError("CSV response, no JSON audit")

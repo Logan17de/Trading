@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><title>Trade Log · Options Trader</title>
+<link rel="stylesheet" href="/trade-log.css">
+<script defer src="/trade-log.js"></script>
+</head>
+<body>
+<header class="top"><div class="brand"><span class="mark">OT</span><div><strong>Options Trader</strong><small>Private execution audit</small></div></div><a class="back" href="/">← Dashboard</a></header>
+<main>
+<div class="hero"><div><p class="eyebrow">BROKER EXECUTION AUDIT</p><h1>Trade Log</h1><p class="intro">A timestamped record of what the algorithm decided, reserved, sent, verified and protected. Journal events are not broker fills until the broker confirms them.</p></div><div class="read-only">Read-only · no order controls</div></div>
+<div class="overview">
+<article><span>Audit connection</span><strong id="connection">Checking…</strong><small id="source">Private Oracle journal</small></article>
+<article><span>Latest event</span><strong id="last-event">—</strong><small id="last-time">No event yet</small></article>
+<article><span>Visible events</span><strong id="count">—</strong><small>Latest 120 transitions · 60-day retention</small></article>
+</div>
+<section class="panel">
+<div class="toolbar"><div><h2>Execution timeline</h2><p id="health" role="status">Connecting to the trade journal…</p></div><div class="actions"><label>Show <select id="filter"><option value="ALL">All events</option><option value="ORDER">Orders &amp; fills</option><option value="PROTECTION">Stops &amp; protection</option><option value="BASKET">Baskets &amp; exits</option><option value="DECISION">Engine decisions</option><option value="EVALUATION">Strategy evaluation</option><option value="CONTROL">Algo controls</option><option value="STRATEGY">Strategy switches</option></select></label><button id="reload" type="button">Refresh</button><button id="export" type="button" disabled>Export CSV</button></div></div>
+<div class="table-wrap"><table><thead><tr><th>Time (JST)</th><th>Event</th><th>Status / decision</th><th>Contract / strategy</th><th>Qty / fill</th><th>Price / details</th><th>Evidence</th></tr></thead><tbody id="events"><tr><td colspan="7" class="empty">Waiting for audit records…</td></tr></tbody></table></div>
+</section>
+<p class="footer-note">Source: committed, allowlisted internal journal transitions. The list is newest first and bounded to 120 records. Personal manual trades are not adopted by this engine and therefore do not appear as algo events. Unknown fills and stop states remain unverified, never guessed.</p>
+</main>
+</body></html>

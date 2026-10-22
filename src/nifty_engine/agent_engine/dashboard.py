@@ -517,7 +517,7 @@ def collect_charts(market, snapshot, now, *, previous=None, refresh_all=True):
 class DashboardCollector:
     def __init__(self, market, *, clock=lambda: datetime.now(timezone.utc), metadata_loader=download_metadata,
                  background_history=True, journal=None, calendar_loader=download_calendar, smart_loader=None,
-                 before_ownership=None):
+                 before_ownership=None, record_market_data=True):
         self.market, self.clock, self.metadata_loader = market, clock, metadata_loader
         self.metadata, self.charts, self.chart_bucket, self.metadata_attempt = {}, {}, None, None
         self.sequence = 0
@@ -528,8 +528,8 @@ class DashboardCollector:
         self.smart_loader = smart_loader
         self.before_ownership = before_ownership
         from .session import SessionJournal
-        self.sessions = SessionJournal(journal.store) if journal else None
-        self.pnl_journal = broker_pnl.PnlJournal(journal.store) if journal else None
+        self.sessions = SessionJournal(journal.store) if journal and record_market_data else None
+        self.pnl_journal = broker_pnl.PnlJournal(journal.store) if journal and record_market_data else None
         self.account_loader = None
         self.news_loader = None
         self.funds, self.funds_next_at = {}, 0
@@ -842,7 +842,7 @@ def capture(output):
 
 
 class DashboardState:
-    def __init__(self, root, *, offline=False, background=False):
+    def __init__(self, root, *, offline=False, background=False, record_market_data=True):
         self.root, self.offline = Path(root).resolve(), offline
         self.directory = self.root / ".agent-state" / "dashboard-captures"
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -858,9 +858,16 @@ class DashboardState:
         self.monitor = PcMonitor(self.root) if background else None
         from .session import ObservedLines, SessionJournal
         line_store = self.monitor.journal.store if self.monitor else PcJournal(self.root/".agent-state/pc-monitor.sqlite3").store
-        SessionJournal(line_store)
-        self.observed_lines = ObservedLines(line_store)
-        self.pnl_lines = broker_pnl.PnlJournal(line_store)
+        if record_market_data:
+            SessionJournal(line_store)
+            self.observed_lines = ObservedLines(line_store)
+            self.pnl_lines = broker_pnl.PnlJournal(line_store)
+        else:
+            from .live_buffers import LiveLines, LivePnl, OperationalStore
+            line_store = OperationalStore(line_store)
+            if self.monitor: self.monitor.journal.store = line_store
+            self.observed_lines = LiveLines()
+            self.pnl_lines = LivePnl(line_store)
         from .capital import CapitalLedger
         self.capital_ledger = CapitalLedger(line_store)
         self.snapshot = None
@@ -969,8 +976,21 @@ class DashboardState:
             self.background_thread.start()
 
     def algo_set(self, enabled):
-        """Persist intent without enabling a blocked broker executor."""
+        """User-clicked Algo On prepares a verified live route first, never hidden trades."""
         if self.remote:
+            if enabled:
+                setup=self.owner_setup.public() if self.owner_setup else {}
+                if (setup.get('requires_reconciliation') or setup.get('operation')):
+                    return dict(status='ON_BLOCKED',desired_enabled=False,
+                        blockers=['UNRESOLVED_OWNER_TEST_OPERATION'],broker_writes=False)
+                view=self.remote.read()
+                ready=view.get('live_setup') or {}
+                if ready.get('mode')!='live' or ready.get('paused'):
+                    result=self.remote.prepare_owner_live()
+                    if result.get('status')!='LIVE_PREPARED_ALGO_OFF':
+                        return dict(status='ON_BLOCKED',desired_enabled=False,
+                            blockers=[result.get('reason','LIVE_SETUP_NOT_CONFIRMED')],
+                            broker_writes=False)
             return self.remote.set_intent(enabled)
         now = datetime.now(timezone.utc)
         policy = premium_strategy.load(self.root)
@@ -1124,18 +1144,33 @@ def handler(state):
                     content=content.replace("cid:"+attachment["content_id"],"data:image/png;base64,"+attachment["content"])
                 return self.respond(200,content.encode(),"text/html; charset=utf-8")
             assets = {"/": ("index.html", "text/html; charset=utf-8"),
-                "/live-setup": ("live-setup.html", "text/html; charset=utf-8"),
+                "/live-setup": ("manual-order.html", "text/html; charset=utf-8"),
+                "/advanced-setup": ("live-setup.html", "text/html; charset=utf-8"),
+                "/manual-order": ("manual-order.html", "text/html; charset=utf-8"),
+                "/manual-order.js": ("manual-order.js", "text/javascript; charset=utf-8"),
+                "/manual-order.css": ("manual-order.css", "text/css; charset=utf-8"),
                 "/live-setup.js": ("live-setup.js", "text/javascript; charset=utf-8"),
                 "/live-setup.css": ("live-setup.css", "text/css; charset=utf-8"),
+                "/trade-log": ("trade-log.html", "text/html; charset=utf-8"),
+                "/trade-log.js": ("trade-log.js", "text/javascript; charset=utf-8"),
+                "/trade-log.css": ("trade-log.css", "text/css; charset=utf-8"),
                 "/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
                 "/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
                 "/app-icon.svg":("app-icon.svg","image/svg+xml")}
             if self.path in assets:
                 name, kind = assets[self.path]
                 body = (ASSETS / name).read_bytes()
-                if name in ("index.html", "live-setup.html"):
+                if name in ("index.html", "live-setup.html", "manual-order.html", "trade-log.html"):
                     body = body.replace(b"__LOCAL_TOKEN__", state.token.encode())
                 return self.respond(200, body, kind)
+            if self.path == "/api/trade-log":
+                try:
+                    audit=state.read().get("trade_audit")
+                    return self.respond(200,audit if audit else {"format":"trading-audit-v1",
+                        "status":"AUDIT_NOT_DEPLOYED","events":[],"read_only":True,"broker_writes":False})
+                except Exception:
+                    return self.respond(503,{"format":"trading-audit-v1",
+                        "status":"AUDIT_UNAVAILABLE","events":[],"read_only":True,"broker_writes":False})
             if self.path == "/api/dashboard":
                 try:
                     return self.respond(200, state.read())

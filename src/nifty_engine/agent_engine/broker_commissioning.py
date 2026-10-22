@@ -108,7 +108,18 @@ def validate_plan(plan, binding, now, *, expired=False):
         deadline = stamp(value['valid_until'])
     except (ValueError, TypeError):
         fail('COMMISSIONING_DATES_INVALID')
-    if not expired and (expiry <= now.astimezone(IST).date() or not 0 < (deadline - now).total_seconds() <= 86400):
+    market_now = now.astimezone(IST)
+    # An expiry-day exception is ONLY for the owner's one-lot protected LIMIT
+    # purchase test, with its submission window ending well before market close.
+    # No GTT entry or automated strategy gains this exception.
+    expiry_day_cutoff = market_now.replace(hour=13, minute=0, second=0, microsecond=0)
+    same_day_direct = (expiry == market_now.date() and value['format'] == protection.DIRECT_FORMAT
+                       and market_now < market_now.replace(hour=12, minute=30, second=0, microsecond=0)
+                       and deadline.astimezone(IST) <= expiry_day_cutoff
+                       and (deadline - now).total_seconds() <= 1800)
+    if not expired and (expiry < market_now.date()
+                        or expiry == market_now.date() and not same_day_direct
+                        or not 0 < (deadline - now).total_seconds() <= 86400):
         fail('COMMISSIONING_PLAN_EXPIRED_OR_TOO_LONG')
     if type(c['lot_size']) is not int or not 1 <= c['lot_size'] <= 100000 or value['quantity'] != c['lot_size'] or type(value['quantity']) is not int:
         fail('COMMISSIONING_EXACT_ONE_LOT_REQUIRED')

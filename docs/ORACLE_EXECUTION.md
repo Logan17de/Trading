@@ -1,5 +1,11 @@
 # Oracle premium execution controller
 
+Current October 16 behavior is [ORDINARY_TRAILING.md](ORDINARY_TRAILING.md):
+Normal only, ordinary LIMIT entries, filled-position trailing DAY SL LIMIT and
+owned-position exits. Research/recording/Supabase uploads are retired. GTT and
+generated-child sections below describe legacy records and tests, not the new
+Normal path. Maintenance does not activate or submit real orders.
+
 ## Owner commissioning path
 
 Read [LIVE_SETUP.md](LIVE_SETUP.md). Production now requires a v2 receipt tied to

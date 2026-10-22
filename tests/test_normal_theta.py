@@ -16,6 +16,16 @@ from test_report_execution import ReportSession, LEGACY
 CFG=theta.load(Path(__file__).parents[1])
 
 
+def intraday_evidence(index,now,spot=25100,regime='BULLISH'):
+    direction=1 if regime=='BULLISH' else -1
+    end=now.replace(minute=now.minute//5*5,second=0,microsecond=0)
+    prices=[spot-direction*(30-i*5) for i in range(7)]
+    return dict(format='groww-intraday-bars-v1',index=index,source='GROWW_5MIN_OHLC',
+        received_at=now.isoformat(),interval_minutes=5,bars=[dict(
+            at=(end-timedelta(minutes=30-i*5)).isoformat(),open=prices[i],
+            high=max(prices[i:i+2])+1,low=min(prices[i:i+2])-1,close=prices[i+1]) for i in range(6)])
+
+
 def test_view_evaluation_rechecks_current_inputs_without_journal_writes(tmp_path):
     journal = PcJournal(tmp_path/'view.sqlite3')
     journal.store.set_meta(theta.KEY, {'at':'prior-worker-result'})
@@ -36,6 +46,7 @@ def test_view_evaluation_rechecks_current_inputs_without_journal_writes(tmp_path
 def evidence(index='NIFTY',regime='BULLISH'):
     b=priced_bundle(index,regime)
     b['features']['spot']['value']=25100 if regime=='BULLISH' else 24700
+    b['intraday']=intraday_evidence(index,NOW,b['features']['spot']['value'],regime)
     # No historical-IV features and no event-free horizon are invented.
     b['features'].pop('iv30');b['features'].pop('iv_percentile');b['features'].pop('rv30')
     b['event_calendar']={'status':'UNKNOWN'}
@@ -73,7 +84,7 @@ def test_missing_adverse_or_unaffordable_evidence_does_not_select(fault):
     if fault=='expiry':b['expiry_evidence']['day_jst']='2026-10-06'
     if fault=='manual':b['protected_symbols']=[b['contracts'][0]['symbol']]
     if fault=='occupied':occupied=True
-    if fault=='trend':b['features']['adx14']['value']=15
+    if fault=='trend':b['intraday']['bars']=[]
     if fault=='costs':
         for m in b['margins'].values():m['round_trip_charges_inr']=1001
     if fault=='margin':
@@ -100,6 +111,13 @@ def test_separate_group_switches_restart_revision_and_research_cannot_enter(tmp_
 class NormalSession(ReportSession):
     def __init__(self,path,index='NIFTY',regime='BULLISH'):
         super().__init__(path,index,regime);self.data=evidence(index,regime)
+        # Synthetic NIFTY execution occurs on Friday, while the shared
+        # historical research fixture uses Wednesday (now SENSEX-only).
+        if index=='NIFTY':
+            self.now=NOW+timedelta(days=2)
+            for feature in self.data['features'].values():
+                if 'history_end_at' in feature:
+                    feature['history_end_at']=(self.now-timedelta(days=1)).isoformat()
         self.gate.normal_catalog=True
         self.executor=PremiumExecutor(self.journal,self.gateway,self.protection,self.gate,LEGACY,
             clock=lambda:self.now,report_cfg=RESEARCH,normal_cfg=CFG)
@@ -112,6 +130,8 @@ class NormalSession(ReportSession):
         self.data['received_at']=self.now.isoformat();self.data['funds']['received_at']=self.now.isoformat()
         self.data['expiry_evidence'].update(day_jst=self.now.date().isoformat(),received_at=self.now.isoformat())
         for row in self.data['features'].values():row['observed_at']=self.now.isoformat()
+        self.data['intraday']=intraday_evidence(self.data['index'],self.now,
+            self.data['features']['spot']['value'],'BULLISH' if self.data['features']['spot']['value']==25100 else 'BEARISH')
         for row in self.data['contracts']:row.update(self.books[row['symbol']],greeks_received_at=self.now.isoformat())
         for m in self.data['margins'].values():m['received_at']=self.now.isoformat()
         self.journal.store.set_meta('normal-theta-evidence-'+self.data['index'],self.data)
@@ -186,7 +206,7 @@ def test_prepared_object_cannot_replace_hedge_or_risk_model(tmp_path):
     with pytest.raises(ValueError):s.executor.normal.validate(changed,s.observation())
 
 
-def test_runtime_two_groups_fixed_transport_and_no_implicit_activation(tmp_path):
+def test_runtime_only_normal_no_research_transport_or_implicit_activation(tmp_path):
     import shutil
     from nifty_engine.agent_engine.oracle_runtime import Runtime
     from nifty_engine.agent_engine.oracle_link import request
@@ -196,9 +216,10 @@ def test_runtime_two_groups_fixed_transport_and_no_implicit_activation(tmp_path)
     (tmp_path/'.trader-paused').touch()
     runtime=Runtime(tmp_path)
     view=runtime.read()
-    assert [r['id'] for r in view['strategies']]==['normal_theta','research']
+    assert [r['id'] for r in view['strategies']]==['normal_theta']
     assert not any(view['control']['strategy_controls']['enabled'].values())
-    assert view['research_studies'] and runtime.gate.mode=='paper'
+    assert 'research_studies' not in view and runtime.gate.mode=='paper'
+    assert view['data_recording']['status']=='DISABLED'
     assert 'MATCHED_IV' not in str(view['strategies'][0]['readiness'])
     from types import SimpleNamespace
     config=dict(format='trading-oracle-viewer-v1',host='example.test',user='ubuntu',
@@ -207,7 +228,183 @@ def test_runtime_two_groups_fixed_transport_and_no_implicit_activation(tmp_path)
     def local_transport(args,**kwargs):
         return SimpleNamespace(returncode=0,stdout=json.dumps(runtime.command(json.loads(kwargs['input']))))
     result=request(config,dict(action='strategy_switch',switch=dict(id='research',enabled=True,revision=0)),run=local_transport)
-    assert result['controls']['enabled']==dict(normal_theta=False,research=True)
+    assert result['status']=='RETIRED_BY_OWNER'
     assert not premium_strategy.intent(runtime.state.pnl_lines.store)['enabled']
     assert runtime.state.pnl_lines.store.meta('premium-execution-activation') is None
     assert (tmp_path/'.trader-paused').exists()
+
+
+
+def test_algo_start_auto_selects_normal_strategy_without_arming_or_writes(tmp_path):
+    """Only explicit owner intent On selects the sole executable strategy."""
+    import shutil
+    from nifty_engine.agent_engine.oracle_runtime import Runtime
+    root=Path(__file__).parents[1]
+    (tmp_path/'config').mkdir()
+    for name in ('premium_strategy.json','report_strategies.json',
+                 'normal_theta.json','owner_strategies.json','pc_app.example.json'):
+        shutil.copyfile(root/'config'/name,tmp_path/'config'/name)
+    (tmp_path/'.trader-paused').touch()
+    runtime=Runtime(tmp_path)
+    store=runtime.state.pnl_lines.store
+    assert groups.read(store)['enabled']['normal_theta'] is False
+    assert store.meta('premium-execution-activation') is None
+    # Research may be monitored without receiving any broker-write route.
+    groups.set_switch(store,dict(id='research',enabled=True,revision=0),NOW)
+    on=runtime.command(dict(action='intent',enabled=True))
+    assert groups.read(store)['enabled']==dict(normal_theta=True,research=True)
+    assert premium_strategy.intent(store)['enabled'] is True
+    assert on.get('execution_enabled') is not True
+    assert runtime.gate.blockers(None, purpose='ENTRY', strategy='normal_theta')
+    assert store.meta('premium-execution-activation') is None
+    assert not store.read('SELECT 1 FROM pc_orders')
+    assert (tmp_path/'.trader-paused').exists()
+    revision=groups.read(store)['revision']
+    runtime.command(dict(action='intent',enabled=True))
+    assert groups.read(store)['revision']==revision  # no spurious reconfiguration
+    off=runtime.command(dict(action='intent',enabled=False))
+    assert premium_strategy.intent(store)['enabled'] is False
+    assert groups.read(store)['enabled']['normal_theta'] is True
+    assert not store.read('SELECT 1 FROM pc_orders')
+    assert (tmp_path/'.trader-paused').exists()
+
+
+
+def test_trend_confirmation_is_directional_and_rejects_stale_or_flat():
+    b=evidence('NIFTY','BULLISH')
+    assert theta.confirmed_trend(CFG,'NIFTY',b,NOW)=='BULLISH'
+    b=evidence('SENSEX','BEARISH')
+    assert theta.confirmed_trend(CFG,'SENSEX',b,NOW)=='BEARISH'
+    b['features']['adx14']['value']=8
+    assert theta.confirmed_trend(CFG,'SENSEX',b,NOW)=='BEARISH','daily ADX is context only'
+    b['intraday']['bars']=[]
+    assert theta.confirmed_trend(CFG,'SENSEX',b,NOW)=='UNKNOWN'
+    b=evidence()
+    b['features']['spot']['observed_at']=(NOW-timedelta(seconds=45)).isoformat()
+    assert theta.confirmed_trend(CFG,'NIFTY',b,NOW)=='UNKNOWN'
+
+
+@pytest.mark.parametrize('regime,kind',[('BULLISH','PE'),('BEARISH','CE')])
+def test_directional_groww_basket_margin_scan_affordability_and_no_orders(tmp_path,regime,kind):
+    from types import SimpleNamespace
+    from nifty_engine.agent_engine.report_data import ReportData
+    data=evidence('NIFTY',regime)
+    calls=[]
+    def margin(**kwargs):
+        calls.append(copy.deepcopy(kwargs))
+        legs=kwargs['orders']
+        # Distinguish basket, bought hedge, and closing basket; SDK-compatible.
+        return dict(total_requirement=20000 if len(legs)==2 else 500,
+                    brokerage_and_charges=3)
+    broker=SimpleNamespace(get_order_margin_details=margin)
+    market=SimpleNamespace(groww=broker,limiter=SimpleNamespace(wait=lambda:None))
+    journal=PcJournal(tmp_path/'margin.sqlite3')
+    reader=ReportData(market,journal,RESEARCH,clock=lambda:NOW,normal_cfg=CFG)
+    affordable=reader.margins('NIFTY',data['contracts'],CFG,direction=kind,funds=data['funds'])
+    assert affordable
+    scan=reader.margin_checks['normal-NIFTY']
+    assert scan['direction']==kind and scan['verified_affordable']>=1
+    assert scan['broker_writes'] is False
+    assert scan['full_chain_exhaustive'] is False
+    assert all(c['segment']=='FNO' for c in calls)
+    assert all(o['trading_symbol'].endswith(kind) for c in calls for o in c['orders'])
+    assert any([o['transaction_type'] for o in c['orders']]==['BUY','SELL'] for c in calls)
+    assert not journal.store.read('SELECT 1 FROM pc_orders')
+
+    refused=dict(data['funds'],option_sell_available_inr=1)
+    calls.clear()
+    assert not reader.margins('NIFTY',data['contracts'],CFG,direction=kind,funds=refused)
+    assert reader.margin_checks['normal-NIFTY']['rejected_cash']>=1
+    assert not journal.store.read('SELECT 1 FROM pc_orders')
+
+
+def test_max_net_profit_rather_than_profit_to_risk_ratio():
+    base=evidence()
+    base['contracts'][0].update(bid=50,ask=50.05)
+    for margin in base['margins'].values():
+        if margin['basket_requirement_inr']==40000:margin['basket_requirement_inr']=100001
+    first=theta.evaluate(CFG,'NIFTY',base,NOW)['candidate']
+    assert first is not None and first['lots']==1
+    short,hedge=copy.deepcopy(base['contracts'])
+    expiry='2026-11-17'
+    short.update(expiry=expiry,symbol='NIFTY26N1725000PE',bid=90,ask=90.05)
+    hedge.update(expiry=expiry,symbol='NIFTY26N1724900PE',strike=24900)
+    base['contracts'] += [short,hedge]
+    base['expiry_evidence']['expiries'].append(expiry)
+    key=identity({'legs':[(hedge['symbol'],'BUY'),(short['symbol'],'SELL')],'quantity':65})
+    base['margins'][key]=dict(received_at=NOW.isoformat(),basket_requirement_inr=25000,
+        hedge_requirement_inr=500,round_trip_charges_inr=10)
+    candidate=theta.evaluate(CFG,'NIFTY',base,NOW)['candidate']
+    assert candidate['key']==key and candidate['net_max_expiry_profit_inr']>first['net_max_expiry_profit_inr']
+    assert candidate['net_max_expiry_profit_inr']/candidate['worst_case_loss_inr']<first['net_max_expiry_profit_inr']/first['worst_case_loss_inr']
+    # Highest profit still requires the exact affordable Groww basket response.
+    base['margins'][key]['basket_requirement_inr']=100001
+    assert theta.evaluate(CFG,'NIFTY',base,NOW)['candidate']['key']==first['key']
+
+
+def test_graph_indicator_projection_is_validated_read_only_and_keeps_missing_unknown():
+    b=evidence();original=copy.deepcopy(b)
+    value=theta.evaluate(CFG,'NIFTY',b,NOW)
+    assert b==original
+    for key in ('spot','ma20','ma50','adx14'):
+        assert value['trend_inputs'][key]['value']==b['features'][key]['value']
+        assert value['trend_inputs'][key]['status']=='AVAILABLE'
+    b['features']['ma20']['observed_at']=(NOW+timedelta(seconds=1)).isoformat()
+    value=theta.evaluate(CFG,'NIFTY',b,NOW)
+    assert value['trend_inputs']['ma20']==dict(status='UNKNOWN')
+    assert value['candidate'] is not None,'missing daily context must not veto a current intraday trend'
+
+@pytest.mark.parametrize('weekday,index',[
+    (0,'NIFTY'),(1,'NIFTY'),(2,'SENSEX'),(3,'SENSEX'),(4,'NIFTY'),
+    (5,None),(6,None)])
+def test_jst_weekday_index_schedule(weekday,index):
+    date=NOW+timedelta(days=weekday-NOW.weekday())
+    assert theta.scheduled_index(CFG,date)==index
+
+
+@pytest.mark.parametrize('time_text,allowed,exit_due',[
+    ('13:59',False,False),('14:00',True,False),
+    ('18:29',True,False),('18:30',False,False),
+    ('18:43',False,False),('18:44',False,True),('18:45',False,True),
+    ('18:59',False,True),('19:00',False,True),
+    ('20:00',False,True)])
+def test_normal_entry_and_forced_exit_boundaries(time_text,allowed,exit_due):
+    hour,minute=map(int,time_text.split(':'))
+    instant=NOW.replace(hour=hour,minute=minute)
+    assert theta.entry_window(CFG,instant)==allowed
+    assert theta.force_exit_due(CFG,instant)==exit_due
+
+
+def test_index_route_for_execution_requires_scheduled_index(tmp_path):
+    s=NormalSession(tmp_path,index='NIFTY')
+    s.now=NOW  # Wednesday: SENSEX only
+    prepared=s.executor.normal.preparation(s.observation())
+    assert prepared['selected'] is None
+    assert 'NIFTY_INDEX_NOT_SCHEDULED_TODAY' in prepared['reasons']
+    assert not s.broker.writes
+
+
+@pytest.mark.parametrize('index',['NIFTY','SENSEX'])
+@pytest.mark.parametrize('regime',['BULLISH','BEARISH'])
+def test_scheduled_1844_exit_never_marks_flat_early(tmp_path,index,regime):
+    s=NormalSession(tmp_path,index=index,regime=regime)
+    s.monitoring()
+    state=s.executor._state()
+    assert state['phase']=='REPORT_MONITORING'
+    s.now=s.now.replace(hour=18,minute=43,second=53)
+    first=s.tick()  # 18:43:58 JST
+    assert s.executor._state()['phase']=='REPORT_MONITORING'
+    second=s.tick() # 18:44:03 JST: first monitoring tick after the scheduled time
+    state=s.executor._state()
+    assert state['exit_reason']=='DAILY_1900_FLAT_DEADLINE'
+    assert state['phase'] in ('REPORT_EXIT_SHORTS','REPORT_EXIT_HEDGES')
+    assert state['phase']!='CLOSED'
+    s.close()
+    assert s.executor._state()['phase']=='CLOSED'
+    assert s.executor._state()['exit_reason']=='DAILY_1900_FLAT_DEADLINE'
+    assert [row['transaction_type'] for kind,row in s.broker.writes if kind=='ORDER']==[
+        'BUY','SELL','BUY','SELL']
+    writes=len(s.broker.writes)
+    s.tick()
+    assert s.executor._state()['phase']=='CLOSED'
+    assert len(s.broker.writes)==writes  # No successor after the 18:30 entry cutoff.

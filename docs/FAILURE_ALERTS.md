@@ -1,5 +1,21 @@
 # Failure email and Codex incident checks
 
+## Connection outage notifications
+
+The October 21 policy sends one alert for a continuous collector outage. Retry
+attempts, changed HTTP codes and changed source lines update the incident without
+creating another email. Missing funds, positions, orders, market data and Normal
+inputs remain recorded, with their notifications suppressed by the connection
+incident. Existing duplicate records retain their evidence and are marked
+notification-suppressed, not recovered. A confirmed recovery permits a later
+outage notification. Independent order/protection uncertainty still alerts.
+
+Groww reconnection waits at least 30 minutes after a failure, from 13:00 JST
+weekdays within the existing 19:45 collection cutoff. Retry metadata survives
+restarts, including the minimum spacing of token requests. A longer provider
+Retry-After or local budget wait is honored. Healthy five-second collection is
+unchanged. No token or credential is saved in this retry metadata.
+
 The Oracle failure watchdog is a separate read-only service. It requests only
 `{"action":"read"}` from the existing local observer socket. Its sole external
 write is notification email through the existing approved Resend configuration.
@@ -69,10 +85,9 @@ The existing independent PC outage alert remains active. Its email now includes
 the incident ID, detection time, SSH/read failure type, or the last heartbeat.
 It cannot confirm broker position/order state while Oracle is unreachable.
 
-`Trading incident watch` is a best-effort five-minute heartbeat attached to this
-chat. It reads the diagnostics, deduplicates reviewed incidents privately, and
-reports meaningful failures/recoveries. It is not an immediate event callback
-and an email does not prove the chat woke. The read-only command is:
+The owner removed the Codex Trading schedules on October 13. Oracle/PC monitoring
+continues independently; an email does not prove this chat woke. The manual
+read-only diagnostic command is:
 
 ```powershell
 .\.venv\Scripts\python.exe -I -m nifty_engine.agent_engine.failure_alerts pc-status --root "D:\Money Trader\Trading"

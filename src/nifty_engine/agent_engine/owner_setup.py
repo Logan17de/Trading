@@ -214,6 +214,34 @@ def authorize_test(store, tool, current, plan, confirmation):
     return dict(status='OWNER_TEST_RUNNING',plan_id=plan['id'],plan_hash=identity(plan),broker_writes=False)
 
 
+def submit_manual_buy(store, tool, current, plan, confirmation):
+    """One explicitly authorized direct BUY. Never starts the SL/target worker.
+
+    A persisted owner authorization and the exact plan are required, and the
+    direct broker submit writes its durable attempt before contacting Groww.
+    A lost response must be reconciled, never retried with another BUY.
+    """
+    from .commissioning_stop import DIRECT_FORMAT
+    if plan.get('format') != DIRECT_FORMAT:
+        raise SetupError('EXACT_DIRECT_LIMIT_BUY_REQUIRED')
+    authorize_test(store, tool, current, plan, confirmation)
+    from .commissioning_direct import AUTH
+    auth=store.meta(AUTH,{})
+    store.set_meta(AUTH,dict(auth,manual_only=True))
+    return tool.submit(plan, confirmation)
+
+
+def finish_manual_buy_when_settled(store, plan_id, status):
+    """No background worker exists in manual mode; finish after verified flatness."""
+    from .commissioning_direct import AUTH
+    auth=store.meta(AUTH,{})
+    if (auth.get('manual_only') is True and auth.get('plan_id')==plan_id and
+            auth.get('state')=='RUNNING' and
+            status.get('status') in ('COMPLETE','CLOSED_UNVERIFIED','CANCELLED_FLAT','ABORTED_BEFORE_WRITE')):
+        store.set_meta(AUTH,dict(auth,state='FINISHED',completed_at=status.get('checked_at')))
+    return status
+
+
 def start_test_job(args, values):
     result=run_worker('authorize-test',args,values)
     try:
@@ -291,6 +319,21 @@ def retire_plan(store, tool, current, plan_id):
                 plan_hash=record['plan_hash'], checked_at=tool.clock().isoformat())
 
 
+def validate_live_positions(positions):
+    """Manual F&O holdings remain protected, not adopted by Normal theta."""
+    if (not isinstance(positions,list) or len(positions)>1000 or
+        any(not isinstance(row,dict) or type(row.get('quantity')) not in (int,float)
+            for row in positions)):
+        raise SetupError('EXACT_BROKER_POSITIONS_REQUIRED')
+    active=[row for row in positions if row['quantity']]
+    if any(not isinstance(row.get('trading_symbol'),str)
+           or not re.fullmatch('[A-Z0-9]{8,80}',row['trading_symbol'])
+           or row.get('product') not in ('NRML','MIS','CNC')
+           for row in active):
+        raise SetupError('COMPLETE_MANUAL_POSITION_IDENTITY_REQUIRED')
+    return len(active)
+
+
 def worker(payload):
     """Only root's fixed child runs this, as the journal's service UID."""
     import fcntl
@@ -305,7 +348,7 @@ def worker(payload):
         raise SetupError('EXACT_ORACLE_SERVICE_IDENTITY_REQUIRED')
     require_direct_route(os.environ)
     store=Store(root/'.agent-state/pc-monitor.sqlite3')
-    if intent(store)['enabled']: raise SetupError('TURN_ALGO_OFF_BEFORE_SETUP')
+    if payload['action'] != 'lookup' and intent(store)['enabled']: raise SetupError('TURN_ALGO_OFF_BEFORE_SETUP')
     mode=payload['environment']['EXECUTION_MODE']
     lock=(root/'.agent-state/broker-commissioning.lock').open('a')
     with lock:
@@ -335,6 +378,71 @@ def worker(payload):
                 q=quote_summary(market.quote(c['symbol'],segment='FNO',exchange=EXCHANGES[c['index']]),tool.clock())
                 return dict(status='OWNER_CONTRACT_FOUND',contract=c,egress_ip=current['egress_ip'],
                             quote=q,checked_at=tool.clock().isoformat(),broker_writes=False)
+            if action in ('live-preview','live-confirm'):
+                # Owner has chosen the *strategy* as the first real broker
+                # execution. This is explicitly NOT a fictitious provider test.
+                # Read actual FNO account, open positions, ordinary orders and
+                # active smart orders before authorizing that choice.
+                if mode!='paper' or not (root/'.trader-paused').exists():
+                    raise SetupError('PAPER_PAUSED_MODE_REQUIRED')
+                if store.read("SELECT 1 FROM pc_orders WHERE state<>'CLOSED' LIMIT 1"):
+                    raise SetupError('OWNED_BASKET_MUST_BE_CLOSED_BEFORE_LIVE')
+                tool._profile()
+                positions=tool._read('get_positions_for_user',segment='FNO').get('positions')
+                # Existing personal holdings are safe to leave open; the
+                # collector permanently excludes their symbols from new
+                # strategy-owned orders and never adopts/cancels manual orders.
+                validate_live_positions(positions)
+                orders=tool._orders()
+                if any(row.get('order_status') not in ('EXECUTED','CANCELLED','REJECTED','EXPIRED')
+                       for row in orders):
+                    raise SetupError('NO_PENDING_FNO_ORDERS_REQUIRED')
+                # Groww's active smart-order pagination is not implied by an
+                # ordinary order list. Unknown statuses fail closed.
+                from datetime import timedelta
+                now=datetime.now(timezone.utc)
+                for kind in ('GTT','OCO'):
+                    end=now.astimezone(__import__('zoneinfo').ZoneInfo('Asia/Kolkata')).replace(tzinfo=None)
+                    start=end-timedelta(days=28)
+                    for page in range(4):
+                        result=tool._read('get_smart_order_list',segment='FNO',smart_order_type=kind,
+                            status='ACTIVE',page=page,page_size=50,
+                            start_date_time=start.isoformat(),end_date_time=end.isoformat())
+                        rows=result.get('orders')
+                        if not isinstance(rows,list) or len(rows)>50:
+                            raise SetupError('CURRENT_SMART_ORDER_SCAN_REQUIRED')
+                        if rows:raise SetupError('ACTIVE_FNO_SMART_ORDER_PRESENT')
+                        break
+                funds=tool._read('get_available_margin_details')
+                from .dashboard import funds_summary
+                balances=funds_summary(funds)
+                if not all(isinstance(balances.get(k),(int,float)) and balances[k]>0
+                           for k in ('option_buy_available_inr','option_sell_available_inr')):
+                    raise SetupError('AVAILABLE_BROKER_MARGIN_REQUIRED')
+                from .live_setup import OWNER_KEY,owner_receipt
+                saved=store.meta('premium-owner-live-preview',{})
+                if action=='live-preview':
+                    review=dict(format='trading-owner-live-preview-v1',
+                        binding=current,created_at=now.isoformat(),
+                        nonce=uuid.uuid4().hex,strategy='normal_theta',
+                        risk='UNCOMMISSIONED_FIRST_REAL_STRATEGY_ORDER')
+                    review['digest']=identity(review)
+                    store.set_meta('premium-owner-live-preview',review)
+                    return dict(status='LIVE_STRATEGY_REVIEW_READY',
+                        evidence_digest=review['digest'],provider_verified=False,
+                        broker_writes=False,first_trade_uncommissioned=True)
+                from .contracts import stamp
+                if (not isinstance(saved,dict) or saved.get('format')!='trading-owner-live-preview-v1'
+                    or saved.get('binding')!=current or saved.get('digest')!=payload.get('confirm')
+                    or not isinstance(saved.get('nonce'),str)
+                    or not 0<=(now-stamp(saved['created_at'])).total_seconds()<=120):
+                    raise SetupError('FRESH_EXACT_LIVE_REVIEW_REQUIRED')
+                if owner_receipt(current,now)['account_fingerprint']!=current['account_fingerprint']:
+                    raise SetupError('OWNER_BINDING_INVALID')
+                store.set_meta(OWNER_KEY,owner_receipt(current,now))
+                store.set_meta('premium-owner-live-preview',{})
+                return dict(status='LIVE_OWNER_AUTHORIZED_UNCOMMISSIONED',
+                    broker_writes=False,provider_verified=False,algo_enabled=False)
             if action=='preview':
                 return preview_plan(store,tool,payload['spec'],current,plan_id)
             plan_id=preview_id(plan_id)
@@ -342,6 +450,8 @@ def worker(payload):
             if not plan: raise SetupError('PREVIEW_PLAN_FIRST')
             if action=='authorize-test':
                 return authorize_test(store,tool,current,plan,payload['confirm'])
+            if action=='manual-buy':
+                return submit_manual_buy(store,tool,current,plan,payload['confirm'])
             if action=='advance-test':
                 from .commissioning_direct import advance
                 return advance(tool,plan)
@@ -350,9 +460,11 @@ def worker(payload):
             if action=='protect':return tool.protect(plan_id,payload['confirm'])
             if action=='cancel-stop':return tool.cancel_stop(plan_id,payload['confirm'])
             if action=='retire':return retire_plan(store,tool,current,plan_id)
-            if action=='capture':return tool.capture(plan_id)
+            if action=='capture':
+                return finish_manual_buy_when_settled(store,plan_id,tool.capture(plan_id))
             if action=='status':
-                return arm_recovery_status(store,tool,current,plan_id,plan_status(store,tool,current,plan_id))
+                return finish_manual_buy_when_settled(store,plan_id,
+                    arm_recovery_status(store,tool,current,plan_id,plan_status(store,tool,current,plan_id)))
             if action in ('arm-preview','install-receipt'):
                 proof=tool.verify_ready_to_arm(plan_id)
                 digest=identity(proof)
@@ -447,6 +559,88 @@ def arm(args, values):
                 next_step='SELECT_NORMAL_THETA_THEN_OWNER_ALGO_START')
 
 
+def live_prepare(args, values):
+    """Explicit owner Algo On commissioning waiver with read-only preflight.
+
+    No broker orders are written here. Actual first trade is initiated only by
+    the normal executor after the owner's subsequent Algo On, under entry gates.
+    """
+    if values['EXECUTION_MODE']!='paper':raise SetupError('PAPER_REQUIRED_FOR_LIVE_PREPARATION')
+    validate_deployed_release(Path(__file__).resolve().parents[3],ROOT)
+    preview=run_worker('live-preview',args,values)
+    if args.action=='live-preview':return preview
+    if (not re.fullmatch('[a-f0-9]{64}',args.confirm) or
+            preview.get('evidence_digest')!=args.confirm):
+        raise SetupError('CONFIRM_EXACT_OWNER_LIVE_REVIEW')
+    raise SetupError('FRESH_EXPLICIT_REVIEW_REQUIRED')
+
+
+def live_enable(args,values):
+    """Transition to LIVE only when the exact short-lived preview was accepted."""
+    if values['EXECUTION_MODE']!='paper':raise SetupError('PAPER_REQUIRED_FOR_LIVE_PREPARATION')
+    validate_deployed_release(Path(__file__).resolve().parents[3],ROOT)
+    if not re.fullmatch('[a-f0-9]{64}',args.confirm):
+        raise SetupError('EXACT_OWNER_LIVE_CONFIRMATION_REQUIRED')
+    pause=ROOT/'.trader-paused'
+    if not (pause.exists() or pause.is_symlink()) or not ORIGINAL_PAUSE.is_file():
+        raise SetupError('ORIGINAL_AND_RUNTIME_PAUSE_REQUIRED')
+    # This fresh worker is read-only to the broker and consumes the exact
+    # account/policy/release-bound confirmation without inventing stop proof.
+    result=run_worker('live-confirm',args,values)
+    if result.get('status')!='LIVE_OWNER_AUTHORIZED_UNCOMMISSIONED':
+        raise SetupError('LIVE_AUTHORIZATION_FAILED')
+    from .store import Store
+    from .premium_strategy import intent
+    db=Store(ROOT/'.agent-state/pc-monitor.sqlite3')
+    if intent(db)['enabled']:raise SetupError('ALGO_MUST_REMAIN_OFF_UNTIL_LIVE_RESTART')
+    raw=ENV.read_bytes()
+    original_link=os.readlink(pause) if pause.is_symlink() else None
+    original_content=None if original_link else pause.read_bytes()
+    subprocess.run(['systemctl','stop','trading-observer'],check=True,capture_output=True)
+    completed=False
+    try:
+        atomic_environment(ENV,live_environment(raw))
+        pause.unlink()
+        subprocess.run(['systemctl','start','trading-observer'],check=True,capture_output=True)
+        # Do not accept a merely successful systemctl start as proof of a
+        # functioning LIVE observer. Verify actual exact-release socket, owner
+        # receipt and durable Algo Off before returning to the desktop.
+        release=Path(__file__).resolve().parents[3]
+        responsive=False
+        for _ in range(6):
+            try:
+                response=subprocess.run(['runuser','-u','trading-observer','--',
+                    str(release/'venv/bin/python'),'-I','-m',
+                    'nifty_engine.agent_engine.oracle_runtime','client','--root',str(ROOT)],
+                    input='{"action":"read"}',capture_output=True,text=True,timeout=18)
+                snapshot=json.loads(response.stdout) if response.returncode==0 else {}
+                status=snapshot.get('live_setup') or {}
+                algo=(snapshot.get('control') or {}).get('algo') or {}
+                if (snapshot.get('format')=='trading-dashboard-v1'
+                    and status.get('mode')=='live' and status.get('paused') is False
+                    and (status.get('owner_risk_authorized') is True
+                         or not __import__('nifty_engine.agent_engine.pc_control',
+                             fromlist=['collection_window']).collection_window(datetime.now(timezone.utc)))
+                    and algo.get('desired_enabled') is False):
+                    responsive=True
+                    break
+            except (OSError,ValueError,subprocess.TimeoutExpired):pass
+            import time
+            time.sleep(3)
+        if not responsive:raise SetupError('LIVE_RUNTIME_RESTART_NOT_VERIFIED')
+        completed=True
+    finally:
+        if not completed:
+            atomic_environment(ENV,raw)
+            if not (pause.exists() or pause.is_symlink()):
+                if original_link:pause.symlink_to(original_link)
+                else:pause.write_bytes(original_content)
+            subprocess.run(['systemctl','start','trading-observer'],check=True,capture_output=True)
+    return dict(status='LIVE_PREPARED_ALGO_OFF',provider_verified=False,
+                owner_risk_authorized=True,broker_writes=False,
+                algo_enabled=False,next_step='OWNER_ALGO_START')
+
+
 def root_action(args):
     """Serialize the entire owner action, including service/mode transitions."""
     import fcntl
@@ -455,6 +649,8 @@ def root_action(args):
         if os.fstat(lock.fileno()).st_uid!=0:raise SetupError('ROOT_SETUP_LOCK_REQUIRED')
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         values=environment(ENV)
+        if args.action=='live-preview':return live_prepare(args,values)
+        if args.action=='live-enable':return live_enable(args,values)
         if args.action in ('preview','preview-stdin') and args.id is not None:preview_id(args.id)
         if args.action in ('preview-stdin','lookup-stdin'):
             raw=sys.stdin.read(8193)
@@ -466,7 +662,7 @@ def root_action(args):
             if args.spec.stat().st_mode&0o077 or args.spec.stat().st_size>8192:raise SetupError('PRIVATE_BOUNDED_PLAN_REQUIRED')
             return run_worker('preview',args,values,spec=json.loads(args.spec.read_text()))
         if not args.id or not re.fullmatch('[a-f0-9]{32}',args.id):raise SetupError('EXACT_PREVIEW_PLAN_ID_REQUIRED')
-        if args.action in ('submit','close','cancel','protect','cancel-stop','arm','buy-protect') and not re.fullmatch('[a-f0-9]{64}',args.confirm):
+        if args.action in ('submit','close','cancel','protect','cancel-stop','arm','buy-protect','manual-buy') and not re.fullmatch('[a-f0-9]{64}',args.confirm):
             raise SetupError('OWNER_EXACT_CONFIRMATION_REQUIRED')
         if args.action=='buy-protect':
             return start_test_job(args,values)
@@ -476,7 +672,7 @@ def root_action(args):
 def main():
     os.umask(0o077)
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=('preview','preview-stdin','lookup-stdin','buy-protect','submit','capture','status','close','cancel','protect','cancel-stop','retire','arm-preview','arm','_worker'))
+    parser.add_argument('action',choices=('live-preview','live-enable','preview','preview-stdin','lookup-stdin','buy-protect','manual-buy','submit','capture','status','close','cancel','protect','cancel-stop','retire','arm-preview','arm','_worker'))
     parser.add_argument('--spec',type=Path,help='Private Oracle JSON file; never a credential file')
     parser.add_argument('--id',help='Optional 32-hex preview ID for safe retries; required for subsequent actions')
     parser.add_argument('--confirm',default='',help='Exact plan hash for a test write, or evidence digest for arm')

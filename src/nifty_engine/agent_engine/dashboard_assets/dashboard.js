@@ -25,21 +25,25 @@ function emptyChart(container, title, subtitle="") {
   container.onpointermove=null; container.onpointerleave=null;
   container.innerHTML = `<div class="empty-chart"><svg class="icon" aria-hidden="true"><use href="#icon-bars"/></svg><strong>${escapeHTML(title)}</strong><small>${escapeHTML(subtitle)}</small></div>`;
 }
-function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=false, label="Chart",levels=[],fiveMinuteGrid=false,gapSeconds=Infinity,lines=[]}={}) {
+function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=false, label="Chart",levels=[],fiveMinuteGrid=false,gapSeconds=Infinity,lines=[],indexPoints=false,fixedRange=null}={}) {
   const rows = (points || []).filter(p => known(p.value) && Number.isFinite(Date.parse(p.at)));
   if (!rows.length || (mini && rows.length < 2)) {emptyChart(container, rows.length ? "Waiting for more observations" : "No chart data", "No prices are filled in or simulated."); return;}
   const markers=levels.filter(p=>known(p.price)&&p.price>0&&['ENTRY','SL','TARGET'].includes(p.kind));
   // Match the drawing to CSS pixels so a single wide panel cannot stretch type/strokes.
   const width=Math.max(160,Math.round(container.clientWidth)||640), height=Math.max(60,Math.round(container.clientHeight)||(mini?68:280));
   const premium=container.classList.contains('option-chart');
-  const signature=JSON.stringify({rows,color,area,mini,pnl,label,markers,timeZone,fiveMinuteGrid,gapSeconds,width,height,lines});
+  const fixed=known(fixedRange?.low)&&known(fixedRange?.high)&&fixedRange.high>fixedRange.low;
+  const signature=JSON.stringify({rows,color,area,mini,pnl,label,markers,timeZone,fiveMinuteGrid,gapSeconds,width,height,lines,indexPoints,fixedRange});
   if(container.dataset.chartSignature===signature) return;
   container.dataset.chartSignature=signature;
-  const left=mini?2:48, right=mini?3:premium?76:14, top=mini?5:28, bottom=mini?5:32;
+  const left=mini?2:indexPoints?78:48, right=mini?3:premium?76:fixed?(width<480?108:134):14, top=mini?5:28, bottom=mini?5:32;
   const domain=[...rows.map(r=>r.value),...markers.map(p=>p.price),...lines.flatMap(s=>s.points.filter(p=>known(p.value)).map(p=>p.value))];
   let low=Math.min(...domain), high=Math.max(...domain);
   if (pnl) {low=Math.min(low,0); high=Math.max(high,0);}
-  let span=high-low || Math.max(Math.abs(high)*.02,1); low-=span*.09; high+=span*.09; if(!pnl) low=Math.max(0,low); span=high-low;
+  let span=high-low || Math.max(Math.abs(high)*.02,1);
+  if(fixed){low=fixedRange.low;high=fixedRange.high;}
+  else {low-=span*.09;high+=span*.09;if(!pnl)low=Math.max(0,low);}
+  span=high-low;
   const first=Date.parse(rows[0].at), last=Date.parse(rows.at(-1).at), duration=last-first||1;
   const inset=0;
   const x=r=>rows.length===1?(width+left-right)/2:left+inset+(Date.parse(r.at)-first)/duration*(width-left-right-2*inset), y=v=>top+(high-v)/span*(height-top-bottom);
@@ -51,9 +55,10 @@ function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=
   if (!mini) {
     const rawStep=span/4, scale=10**Math.floor(Math.log10(rawStep));
     const step=[1,2,2.5,5,10].find(n=>n*scale>=rawStep)*scale;
-    for(let value=Math.ceil(low/step)*step;value<=high;value+=step) {
-      const at=y(value), tick=Math.abs(value)>=1000?(value/1000).toFixed(Math.abs(value)>=10000?0:1)+"k":value.toFixed(step<1?2:step<10?1:0);
-      grid+=`<line x1="${left}" y1="${at}" x2="${width-right}" y2="${at}" stroke="#e8eeeb" vector-effect="non-scaling-stroke"/><text x="${left-10}" y="${at+4}" text-anchor="end" fill="#526980" font-size="12">${tick}</text>`;
+    const ticks=fixed?Array.from({length:5},(_,i)=>low+span*i/4):Array.from({length:Math.floor((high-Math.ceil(low/step)*step)/step)+1},(_,i)=>Math.ceil(low/step)*step+i*step);
+    for(const value of ticks) {
+      const at=y(value), tick=fixed?numeric.format(value):indexPoints?new Intl.NumberFormat('en-IN',{maximumFractionDigits:step<1?2:step<10?1:0}).format(value):Math.abs(value)>=1000?(value/1000).toFixed(Math.abs(value)>=10000?0:1)+"k":value.toFixed(step<1?2:step<10?1:0);
+      grid+=`<line x1="${left}" y1="${at}" x2="${width-right}" y2="${at}" stroke="#e8eeeb" vector-effect="non-scaling-stroke"/><text data-axis-value="${value}" x="${left-10}" y="${at+4}" text-anchor="end" fill="#526980" font-size="12">${tick}</text>`;
     }
     const tickCount=Math.max(2,Math.floor((width-left-right)/100));
     const minimumMinutes=duration/60000/tickCount;
@@ -85,7 +90,17 @@ function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=
   const gaps=premium?rows.slice(1).map((r,i)=>Date.parse(r.at)-Date.parse(rows[i].at)>gapSeconds*1000?`<g class="data-gap"><title>No observations ${clockSeconds(rows[i].at)}–${clockSeconds(r.at)}</title><rect x="${x(rows[i])}" y="${top}" width="${x(r)-x(rows[i])}" height="${height-top-bottom}" fill="#f1f4f3"/>${x(r)-x(rows[i])>65?`<text x="${(x(r)+x(rows[i]))/2}" y="${height-bottom-10}" text-anchor="middle" fill="#526980" font-size="11">No data</text>`:''}</g>`:'').join(''):'';
   const lastRow=rows.at(-1), lastY=y(lastRow.value);
   const lastLabel=premium?`<line x1="${left}" x2="${width-right}" y1="${lastY}" y2="${lastY}" stroke="${color}" stroke-opacity=".35" stroke-dasharray="2 5" vector-effect="non-scaling-stroke"/><rect x="${width-right+8}" y="${lastY-11}" width="64" height="22" rx="4" fill="#172d48"/><text x="${width-right+40}" y="${lastY+4}" text-anchor="middle" fill="white" font-size="12" font-weight="600">${lastRow.value.toFixed(2)}</text>`:'';
-  container.innerHTML=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeHTML(label)} · ${rows.length} observations"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".12"/><stop offset="1" stop-color="${color}" stop-opacity=".015"/></linearGradient></defs>${gaps}${grid}${area&&!hasGaps?`<path d="${fill}" fill="url(#${id})"/>`:""}${pnl?`<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#bdcec3"/>`:""}${levelLines}${lastLabel}${segments}${mini||lines.length?"":`<circle cx="${x(lastRow)}" cy="${lastY}" r="3" fill="${color}" stroke="white" stroke-width="1.5"/>`}<g class="chart-crosshair" visibility="hidden"><line y1="${top}" y2="${height-bottom}" stroke="#789082" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"/><circle r="4" fill="white" stroke="${color}" stroke-width="1.5"/></g></svg>`;
+  const clipId='plot-'+container.id;
+  const baseline=fixed&&known(fixedRange.start)?`<line class="session-start-line" x1="${left}" x2="${width-right}" y1="${y(fixedRange.start)}" y2="${y(fixedRange.start)}" stroke="#8b9aa8" stroke-dasharray="4 5"><title>First observed session price ${numeric.format(fixedRange.start)}</title></line>`:'';
+  const labels=fixed?lines.map(s=>({s,last:s.points.filter(r=>known(r.value)&&Number.isFinite(Date.parse(r.at))).at(-1)})).filter(r=>r.last).map(r=>({...r,position:Math.max(top+10,Math.min(height-bottom-10,y(r.last.value)))})).sort((a,b)=>a.position-b.position):[];
+  labels.forEach((r,i)=>{r.labelY=Math.max(r.position,i?labels[i-1].labelY+24:top+10);});
+  const overflow=labels.length?Math.max(0,labels.at(-1).labelY-(height-bottom-10)):0;
+  const seriesLabels=labels.map(({s,last,labelY,position})=>{
+    const outside=last.value>high?'above':last.value<low?'below':'',arrow=outside==='above'?' ↑':outside==='below'?' ↓':'';
+    const text=`${s.label||s.key.toUpperCase()} ${numeric.format(last.value)}${arrow}`,cy=labelY-overflow;
+    return `<g class="series-label" data-series-label="${escapeHTML(s.key)}" data-outside="${outside}"><title>${escapeHTML(s.name)}: ${numeric.format(last.value)}${outside?' · '+outside+' displayed range':''}</title><path d="M${width-right},${position} L${width-right+7},${cy}" stroke="${s.color}" fill="none"/><rect x="${width-right+7}" y="${cy-10}" width="${right-10}" height="20" rx="3" fill="#fff" stroke="${s.color}" stroke-opacity=".25"/><text x="${width-right+12}" y="${cy+4}" fill="${s.color}" font-size="11" font-weight="600">${escapeHTML(text)}</text></g>`;
+  }).join('');
+  container.innerHTML=`<svg viewBox="0 0 ${width} ${height}" ${fixed?`data-y-min="${low}" data-y-max="${high}"`:''} preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeHTML(label)} · ${rows.length} observations"><defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".12"/><stop offset="1" stop-color="${color}" stop-opacity=".015"/></linearGradient>${fixed?`<clipPath id="${clipId}"><rect x="${left}" y="${top}" width="${width-left-right}" height="${height-top-bottom}"/></clipPath>`:''}</defs>${gaps}${grid}<g ${fixed?`clip-path="url(#${clipId})"`:''}>${baseline}${area&&!hasGaps?`<path d="${fill}" fill="url(#${id})"/>`:""}${pnl?`<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#bdcec3"/>`:""}${levelLines}${lastLabel}${segments}${mini||lines.length?"":`<circle cx="${x(lastRow)}" cy="${lastY}" r="3" fill="${color}" stroke="white" stroke-width="1.5"/>`}</g>${seriesLabels}<g class="chart-crosshair" ${fixed?`clip-path="url(#${clipId})"`:''} visibility="hidden"><line y1="${top}" y2="${height-bottom}" stroke="#789082" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"/><circle r="4" fill="white" stroke="${color}" stroke-width="1.5"/></g></svg>`;
   if(mini) return;
   const tooltip=document.createElement("div"); tooltip.className="chart-tooltip"; tooltip.hidden=true; container.append(tooltip);
   container.onpointermove=event=> {
@@ -94,7 +109,8 @@ function chart(container, points, {color="#08b75d", area=false, mini=false, pnl=
     const crosshair=container.querySelector('.chart-crosshair'); if(!crosshair) return; crosshair.setAttribute('visibility','visible');
     const vertical=crosshair.querySelector('line'); vertical.setAttribute('x1',x(nearest));vertical.setAttribute('x2',x(nearest));
     const dot=crosshair.querySelector('circle');dot.setAttribute('cx',x(nearest));dot.setAttribute('cy',y(nearest.value));
-    tooltip.innerHTML=`${escapeHTML(fiveMinuteGrid?clockSeconds(nearest.at):clock(nearest.at))} ${timeZone==="Asia/Tokyo"?"JST":"IST"}`+(lines.length?lines.map(s=>`<b><span style="color:${s.color}">${escapeHTML(s.name)}</span> ${escapeHTML(signed(s.points.find(p=>p.at===nearest.at)?.value))}</b>`).join(''):`<b>${escapeHTML(inr(nearest.value))}</b>`);
+    const formatValue=value=>indexPoints?(known(value)?numeric.format(value)+' pts':'—'):signed(value);
+    tooltip.innerHTML=`${escapeHTML(fiveMinuteGrid?clockSeconds(nearest.at):clock(nearest.at))} ${timeZone==="Asia/Tokyo"?"JST":"IST"}`+(lines.length?lines.map(s=>`<b><span style="color:${s.color}">${escapeHTML(s.name)}</span> ${escapeHTML(formatValue(s.points.find(p=>p.at===nearest.at)?.value))}</b>`).join(''):`<b>${escapeHTML(indexPoints?formatValue(nearest.value):inr(nearest.value))}</b>`);
     tooltip.hidden=false; tooltip.style.left=Math.max(0,Math.min(event.clientX-box.left+12,box.width-tooltip.offsetWidth-4))+"px";
   };
   container.onpointerleave=()=>{tooltip.hidden=true;container.querySelector('.chart-crosshair')?.setAttribute('visibility','hidden');};
@@ -168,92 +184,237 @@ function drawOption(side, option) {
   if(series?.length) chart($(side+"-chart"),series,{color:change<0?"#ef4b2c":side==="buy"?"#08b75d":"#fb861c",label:side+" option premium · "+(observed?'observed live line':'five-minute closes')+" · "+option.symbol,levels,fiveMinuteGrid:true,gapSeconds:observed?20:Infinity});
   else emptyChart($(side+"-chart"),option?.series_status==="WAITING_FOR_SESSION"?"Waiting for the market session":option?.series_status==="LOADING_OPTION_HISTORY"?"Loading 5-minute prices":option?"Option history unavailable":"Choose an option contract",option?.series_status==="WAITING_FOR_SESSION"?"Today's line appears after real session observations arrive.":option?.series_status==="LOADING_OPTION_HISTORY"?"Quotes continue updating while the line chart loads.":option?"This exact contract has no price history.":"Your selected strike and expiry will appear here.");
 }
-function renderControl() {
-  const c=data.control, policy=c?.strategy_rules, algo=c?.algo;
-  const on=algo?.desired_enabled===true;
-  const writesPermitted=algo?.execution_enabled===true&&data.execution_controller?.execution_enabled===true;
-  const selected=(data.strategies||[]).filter(s=>s.desired_enabled&&s.execution_route_implemented);
-  const selectedNames=selected.map(s=>s.name).join(', ');
-  const monitorNames=(data.strategies||[]).filter(s=>s.desired_enabled&&s.mode==='MONITOR_ONLY').map(s=>s.name).join(', ');
-  const selection=['trading-report-research-v1','normal-theta-v1'].includes(policy?.format)?`Selected for entries: ${selectedNames||'none'}.${monitorNames?` Monitoring only: ${monitorNames}.`:''} `:'';
-  $("monitor-status").textContent=data.demo?"Sample preview":on?(writesPermitted?'On · execution permitted':'On · trading blocked'):"Algo Off";
-  $("engine-heading").textContent=data.runtime?.host==='ORACLE'?"Oracle engine":"Trading engine";
-  $("vm-status").textContent=data.vm?`VM: ${data.vm.status} · independent PC monitor${data.vm.alert_status?` · alert ${data.vm.alert_status}`:''}`:"";
-  $("email-status").textContent=data.daily_email?`Daily report · next session · mail 12:45–19:00 JST · ${data.daily_email.status} · inbox ${data.daily_email.inbox_verified?'verified':'not verified'}`:"Daily report · next session · mail 12:45–19:00 JST";
-  $("everyday-rule").textContent="NIFTY call ₹20 · SENSEX call ₹80";
-  $("slot-policy").textContent="1 algo basket · maximum 2 lots · margin required";
-  $("monitor-schedule").textContent="14:00–19:00 JST · expiry strategy at 18:00";
-  const expiry=c?.expiry_check;
-  $("expiry-status").textContent=expiry?Object.entries(expiry).map(([index,e])=>`${index}: ${e.is_expiry_day===true?"expiry — Everyday skips; Late-session eligible":e.is_expiry_day===false?"non-expiry — Everyday eligible":"expiry unverified — no entry"}`).join(" · "):"Actual expiry dates must be confirmed from Groww";
-  const prep=data.execution_preparation;
-  $("preparation-status").hidden=!prep;
-  const bookLabels={TARGET_SHORT_MANUAL_PROTECTED:"target belongs to manual-trade history",TARGET_SHORT_MASTER_REQUIRED:"waiting for target contract metadata",TARGET_SHORT_BOOK_REQUIRED:"waiting for the target's bid/ask depth",SHORT_BOOK_EXPIRED_DURING_CALCULATIONS:"price expired during broker calculations; waiting for a fresh comparison",FRESH_EXCLUSIVE_HEDGE_BOOK_REQUIRED:"waiting for a current unprotected hedge book"};
-  const prepLabels={RANKED_CURRENT_CANDIDATES:"sampled margin comparison prepared",NO_VERIFIED_AFFORDABLE_HEDGED_CANDIDATE:"no verified affordable spread",CURRENT_EXPIRY_REQUIRED:"waiting for expiry evidence",ACTUAL_EXPIRY_DAY_SKIPPED:"Everyday skips expiry",WAIT_FOR_ACTUAL_EXPIRY_1800_JST:"waiting for expiry at 18:00",VERIFIED_DIRECTIONAL_TREND_REQUIRED:"waiting for an observed expiry trend",TARGET_SHORT_BOOK_OR_EXCLUSIVE_CONTRACT_REQUIRED:"target contract unavailable or protected",FRESH_COMPLETE_DATA_REQUIRED:"waiting for current data",OUTSIDE_1400_1900_JST:"outside entry window",BROKER_PREPARATION_UNAVAILABLE:"broker calculation unavailable",PREPARATION_NOT_STARTED:"waiting for broker preparation",PREPARATION_INPUT_UNAVAILABLE:"preparation data unavailable",ENGINE_SLOT_OCCUPIED_RECONCILE_BEFORE_ENTRY:"owned basket occupies the slot"};
-  $("preparation-status").textContent=prep?`Preparation: ${bookLabels[prep.reason]||prepLabels[prep.reason]||prep.status}${prep.at?' · '+dateTime(prep.at):''} · read-only comparison`:"";
-  $("strategy-priority").textContent="NIFTY Mon/Tue/Fri; SENSEX Wed/Thu. Expiry: a matching position skips entry; otherwise replace only the algo-owned basket. Your trades are protected.";
-  $("levels").hidden=true; $("rule-details").hidden=true;
-  $("analysis-status").textContent="60% premium reduction: NIFTY ≤ ₹8 / SENSEX ≤ ₹32. Review replacing the short with the next listed premium above its threshold. Keep the hedge unless net improvement exceeds ₹100.";
-  $("trailing-status").textContent=`Loss-stop trigger ₹1,000 per algo basket · ${data.execution_controller?.protection==='VERIFIED_ACTIVE'?'broker GTT verified':'broker protection not armed'} · fills and maximum loss are not guaranteed.`;
-  $("control-note").textContent="By 19:00: hold when the short premium is above its entry premium − ₹5; otherwise queue a return to ₹20 / ₹80. Expiry at 18:00: uptrend → put 3 strikes below ATM; downtrend → call 3 strikes above ATM. Hedges are required. Broker activation and verification are shown above.";
-  if(policy?.format==='trading-report-research-v1') {
-    $("everyday-rule").textContent="Bull put · Bear call · Iron condor · Calendar";
-    $("monitor-schedule").textContent="14:00–19:00 JST entries · owned exits monitored from market open · NIFTY + SENSEX";
-    $("expiry-status").textContent="Research: 30–45 DTE shorts · close by 7 DTE · actual expiry evidence required";
-    $("strategy-priority").textContent="One basket. Trend selects bullish puts or bearish calls; range selects condor. Legacy entry rules retired; manual trades protected.";
-    $("analysis-status").textContent="IV history, realized volatility, ADX, deltas, event calendar and exact margin evidence required. Missing evidence stays UNKNOWN.";
-    const studies=data.strategy_research;
-    if(studies?.indices)$("analysis-status").textContent=Object.entries(studies.indices).map(([index,r])=>`${index}: ${r.regime||'UNKNOWN'} · ${r.input_connection?.current_snapshot?'current snapshot connected':'waiting for current snapshot'} · ${[...new Set((r.strategies||[]).flatMap(s=>s.reasons||[]))].join('; ')}`).join(' | ');
-    $("preparation-status").textContent=studies?`Research data: ${Object.entries(studies.data_connections||{}).map(([index,r])=>`${index} ${r.status}${r.reasons?.length?': '+r.reasons.join(', '):r.reason?': '+r.reason:''}`).join(' · ')||'waiting for collection window'} · ${data.execution_controller?.report_preparation?.status||'waiting for executor connection'}`:"Waiting for research reader";
-    $("control-note").textContent="Switches select new entries; disabling a strategy keeps existing owned protection and exits while Algo is On. Three credit baskets have guarded execution routes. Calendar is monitoring only. Start requires live validation and complete data. ₹1,000 is an exit trigger, not a guaranteed loss cap."+(strategySwitchMessage?' '+strategySwitchMessage:'');
-  }
-  if(policy?.format==='normal-theta-v1') {
-    $("everyday-rule").textContent="Normal theta spread · Research";
-    $("monitor-schedule").textContent="14:00–19:00 JST entries · owned exits from market open";
-    $("expiry-status").textContent="14–45 DTE · close by 7 DTE · actual API/master expiry";
-    $("strategy-priority").textContent="Uptrend: hedged put credit spread. Downtrend: hedged call credit spread. No confirmed trend: no trade. One basket; manual trades protected.";
-    const normal=data.normal_theta;
-    $("analysis-status").textContent=normal?.indices?Object.entries(normal.indices).map(([index,r])=>`${index}: ${r.regime} · ${r.status}${r.reasons?.length?` · ${r.reasons.join('; ')}`:''}`).join(' | '):"Waiting for current trend, theta and quotes";
-    $("preparation-status").textContent=`Normal preparation: ${data.execution_controller?.report_preparation?.status||'WAIT'} · read-only comparison · historical IV not required`;
-    $("control-note").textContent="Positive net model theta; equal bought hedge. Half-credit profit exit; ₹1,000 loss trigger and quoted risk bound. Research never enters; the existing 38-day study continues. Start still requires actual broker validation and live activation.";
-  }
-  $("algo-start").disabled=data.demo||algoStartPending||strategySwitchPending||on||data.vm?.status!=='HEALTHY';
-  $("algo-start").textContent=on?"Algo On":"Algo Start";
-  $("algo-stop").disabled=data.demo||algoStartPending||!on;
-  const last=algoStartResult||c?.latest_start_request;
-  const labels={RETIRED_STRATEGY_NEW_ENTRY_DISABLED:"legacy entries retired",ORACLE_EXECUTOR_NOT_IMPLEMENTED_OR_VERIFIED:"Oracle executor is not connected",REPOSITORY_PAUSED:"trading is paused",LIVE_ENVIRONMENT_NOT_ACTIVATED:"live mode is not activated",REVIEWED_LIVE_ACTIVATION_REQUIRED:"broker execution and persistent protection need live verification",ORACLE_EXECUTOR_CONNECTION_REQUIRED:"waiting for Oracle broker connection",WAITING_FOR_COLLECTION_WINDOW:"waiting for the collection window",ALL_EXECUTABLE_STRATEGIES_OFF:"no execution strategy selected",FRESH_COMPLETE_BROKER_STATE_REQUIRED:"fresh complete broker state is required",FRESH_MARKET_DATA_REQUIRED:"current data is required",OUTSIDE_1400_1900_JST:"outside 14:00–19:00 JST",OFFLINE_VIEW:"offline view",MAXIMUM_LOTS_REQUIRED:"lot cap missing",PREMIUM_POLICY_REQUIRED:"strategy settings are missing",OWNER_ALGO_OFF:"owner setting is Off",VM_UNHEALTHY_OR_STALE:"VM heartbeat/data unavailable"};
-  labels.SELF_CLOSE_RECONCILIATION_REQUIRED="Self closure needs flat/protection confirmation";
-  const blockers=[...new Set(algo?.blockers||[])].filter(k=>k!=='OWNER_ALGO_OFF').map(k=>labels[k]||k).join('; ');
-  $("algo-start-result").textContent=algoStartPending?"Saving owner setting…":last?.status==='TRANSPORT_FAILED'?"Oracle did not confirm the setting. Read the On/Off state before retrying.":selection+(on?(writesPermitted?"Algo On. Oracle may place real orders for these strategies when their entry checks pass; one basket at a time.":`On is saved until you click Algo Off. Trading blocked: ${blockers||'readiness not confirmed'}.`):`Algo Off. Start saves On on Oracle; orders require live readiness.${blockers?` Currently blocked: ${blockers}.`:''}`);
-  const execution=data.execution_controller;
-  const setup=data.live_setup;
-  if($("live-setup-status"))$("live-setup-status").textContent=setup?
-    (setup.next_step==='OWNER_START'?"Real trading setup verified. Select Normal theta spread and click Algo Start when ready.":
-    `Real trading setup: ${String(setup.commissioning?.status||'NOT_STARTED').replaceAll('_',' ').toLowerCase()}. Complete the owner broker check, then prepare live mode. Algo stays Off during setup.`):"Real trading setup: waiting for Oracle status.";
-  const impulse=data.premium_impulse;
-  $("impulse-status").textContent=impulse?`Stream: ${impulse.transport_status||impulse.status} · ${Object.entries(impulse.indices||{}).map(([index,r])=>`${index}: ${r.score??'—'}/100 (${r.status}, ${r.known_points}/100 evidence)`).join(' · ')||'waiting for current events and history'} · ${impulse.processing_ms??'—'} ms local processing · read-only`:'Streaming breakout detector: waiting for Oracle evidence';
-  const lastImpulse=impulse?.recent_confirmations?.at(-1);
-  if(lastImpulse)$("impulse-status").textContent+=` · Last confirmation: ${lastImpulse.index} ${lastImpulse.direction} ${lastImpulse.score}/100 at ${clockSeconds(lastImpulse.confirmed_at)} (historical event)`;
-  const research=impulse?.research,archive=data.research_archive;
-  $("impulse-research-status").textContent=`Premium research · MONITOR ONLY · ${research?.enabled?'NIFTY + SENSEX':research?'disabled':'waiting for Oracle'} · ${Object.entries(research?.active_events||{}).map(([index,e])=>`${index} ATM ${e.locked_atm_strike}, levels ${Object.keys(e.thresholds_crossed||{}).join('/')}`).join(' · ')||'no active impulse'} · Supabase ${archive?.status||'waiting'}${archive?` (${archive.pending_records} queued, ${archive.uncaptured_ticks} local ticks waiting)`:''}${research?.failure?` · ${research.failure}`:''}`;
-  $("execution-status").textContent=execution?.code_implemented?`Oracle executor installed · ${String(execution.phase||'IDLE').replaceAll('_',' ').toLowerCase()} · ${execution.provider_execution_verified?'broker validation recorded':'live broker validation pending'}`:'';
-  const readiness=data.readiness_evidence;
-  if(readiness){
-    const calendar=readiness.event_calendar||{};
-    $("execution-status").textContent+=` · IV research: ${Object.entries(readiness.iv||{}).map(([index,r])=>`${index} ${r.completed_observed_days??0}/252 observed days`).join(', ')} · Events: ${calendar.status||'UNKNOWN'}${calendar.unknown_sources?.length?` (${calendar.unknown_sources.join(', ')} unavailable)`:''} · Broker protection: ${readiness.broker_protection?.reason||'unverified'}`;
-    $("execution-status").textContent+=` · Matched IV: ${Object.entries(readiness.matched_iv||{}).map(([index,r])=>`${index} ${r.reviewed_sessions}/252 reviewed, current ${r.current_available?'available':'missing/stale'}`).join('; ')}`;
-    const campaign=readiness.research_campaign;
-    if(campaign?.started_at)$("execution-status").textContent+=` · Research ${campaign.elapsed_calendar_days}/38 days · ${campaign.status==='COLLECTING'?'collecting':'review required'}`;
-  }
-  const review=execution?.position_review;
-  const closed=execution?.external_close||execution?.last_external_close;
-  if(closed?.label){
-    $("execution-status").textContent+=` · ${closed.label}${closed.closed_at?' · '+clockSeconds(closed.closed_at):''}`;
-    if(closed.status&&closed.status!=='CLOSED')$("execution-status").textContent+=' · awaiting flat/protection confirmation';
-  }
-  if(review?.action==='REVIEW_ROLL_SHORT')$("execution-status").textContent+=` · Existing spread: review short rollover (premium ≤ ${inr(review.rollover_threshold_rupees)})`;
-  if(review?.action==='REVIEW_OWNED_EXIT'&&review?.reason!=='EXPIRY_1900_HANDOFF')$("execution-status").textContent+=' · Existing spread: review exit (basket stop/trail)';
-  if(review?.reason==='EXPIRY_1900_HANDOFF')$("execution-status").textContent+=` · 19:00 expiry close review → ${review.successor.index} entry review after flat/session checks`;
+function algoReason(code) {
+  const labels={
+    NO_CONFIRMED_DIRECTIONAL_TREND:'Current prices do not confirm a sustained directional trend.',
+    INTRADAY_TREND_WARMUP:'Waiting for six completed five-minute intervals.',
+    INTRADAY_MOVE_BELOW_NOISE_FLOOR:'The 30-minute move is below the small-move noise threshold.',
+    INTRADAY_DIRECTION_NOT_SUSTAINED:'The recent move is too mixed or choppy to confirm direction.',
+    INTRADAY_DIRECTION_REVERSED:'The live price has retraced the confirmed direction.',
+    CURRENT_TREND_INPUT_REQUIRED:'Current trend inputs are unavailable.',
+    CURRENT_SNAPSHOT_AND_API_MASTER_EXPIRY_REQUIRED:'Current market data and API/master expiry confirmation are required.',
+    CURRENT_MARGIN_BALANCES_REQUIRED:'Current Groww option-buy and option-sell balances are required.',
+    COMPLETE_INDEX_POSITION_EVIDENCE_REQUIRED:'Complete current positions and orders are required.',
+    MANUAL_PROTECTION_EVIDENCE_REQUIRED:'Manual-position exclusions must be confirmed.',
+    POSITIVE_THETA_LIQUID_HEDGED_BASKET_WITHIN_RISK_REQUIRED:'No liquid, positive-theta hedged basket qualifies within the margin and risk limits.',
+    SINGLE_BASKET_OCCUPIED:'The existing algo basket occupies the single slot.',
+    OUTSIDE_1400_1830_JST:'New entries run from 14:00 to 18:30 JST.',
+    OUTSIDE_1400_1900_JST:'The trading action window is closed.',
+    REPOSITORY_PAUSED:'Trading is paused.', LIVE_ENVIRONMENT_NOT_ACTIVATED:'Live mode is not prepared.',
+    REVIEWED_LIVE_ACTIVATION_REQUIRED:'Real-trading authorization for this release is required.',
+    ORACLE_EXECUTOR_CONNECTION_REQUIRED:'Waiting for the Oracle executor connection.',
+    REPORT_INPUTS_OR_STRATEGY_SELECTION_REQUIRED:'Waiting for a qualifying strategy basket.',
+    REPORT_EXECUTION_INPUT_UNAVAILABLE:'The executor could not validate its current inputs.',
+    ALL_EXECUTABLE_STRATEGIES_OFF:'Normal theta is switched Off.',
+    FRESH_COMPLETE_BROKER_STATE_REQUIRED:'Fresh complete broker positions and orders are required.',
+    FRESH_MARKET_DATA_REQUIRED:'Fresh market data is required.',
+    NORMAL_DATA_WORKER_FAILED:'The strategy input reader has failed or stopped updating.',
+    VM_UNHEALTHY_OR_STALE:'The Oracle heartbeat or market data is unavailable or stale.',
+    SELF_CLOSE_RECONCILIATION_REQUIRED:'Your external closure is waiting for flat-position and stop confirmation.',
+    BROKER_PROTECTION_RECONCILIATION_REQUIRED:'The broker stop needs reconciliation before another action.',
+    STRATEGY_SWITCH_OFF:'Normal theta is switched Off.',
+    OWNER_ALGO_OFF:'Algo is Off.', NORMAL_THETA_INPUTS_REQUIRED:'Waiting for a qualifying Normal theta basket.',
+    LOSS_TRIGGER:'Basket loss threshold reached.', TRAILING_STOP:'Trailing stop threshold reached.',
+    HALF_CREDIT_PROFIT:'Profit target reached.', EXPIRY_GAMMA_WINDOW:'The position reached the close-by-expiry window.',
+    DAILY_1900_FLAT_DEADLINE:'Scheduled session exit.',
+  };
+  return labels[code]||labels[String(code).split(':')[0]]||String(code||'Status unavailable').toLowerCase().replaceAll('_',' ');
 }
+
+function normalScheduledIndex(view, now) {
+  const days=view.control?.strategy_rules?.weekday_index_jst;
+  if(!Array.isArray(days))return view.control?.algo?.index||null;
+  const day=['Mon','Tue','Wed','Thu','Fri'].indexOf(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tokyo',weekday:'short'}).format(now));
+  return day>=0?days[day]||null:null;
+}
+
+// Presentation only: never changes a guard, owner setting, candidate or broker state.
+function algoChecklistModel(view, now=new Date()) {
+  const control=view.control||{},algo=control.algo||{},execution=view.execution_controller||{},setup=view.live_setup||{};
+  const cfg=control.strategy_rules||{},indices=view.normal_theta?.indices||{};
+  const index=normalScheduledIndex(view,now),entry=indices[index]||{},reasons=entry.reasons||[],scan=entry.basket_scan||{};
+  const on=algo.desired_enabled===true,active=!['IDLE','CLOSED'].includes(execution.phase||'IDLE');
+  const age=at=>(now.getTime()-Date.parse(at))/1000;
+  const recent=at=>Number.isFinite(age(at))&&age(at)>=0&&age(at)<=15;
+  const fresh=view.vm?.status==='HEALTHY'&&view.freshness==='RECENT'&&!view.runtime?.error&&recent(view.as_of);
+  const worker=view.normal_data_worker,workerBad=worker&&(worker.status==='FAILED'||!Number.isFinite(age(worker.checked_at))||age(worker.checked_at)<0||age(worker.checked_at)>180);
+  const evaluated=fresh&&!workerBad&&recent(entry.at)&&Array.isArray(entry.reasons);
+  const candidate=evaluated&&entry.status==='CANDIDATE'?entry.candidate:null;
+  const selected=control.strategy_controls?.enabled?.normal_theta===true;
+  const live=setup.mode==='live'&&setup.paused===false&&(setup.owner_risk_authorized===true||setup.provider_verified===true);
+  const blocks=[...new Set([...(algo.blockers||[]),...(execution.blockers||[])])].filter(r=>r!=='OWNER_ALGO_OFF');
+  const expected=new Set(['REPORT_INPUTS_OR_STRATEGY_SELECTION_REQUIRED','OUTSIDE_1400_1900_JST']);
+  const hard=blocks.filter(r=>!expected.has(r));
+  if(workerBad)hard.push('NORMAL_DATA_WORKER_FAILED');
+  const writes=algo.execution_enabled===true&&execution.execution_enabled===true&&fresh;
+  const reasonsFor=prefix=>reasons.filter(r=>r.startsWith(prefix));
+  const rows=[],row=(title,state,detail)=>rows.push({title,state,detail});
+  row('Algo & live connection',!fresh?'unknown':!on?'waiting':live&&selected?'passed':'blocked',
+    !fresh?'Oracle heartbeat or market data is stale/unavailable.':!on?'Click Algo Start when you want to authorize real trading.':
+    !selected?'Normal theta is switched Off.':live?'Algo On · Oracle connected · LIVE.':'Live setup or pause prevents trading.');
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tokyo',weekday:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(now).map(p=>[p.type,p.value]));
+  const weekday=['Mon','Tue','Wed','Thu','Fri'].indexOf(parts.weekday),scheduled=cfg.weekday_index_jst?.[weekday];
+  const clock=parts.hour+':'+parts.minute,windowOpen=weekday>=0&&clock>=(cfg.entry_window_jst?.[0]||'14:00')&&clock<(cfg.latest_entry_jst||'18:30');
+  row('Time & index',evaluated?(windowOpen&&index===scheduled?'passed':'waiting'):'unknown',
+    `${scheduled||'No index'} scheduled today · entries 14:00–${cfg.latest_entry_jst||'18:30'} JST · exits begin ${cfg.forced_exit_jst||'18:44'} JST.`);
+  const positions=evaluated&&view.positions_status==='AVAILABLE'&&view.orders_status==='AVAILABLE'&&
+    !reasons.includes('COMPLETE_INDEX_POSITION_EVIDENCE_REQUIRED')&&!reasons.includes('MANUAL_PROTECTION_EVIDENCE_REQUIRED');
+  row('Positions & ownership',positions?(control.slot?.new_entry_blocked?'waiting':'passed'):'unknown',
+    positions?(control.slot?.new_entry_blocked?'An existing owned basket holds the slot.':'Positions/orders checked. Manual and unknown trades are excluded. One algo basket only.'):
+    'Waiting for complete current broker positions, orders and manual-trade exclusions.');
+  const missingTrend=reasonsFor('CURRENT_TREND_INPUT_REQUIRED');
+  const signal=entry.trend_signal,intraday=signal?.method==='intraday-price-action-v1';
+  const intradayDetail=!evaluated||missingTrend.length?'Waiting for current spot and contiguous completed five-minute prices.':
+    signal?.bar_count===6&&known(signal.change_points)&&known(signal.efficiency)?`Last 30 min: ${signal.change_points>=0?'+':''}${signal.change_points.toFixed(2)} points · ${signal.agreeing_bars}/6 intervals agree · ${(signal.efficiency*100).toFixed(0)}% direction consistency. ${entry.regime==='BULLISH'?'Uptrend → hedged put spread.':entry.regime==='BEARISH'?'Downtrend → hedged call spread.':(signal.reasons||[]).map(algoReason).join(' ')} Daily MAs/ADX are context only.`:
+    'Waiting for six completed five-minute intervals. Daily MAs/ADX are context only.';
+  row('Confirmed trend',!evaluated||missingTrend.length?'unknown':entry.regime==='BULLISH'||entry.regime==='BEARISH'?'passed':'waiting',
+    intraday?intradayDetail:!evaluated||missingTrend.length?'Waiting for current spot, MA20, MA50 and ADX14.':
+    entry.regime==='BULLISH'?'Price > MA20 > MA50 and ADX ≥25 → sell a hedged put spread.':
+    entry.regime==='BEARISH'?'Price < MA20 < MA50 and ADX ≥25 → sell a hedged call spread.':
+    'Needs price > MA20 > MA50, or price < MA20 < MA50, with ADX ≥25. Not confirmed.');
+  const expiryKnown=evaluated&&!reasons.includes('CURRENT_SNAPSHOT_AND_API_MASTER_EXPIRY_REQUIRED');
+  row('Actual expiry',!expiryKnown?'unknown':candidate?'passed':scan.status==='NO_LISTED_NORMAL_EXPIRY'?'waiting':'not_checked',
+    candidate?`${candidate.expiry} · 14–45 days at entry; close by 7 days remaining.`:
+    !expiryKnown?'Waiting for current API/master expiry confirmation.':scan.status==='NO_LISTED_NORMAL_EXPIRY'?'No eligible listed 14–45 day expiry.':
+    'API/master receipt checked. A listed 14–45 day contract is selected after trend confirmation.');
+  row('Strikes, quotes & theta',!evaluated?'unknown':candidate?'passed':scan.status==='NO_CONFIRMED_TREND'?'not_checked':'waiting',
+    candidate?`${candidate.spread_type==='bull_put'?'Put':'Call'} spread · short |delta| 0.15–0.25 · fresh depth · positive net theta.`:
+    'Short: OTM, |delta| 0.15–0.25. Buy a same-expiry outer hedge. Require fresh quotes/Greeks, depth and positive net theta.');
+  const balanceKnown=evaluated&&!reasons.includes('CURRENT_MARGIN_BALANCES_REQUIRED');
+  row('Groww basket margin',!balanceKnown?'unknown':candidate?'passed':scan.margin_requests>0?'waiting':'not_checked',
+    candidate?`Basket ${inr(candidate.basket_requirement_inr)} · hedge ${inr(candidate.hedge_requirement_inr)} · available balances checked.`:
+    !balanceKnown?'Waiting for actual option-buy and option-sell balances.':scan.margin_requests>0?
+    `${scan.margin_requests} basket comparisons · ${scan.verified_affordable??0} affordable; waiting for a currently valid basket.`:
+    'After trend confirms, compare full basket, hedge-only and exit margin/charges against Groww balances.');
+  row('Profit, size & risk',!evaluated?'unknown':candidate?'passed':scan.rejected_risk>0?'waiting':'not_checked',
+    candidate?`${candidate.lots} lot${candidate.lots===1?'':'s'} · quoted max expiry profit ${inr(candidate.net_max_expiry_profit_inr)} · modeled loss ${inr(candidate.worst_case_loss_inr)}.`:
+    'Choose highest net quoted max expiry profit after costs. Maximum 2 lots; modeled loss and hedge debit + costs each ≤ ₹1,000.');
+  const protection=execution.protection||'NOT_ARMED';
+  row('Fill → trailing SL → exit',!fresh?'unknown':protection==='VERIFIED_ACTIVE'?'passed':active?'waiting':'not_checked',
+    protection==='VERIFIED_ACTIVE'?'Broker stop verified. It only tightens; short exits before hedge.':
+    active?'An owned basket is being managed. Stop/fill reconciliation must finish before another action.':
+    'Buy hedge and confirm fill → sell and confirm fill → attach ordinary trailing SL. Cancel/verify SL before a separate exit.');
+  let heading='Algo Off',badge='Off',tone='neutral',detail='No new algo orders are authorized. Entry requirements remain visible below.';
+  if(on){
+    if(!fresh){heading='Waiting for current Oracle data';badge='On · data unavailable';tone='blocked';detail='On is saved. Current execution state cannot be confirmed; stale checks are Unknown.';}
+    else if(hard.length||!live||!selected){heading='Trading needs attention';badge='On · action required';tone='blocked';detail=hard.length?hard.map(algoReason).join(' '):!selected?'Normal theta is switched Off.':'Live setup or pause prevents trading.';}
+    else if(active){heading='Managing the owned basket';badge='On · managing';tone='passed';detail=`Current stage: ${algoReason(execution.phase)}. ${execution.external_close?.label||''}`.trim();}
+    else if(!evaluated){heading='Waiting for current strategy evidence';badge='On · checking';tone='waiting';detail='The next dated Normal theta evaluation is required. Unknown checks do not authorize orders.';}
+    else if(writes&&candidate){heading=`${index} basket qualifies`;badge='On · ready';tone='passed';detail='The executor rechecks positions, prices and margin before buying the hedge. A candidate is not a fill.';}
+    else if(windowOpen&&reasons.length===1&&reasons[0]==='NO_CONFIRMED_DIRECTIONAL_TREND'){
+      heading=`Waiting for ${index} trend`;badge='On · waiting for trend';tone='waiting';detail='No entry: the moving averages and ADX have not confirmed a direction. Basket selection follows confirmation.';
+    }else{heading=windowOpen?'Waiting for a qualifying basket':'Waiting for the entry window';badge='On · waiting';tone='waiting';detail=reasons.length?reasons.map(algoReason).join(' '):'The executor has not confirmed a currently executable basket.';}
+  }
+  if(view.demo){heading='Sample strategy preview';badge='Preview';detail='Sample values only. No orders.';}
+  const short=candidate?.legs?.find(r=>r.side==='SELL'),hedge=candidate?.legs?.find(r=>r.side==='BUY');
+  const basket=candidate&&short&&hedge?
+    `SELL ${short.strike} ${short.symbol.endsWith('PE')?'PUT':'CALL'} + BUY ${hedge.strike} hedge · ${candidate.expiry} · ${candidate.lots} lot${candidate.lots===1?'':'s'} · margin ${inr(candidate.basket_requirement_inr)} · quoted max expiry profit ${inr(candidate.net_max_expiry_profit_inr)} after estimated costs.`:
+    !evaluated?'Current basket evidence is unavailable.':scan.status==='NO_CONFIRMED_TREND'?'Not checked yet — waiting for the trend. No strike or profit has been selected.':
+    scan.margin_requests>0?`${scan.margin_requests} comparisons; ${scan.verified_affordable??0} affordable at scan time. No currently qualified basket selected.`:
+    'No qualified basket selected. Margin, fees and eligible strikes must all be verified before entry.';
+  const event=(view.trade_audit?.events||[]).find(e=>['ORDER','BASKET','CONTROL'].includes(e.kind));
+  let activity='No recorded algo entry. Current checklist explains why the engine is waiting.';
+  if(event){
+    const label=event.kind==='CONTROL'?`Algo switched ${event.status==='ON'?'On':'Off'}`:
+      event.kind==='ORDER'?`${event.side||'Order'} ${event.symbol||''} · ${algoReason(event.status)}${event.filled_quantity>0?` · filled ${event.filled_quantity}`:''}`:
+      `${event.index||''} ${event.spread||'basket'} · ${algoReason(event.status)}${event.exit_reason?' · '+algoReason(event.exit_reason):''}`;
+    activity=`Last recorded action · ${dateTime(event.at)} · ${label}. See Trade log for the historical order and decision evidence.`;
+  }
+  return {heading,badge,tone,detail,rows,basket,activity,at:entry.at,on,evaluated};
+}
+
+function strategyGraphRange(index, rows) {
+  const half=index==='NIFTY'?500:index==='SENSEX'?1500:null,first=rows[0];
+  if(!half||!first||!known(first.value)||first.value<=0)return null;
+  const sessionOf=at=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(at));
+  const session=sessionOf(first.at),storageKey='trading-strategy-anchors-v1';
+  let cache=strategyGraphRange.cache;
+  if(!cache){try{cache=JSON.parse(sessionStorage.getItem(storageKey));}catch{}}
+  if(!cache||cache.session!==session||!cache.anchors||typeof cache.anchors!=='object')cache={session,anchors:{}};
+  let anchor=cache.anchors[index];
+  if(!anchor||!known(anchor.value)||anchor.value<=0||!Number.isFinite(Date.parse(anchor.at))||sessionOf(anchor.at)!==session||Date.parse(first.at)<Date.parse(anchor.at)){
+    anchor={at:first.at,value:first.value};cache.anchors[index]=anchor;
+    // Only two public index anchors for this browser tab/session, not tick history.
+    cache.anchors=Object.fromEntries(['NIFTY','SENSEX'].filter(k=>cache.anchors[k]).map(k=>[k,cache.anchors[k]]));
+    try{sessionStorage.setItem(storageKey,JSON.stringify(cache));}catch{}
+  }
+  strategyGraphRange.cache=cache;
+  return {low:anchor.value-half,high:anchor.value+half,start:anchor.value,at:anchor.at,half};
+}
+
+function strategyGraphModel(view, now=new Date()) {
+  const index=normalScheduledIndex(view,now),entry=view.normal_theta?.indices?.[index]||{};
+  const market=(view.markets||[]).find(r=>r.index===index),fresh=view.vm?.status==='HEALTHY'&&view.freshness==='RECENT';
+  const rows=(market?.series||[]).filter(r=>known(r.value)&&Number.isFinite(Date.parse(r.at)));
+  const current=algoChecklistModel(view,now).evaluated;
+  const missingTrend=(entry.reasons||[]).some(r=>r.startsWith('CURRENT_TREND_INPUT_REQUIRED'));
+  const graph={index,points:rows,range:strategyGraphRange(index,rows),current,price:current?market?.price:null,hasProjection:Boolean(entry.trend_inputs),
+    state:!current||missingTrend?'Current trend unknown':entry.regime==='BULLISH'?'Bullish trend confirmed → hedged put spread':
+      entry.regime==='BEARISH'?'Bearish trend confirmed → hedged call spread':'Waiting for MA alignment and ADX ≥25',
+    // These reference values are optional read-only engine evidence, never
+    // derived from the intraday line or estimated by the viewer.
+    indicators:{},signal:entry.trend_signal,received_at:rows.at(-1)?.at};
+  if(graph.signal?.method==='intraday-price-action-v1')graph.state=!current||missingTrend?'Current intraday trend unknown':
+    entry.regime==='BULLISH'?'30-minute uptrend confirmed → hedged put spread':
+    entry.regime==='BEARISH'?'30-minute downtrend confirmed → hedged call spread':
+    (graph.signal.reasons||[]).map(algoReason).join(' ')||'Waiting for a sustained 30-minute direction';
+  if(current&&graph.signal?.bar_count===6&&known(graph.signal.change_points)&&known(graph.signal.efficiency))
+    graph.state+=` · 30 min ${graph.signal.change_points>=0?'+':''}${graph.signal.change_points.toFixed(2)} pts · ${graph.signal.agreeing_bars}/6 agree · ${(graph.signal.efficiency*100).toFixed(0)}% consistency / 60% required`;
+  for(const key of ['ma20','ma50','adx14']) {
+    const feature=entry.trend_inputs?.[key];
+    if(current&&feature?.status==='AVAILABLE'&&known(feature.value))graph.indicators[key]=feature.value;
+  }
+  return graph;
+}
+
+function renderStrategyGraph() {
+  const graph=strategyGraphModel(data),indicator=graph.indicators;
+  const intraday=graph.signal?.method==='intraday-price-action-v1',context=intraday?' · context':'';
+  const missing=graph.hasProjection?'unknown':'not supplied';
+  $('strategy-graph-title').textContent=`Strategy graph${graph.index?' · '+graph.index:''}`;
+  $('strategy-graph-state').textContent=graph.state;
+  $('strategy-graph-price').textContent=known(graph.price)?numeric.format(graph.price):'—';
+  $('strategy-graph-legend').innerHTML=[
+    {name:'Index price',color:'#2473b5'},
+    ...(graph.range?[{name:'First observed '+numeric.format(graph.range.start)+' · ±'+graph.range.half+' pts',color:'#8b9aa8'}]:[]),
+    {name:(known(indicator.ma20)?'Daily MA20 '+numeric.format(indicator.ma20):'Daily MA20 · '+missing)+context,color:'#9b62b6'},
+    {name:(known(indicator.ma50)?'Daily MA50 '+numeric.format(indicator.ma50):'Daily MA50 · '+missing)+context,color:'#d18221'},
+    {name:known(indicator.adx14)?'Daily ADX '+indicator.adx14.toFixed(1)+(intraday?' · context':' / 25 required'):'Daily ADX · '+missing,color:'#526980'},
+  ].map(s=>`<span><i style="background:${s.color}"></i>${escapeHTML(s.name)}</span>`).join('');
+  if(graph.points.length) {
+    const lines=[{key:'spot',label:graph.index,name:'Observed index price',color:'#2473b5',points:graph.points}];
+    for(const [key,color] of [['ma20','#9b62b6'],['ma50','#d18221']])if(known(indicator[key]))
+      // Daily references are constant throughout this session, not fake ticks.
+      lines.push({key,name:'Prior daily '+key.toUpperCase(),color,points:graph.points.map(r=>({at:r.at,value:indicator[key]}))});
+    chart($('strategy-graph'),graph.points,{color:'#2473b5',label:`${graph.index} strategy graph · observed index price`,lines,fiveMinuteGrid:true,gapSeconds:20,indexPoints:true,fixedRange:graph.range});
+  }else emptyChart($('strategy-graph'),'Waiting for actual index observations','No simulated prices or indicators.');
+  const outside=graph.range&&[...graph.points.map(r=>r.value),indicator.ma20,indicator.ma50].some(v=>known(v)&&(v<graph.range.low||v>graph.range.high));
+  $('strategy-graph-caption').textContent=`${graph.received_at?'Observed through '+clockSeconds(graph.received_at):'No observations yet'} · 5-second refresh target${graph.range?' · fixed range '+numeric.format(graph.range.low)+'–'+numeric.format(graph.range.high)+' from first observed price at '+clock(graph.range.at):''}${intraday?' · direction uses the last 30 completed minutes; daily MAs/ADX are context only.':' · daily MA20/MA50 and ADX.'}${outside?' ↑/↓ labels mark values outside this range.':''}${graph.current?'':' Current readings are unknown; any displayed line is historical.'}${!known(indicator.ma20)||!known(indicator.ma50)||!known(indicator.adx14)?intraday?' Some daily context is unavailable.':graph.hasProjection?' Waiting for current validated indicator readings.':' This Oracle release does not supply numeric indicators; they are not plotted.':''}`;
+}
+
+function renderControl() {
+  const model=algoChecklistModel(data);
+  $('execution-mode').textContent=data.vm?.status!=='HEALTHY'?'Algo state unavailable':`${data.live_setup?.mode==='live'?'LIVE':'Paper'} · ${data.live_setup?.paused?'Paused':model.on?'Algo On':'Algo Off'}`;
+  $('monitor-status').textContent=model.badge;
+  $('monitor-status').className='status-pill algo-state-'+model.tone;
+  $('algo-decision-title').textContent=model.heading;
+  $('algo-start-result').textContent=algoStartPending?'Checking Groww and preparing real Algo On…':
+    !model.on&&algoStartResult?.status==='TRANSPORT_FAILED'?'Oracle did not confirm the setting. Read the On/Off state before retrying.':
+    !model.on&&algoStartResult?.status==='ON_BLOCKED'&&algoStartResult.desired_enabled===false?
+      'Start not completed: '+(algoStartResult.blockers||[]).map(algoReason).join(' '):model.detail;
+  $('algo-checked-at').textContent=model.at?`Strategy checked ${new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tokyo',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(model.at))} JST`:'Waiting for a dated strategy check';
+  const stateLabels={passed:'Passed',waiting:'Waiting',not_checked:'Not checked',unknown:'Unknown',blocked:'Blocked'};
+  const stateSymbols={passed:'✓',waiting:'…',not_checked:'—',unknown:'?',blocked:'!'};
+  $('algo-checklist').innerHTML=model.rows.filter(r=>r.title!=='Confirmed trend').map(r=>`<li class="algo-check algo-check-${r.state}"><span class="algo-check-symbol" aria-hidden="true">${stateSymbols[r.state]}</span><div><div class="algo-check-title"><h4>${escapeHTML(r.title)}</h4><span>${stateLabels[r.state]}</span></div><p>${escapeHTML(r.detail)}</p></div></li>`).join('');
+  $('algo-basket-summary').textContent=model.basket;
+  $('algo-last-action').textContent=model.activity;
+  $('algo-connection').textContent=`Oracle ${data.vm?.status||'unavailable'} · ${data.live_setup?.mode==='live'?'LIVE':'Paper'} · ${data.live_setup?.paused?'paused':'unpaused'} · ordinary SL follows a confirmed short fill. Stops and quoted loss bounds do not guarantee fills or a loss cap.`;
+  $('algo-start').disabled=data.demo||algoStartPending||strategySwitchPending||model.on||data.vm?.status!=='HEALTHY';
+  $('algo-start').textContent=model.on?'Algo On':'Algo Start';
+  $('algo-stop').disabled=data.demo||algoStartPending||!model.on;
+  renderStrategyGraph();
+}
+
 const capitalPending={withdrawal:false,investment:false};
 function capitalBusy(){return Object.values(capitalPending).some(Boolean);}
 function jstDay() {return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
@@ -272,14 +433,32 @@ function renderCapital() {
 }
 function strategyReadinessHTML(s) {
   if(!s.readiness)return '';
+  if(s.id==='normal_theta') {
+    const current=algoChecklistModel(data);
+    return `<small class="strategy-route">${escapeHTML(current.badge)} · see entry checklist</small>`;
+  }
   const reasons=[...new Set(Object.values(s.readiness.indices||{}).flatMap(r=>r.blockers||[]))];
   const label=s.readiness.status==='RESEARCH_ONLY'?'Research only':s.readiness.live_ready?'Entry recheck ready':'Live blocked';
   return `<small class="strategy-route" title="${escapeHTML(reasons.join('; '))}">${escapeHTML(label)} · ${s.readiness.code_implemented?'executor installed':'executor unavailable'}</small>`;
 }
+// Use only today's recent, provider-validated journal observations for a
+// clearly labeled last-known display. This is not a live P&L readiness signal.
+function latestConfirmedPnl(p) {
+  const rows=p?.series||[], now=Date.now();
+  for(let i=rows.length-1;i>=0;i--) {
+    const row=rows[i], age=now-Date.parse(row.at);
+    if(!Number.isFinite(age)||age<0||age>60000) continue;
+    if(['self','algo','unassigned'].every(k=>known(row[k])))
+      return {...row,total:row.self+row.algo+row.unassigned};
+  }
+  return null;
+}
 function renderAccount() {
   const a=data.account;
   const p=data.broker_pnl, actual=!data.demo, split=Boolean(p);
-  setAmount("today-pnl",actual?p?.total_inr:a.today_pnl_inr,true); $("today-return").hidden=actual;
+  const lastPnl=actual&&p?.status!=='AVAILABLE'?latestConfirmedPnl(p):null;
+  const displayedPnl=actual?(p?.status==='AVAILABLE'?p.total_inr:lastPnl?.total):a.today_pnl_inr;
+  setAmount("today-pnl",displayedPnl,true); $("today-return").hidden=actual;
   $("today-return").textContent=percent(a.today_return_pct); tone($("today-return"),a.today_return_pct);
   setAmount("realized",actual?p?.realized_inr:a.realized_today_inr,true); setAmount("unrealized",actual?p?.unrealized_inr:a.unrealized_inr,true); $("trade-count").textContent=(actual?p?.closed_contracts:a.trade_count_today)??"—";
   const funds=data.funds;
@@ -289,14 +468,15 @@ function renderAccount() {
   setAmount("option-buy-money",data.demo?a.available_margin_inr:funds?.option_buy_available_inr);
   setAmount("collateral-money",data.demo?0:funds?.collateral_available_inr);
   $("funds-status").textContent=data.demo?"Sample cash · design preview":funds?.status==='AVAILABLE'?`Clear cash · Groww ${dateTime(funds.received_at)} · refresh 30s`:funds?.status==='STALE'?"Groww money is stale · waiting for a new read":"Groww money unavailable · amounts stay unknown";
-  const pnlStatus=p?.status==='AVAILABLE'?`Index options · before charges · ${dateTime(p.received_at)}`:p?.status==='CARRY_DAY_BASIS_UNVERIFIED'?"Overnight position · today's P&L basis unverified":p?.status==='STALE'?"P&L is stale · waiting for Groww":"P&L incomplete · waiting for current positions and prices";
+  const pnlStatus=p?.status==='AVAILABLE'?`Index options · before charges · ${dateTime(p.received_at)}`:lastPnl?`Last verified ${dateTime(lastPnl.at)} · not current · before charges`:p?.status==='CARRY_DAY_BASIS_UNVERIFIED'?"Overnight position · today's P&L basis unverified":p?.status==='STALE'?"P&L is stale · waiting for Groww":"P&L incomplete · waiting for current positions and prices";
   $("account-status").textContent=data.demo?"Sample results · design preview":pnlStatus;
-  setAmount("chart-pnl",actual?p?.total_inr:a.today_pnl_inr,true); setAmount("portfolio-value",a.portfolio_value_inr);
+  setAmount("chart-pnl",displayedPnl,true); setAmount("portfolio-value",a.portfolio_value_inr);
   const groups=[{key:'self',name:'Self trades',color:'#2473b5'},{key:'algo',name:'Algo',color:'#8853ca'}];
   if(p?.buckets?.unassigned?.contracts>0||(p?.series||[]).some(r=>known(r.unassigned)&&r.unassigned!==0)) groups.push({key:'unassigned',name:'Unassigned / mixed',color:'#b46c15'});
   $("pnl-breakdown").hidden=!split;
-  $("pnl-breakdown").innerHTML=groups.map(g=>`<div class="pnl-bucket"><span><i style="background:${g.color}"></i>${g.name}</span><strong class="${known(p?.buckets?.[g.key]?.total_inr)?p.buckets[g.key].total_inr<0?'negative':'positive':''}">${escapeHTML(signed(p?.buckets?.[g.key]?.total_inr))}</strong><small>Realised ${escapeHTML(signed(p?.buckets?.[g.key]?.realized_inr))} · Open ${escapeHTML(signed(p?.buckets?.[g.key]?.unrealized_inr))}</small></div>`).join('');
-  $('summary-pnl-split').innerHTML=groups.map(g=>`<span><i style="background:${g.color}"></i>${g.name} <b class="${known(p?.buckets?.[g.key]?.total_inr)?p.buckets[g.key].total_inr<0?'negative':'positive':''}">${escapeHTML(signed(p?.buckets?.[g.key]?.total_inr))}</b></span>`).join('');
+  const displayedBucket=g=>p?.status==='AVAILABLE'?p?.buckets?.[g.key]?.total_inr:lastPnl?.[g.key];
+  $("pnl-breakdown").innerHTML=groups.map(g=>{const amount=displayedBucket(g);return `<div class="pnl-bucket"><span><i style="background:${g.color}"></i>${g.name}</span><strong class="${known(amount)?amount<0?'negative':'positive':''}">${escapeHTML(signed(amount))}</strong><small>${lastPnl?'Last verified · ':''}Realised ${escapeHTML(signed(p?.buckets?.[g.key]?.realized_inr))} · Open ${escapeHTML(signed(p?.buckets?.[g.key]?.unrealized_inr))}</small></div>`;}).join('');
+  $('summary-pnl-split').innerHTML=groups.map(g=>{const amount=displayedBucket(g);return `<span><i style="background:${g.color}"></i>${g.name} <b class="${known(amount)?amount<0?'negative':'positive':''}">${escapeHTML(signed(amount))}</b></span>`;}).join('');
   if(split&&(p?.series||[]).some(r=>known(r.self)||known(r.algo)||known(r.unassigned))) {
     const lines=groups.map(g=>({...g,points:p.series.map(r=>({at:r.at,value:r[g.key]}))}));
     const points=p.series.map(r=>({at:r.at,value:known(r.self)?r.self:known(r.algo)?r.algo:r.unassigned}));
@@ -311,15 +491,28 @@ function renderAccount() {
   const strategyHTML=data.strategies.map((s,i)=>`<tr><td><div class="strategy-info ${known(s.net_pnl_inr)&&s.net_pnl_inr<0?"negative":""}"><span class="strategy-number">${i+1}</span><div class="strategy-content"><div class="strategy-name">${escapeHTML(s.name)}</div>${data.control?.strategy_controls?`<button class="strategy-toggle" type="button" role="switch" aria-checked="${Boolean(s.desired_enabled)}" aria-label="${escapeHTML(s.name)} ${s.mode==='MONITOR_ONLY'?'monitoring':'new entries'}" data-strategy="${escapeHTML(s.id)}" ${strategySwitchPending||data.demo||data.vm?.status!=='HEALTHY'?'disabled':''}>${s.mode==='MONITOR_ONLY'?'Monitor ':''}${s.desired_enabled?'On':'Off'}</button><small class="strategy-route">${s.mode==='MONITOR_ONLY'?'Research only · no broker orders':'Guarded executor · see readiness above'}</small>`:''}${strategyReadinessHTML(s)}<p class="strategy-description">${escapeHTML(s.description)}</p><div class="outcome-track" role="img" aria-label="${escapeHTML(s.name)}: ${s.closed_trades?`${s.non_loss_pct.toFixed(1)}% non-losing, ${s.loss_pct.toFixed(1)}% losing, ${s.closed_trades} closed trades`:"No results"}"><span class="profit-segment" style="width:${s.non_loss_pct??0}%"></span><span class="loss-segment" style="width:${s.loss_pct??0}%"></span></div><span class="outcome-caption">${s.closed_trades?`${s.non_loss_pct.toFixed(0)}% non-loss · ${s.loss_pct.toFixed(0)}% loss · ${s.closed_trades} trades`:"No results"}</span></div></div></td><td class="${known(s.return_pct)?s.return_pct<0?"negative":"positive":""}">${percent(s.return_pct)}</td><td class="${known(s.net_pnl_inr)?s.net_pnl_inr<0?"negative":"positive":""}">${signed(s.net_pnl_inr)}</td></tr>`).join("");
   if($("strategy-rows").innerHTML!==strategyHTML) $("strategy-rows").innerHTML=strategyHTML;
 }
+function brokerConnectionMessage(view) {
+  const connection=view.runtime?.broker_connection,error=connection?.failure||view.runtime?.error;
+  if(!error) return null;
+  const code=String(error.code||''),reason=connection?.status;
+  const detail=code==='429'?'Groww rate limited (HTTP 429).':
+    ['401','403'].includes(code)?`Groww authentication/access failed (HTTP ${code}).`:
+    reason==='LOCAL_AUTH_BUDGET'?'Groww connection paused at the local token-request limit.':
+    'The Oracle Groww connection failed.';
+  const at=connection?.next_retry_at,valid=typeof at==='string'&&Number.isFinite(Date.parse(at));
+  const retry=valid?` Automatic retry: ${dateTime(at)} ${timeZone==='Asia/Tokyo'?'JST':'IST'}.`:'';
+  return `${detail}${retry} Market prices, positions and money remain unknown until a successful read.`;
+}
 function render() {
   if(!data) return;
   renderCapital(); renderIndices(); renderOptions(); renderAccount(); renderControl();
   const recent=data.freshness==="RECENT";
-  $("data-status").textContent=data.demo?"Sample data":data.freshness==="NO_DATA"?"No market data":recent?"Latest snapshot":"Saved snapshot";
-  $("data-status").className="status-pill"+(data.demo?" demo":!recent?" stale":"");
+  const connectionFailure=!data.demo&&brokerConnectionMessage(data);
+  $("data-status").textContent=data.demo?"Sample data":connectionFailure?'Groww unavailable':data.freshness==="NO_DATA"?"No market data":recent?"Latest snapshot":"Saved snapshot";
+  $("data-status").className="status-pill"+(data.demo?" demo":!recent||connectionFailure?" stale":"");
   $("as-of").textContent=data.as_of?`${dateTime(data.as_of)} ${timeZone==="Asia/Tokyo"?"JST":"IST"}`:"Refresh to read Groww data";
   $("footer-source").textContent=data.demo?"Design preview · all figures simulated":`Groww observations · ${timeZone==="Asia/Tokyo"?"JST":"IST"} · Viewing only`;
-  const message=data.demo?"DESIGN PREVIEW — sample prices and results. Switch off sample data in settings to return to your actual snapshots.":data.refresh_error||data.market_status==="BLOCKED"?"The latest data refresh failed. Values remain unknown until a current read succeeds.":data.offline?"Offline viewing. Showing saved observations; broker refresh is disabled.":data.market_status==="PARTIAL_MARKET_DATA"?"Some Groww quote reads failed. Missing values remain unavailable.":data.orders_status==="INCOMPLETE"?"Some orders or positions could not be fully checked. Only confirmed contracts are shown.":data.freshness==="STALE"?"Showing a saved snapshot. Refresh data to request a current read.":null;
+  const message=data.demo?"DESIGN PREVIEW — sample prices and results. Switch off sample data in settings to return to your actual snapshots.":connectionFailure||((data.refresh_error||data.market_status==="BLOCKED")?"The latest data refresh failed. Values remain unknown until a current read succeeds.":data.offline?"Offline viewing. Showing saved observations; broker refresh is disabled.":data.market_status==="PARTIAL_MARKET_DATA"?"Some Groww quote reads failed. Missing values remain unavailable.":data.orders_status==="INCOMPLETE"?"Some orders or positions could not be fully checked. Only confirmed contracts are shown.":data.freshness==="STALE"?"Showing a saved snapshot. Refresh data to request a current read.":null);
   $("notice").hidden=!message; $("notice").textContent=message||"";
   $("refresh").disabled=refreshPending||demo||data.offline;
   $("refresh").classList.toggle("loading",refreshPending);
@@ -357,6 +550,11 @@ function sampleData() {
 }
 async function setAlgo(enabled){
   if(algoStartPending||demo) return;
+  // The first On click may prepare a LIVE broker executor. This must never
+  // happen from page load, polling or a simulated demo switch.
+  if(enabled&&typeof globalThis.confirm==='function'&&!globalThis.confirm(
+    'Enable REAL Groww algorithmic trading?\n\nThe strategy may buy and sell real NIFTY/SENSEX options using your funds. The first live basket is NOT yet provider-commissioned. Orders and stops can fail or remain unfilled, and losses can exceed the estimated cap.\n\nContinue only if you accept these risks.'
+  )) return;
   algoStartPending=true;renderControl();
   try {
     const response=await fetch(enabled?'/api/algo/start':'/api/algo/stop',{method:'POST',headers:{'X-Local-Token':document.querySelector('meta[name="local-token"]').content},cache:'no-store'});
@@ -441,8 +639,6 @@ $("demo-toggle").addEventListener("change",event=>{demo=event.target.checked;con
 for(const tab of document.querySelectorAll(".tab")) tab.addEventListener("click",()=>{selectedIndex=tab.dataset.index;try{localStorage.setItem("trading-index",selectedIndex);}catch{}contracts={buy:null,sell:null};renderOptions(true);});
 for(const side of ["buy","sell"]) $(side+"-option").addEventListener("change",event=>{contracts[side]=event.target.value||null;const market=data.markets.find(m=>m.index===selectedIndex);drawOption(side,market?.options.find(o=>o.symbol===contracts[side]));});
 load().then(()=>refresh());
-const impulseEvents=new EventSource('/api/impulse/events');
-impulseEvents.onmessage=event=>{try{const value=JSON.parse(event.data);if(!demo&&data){data.premium_impulse=value;renderControl();}}catch{}};
-impulseEvents.onerror=()=>{if(!demo&&data){data.premium_impulse={transport_status:'PC_STREAM_UNAVAILABLE',indices:{}};renderControl();}};
+// Only the five-second account/view refresh remains; no research SSE worker.
 setInterval(async()=>{if(!document.hidden){await load();if(autoRefresh&&!demo&&Date.now()-lastRequest>=4500) await refresh();}},5000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&autoRefresh&&!demo) refresh();});

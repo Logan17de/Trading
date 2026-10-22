@@ -24,7 +24,7 @@
     <div class="header-actions"><span class="local-tag"><span class="dot"></span>Local view</span><button id="refresh" class="button refresh-button" type="button"><svg class="icon"><use href="#icon-refresh"/></svg><span>Refresh data</span></button><button id="settings" class="icon-button" type="button" aria-label="Dashboard settings"><svg class="icon"><use href="#icon-settings"/></svg></button></div>
   </header>
   <main>
-    <div class="session-line"><div><span id="data-status" class="status-pill">Loading market data</span><span id="as-of">Connecting to your local engine…</span></div><span class="pause-label"><span class="pause-bars">Ⅱ</span> Execution paused</span></div>
+    <div class="session-line"><div><span id="data-status" class="status-pill">Loading market data</span><span id="as-of">Connecting to your local engine…</span></div><span id="execution-mode" class="pause-label">Checking Algo state</span></div>
     <div id="notice" class="notice" role="status" hidden></div>
     <section class="card capital-card" aria-label="Capital summary">
       <div class="section-heading"><h2><svg class="icon orange"><use href="#icon-coins"/></svg>Capital</h2><div class="capital-actions"><button id="record-investment" class="button" type="button" disabled>Record investment</button><button id="record-withdrawal" class="button" type="button" disabled>Record withdrawal</button></div></div>
@@ -42,19 +42,15 @@
     </section>
     <div id="summary-pnl-split" class="summary-pnl-split" aria-label="Today's Self and Algo P&L"></div>
     <section id="indices" class="index-grid" aria-label="Market indices"></section>
-    <section class="card monitor-card" aria-label="PC engine and strategy rules">
-      <div class="section-heading"><h2 id="engine-heading">Trading engine</h2><div class="algo-actions"><span id="monitor-status" class="status-pill">Starting</span><button id="algo-start" class="button primary" type="button" disabled>Algo Start</button><button id="algo-stop" class="button" type="button" disabled>Algo Off</button><a class="button" href="/report">Email preview</a></div></div><p id="algo-start-result" class="monitor-caption" role="status">Checking trading readiness</p><p id="execution-status" class="monitor-caption" role="status"></p><p id="live-setup-status" class="monitor-caption" role="status"></p><a class="button" href="/live-setup">Real trading setup</a><p id="vm-status" class="monitor-caption" role="status"></p><p id="email-status" class="monitor-caption"></p>
-      <div class="monitor-facts"><div><small>Everyday rule</small><strong id="everyday-rule">Checking current rule</strong></div><div><small>Position policy</small><strong id="slot-policy">Checking position policy</strong></div><div><small>Japan schedule</small><strong id="monitor-schedule">Checking Japan window</strong></div></div>
-      <p id="expiry-status" class="monitor-caption">Checking actual expiry dates</p>
-      <p id="preparation-status" class="monitor-caption" hidden></p>
-      <p id="impulse-status" class="monitor-caption" role="status">Streaming breakout detector: waiting for evidence</p>
-      <p id="impulse-research-status" class="monitor-caption" role="status">Premium research · MONITOR ONLY · waiting for Oracle</p>
-      <p id="strategy-priority" class="monitor-caption">Checking strategy readiness</p>
-      <div id="levels" class="levels"></div>
-      <p id="analysis-status" class="monitor-caption">Checking current proposals</p>
-      <p id="trailing-status" class="monitor-caption">Broker protection not verified</p>
-      <p id="control-note" class="control-note">Manual trades are protected.</p>
-      <details id="rule-details" hidden><summary>Latest structured rule proposal</summary><pre id="rule-json"></pre></details>
+    <section class="card monitor-card" aria-label="Algo status and entry checklist">
+      <div class="section-heading algo-heading"><div><h2>Algo</h2><p class="algo-subtitle">Normal theta spread</p></div><div class="algo-actions"><span id="monitor-status" class="status-pill">Checking</span><button id="algo-start" class="button primary" type="button" disabled>Algo Start</button><button id="algo-stop" class="button" type="button" disabled>Algo Off</button><a class="button" href="/trade-log">Trade log</a></div></div>
+      <div class="algo-decision" aria-live="polite"><h3 id="algo-decision-title">Checking strategy conditions</h3><p id="algo-start-result">Waiting for Oracle.</p><small id="algo-checked-at"></small></div>
+      <section class="strategy-graph" aria-labelledby="strategy-graph-title"><div class="section-heading"><div><h3 id="strategy-graph-title">Strategy graph</h3><p id="strategy-graph-state" class="algo-subtitle">Waiting for current strategy evidence</p></div><span id="strategy-graph-price" class="strategy-graph-price">—</span></div><div id="strategy-graph-legend" class="strategy-graph-legend"></div><div id="strategy-graph" class="chart strategy-chart"></div><p id="strategy-graph-caption" class="monitor-caption"></p></section>
+      <div class="algo-checklist-heading"><h3>Entry checklist</h3><span>Passed · Waiting · Not checked · Unknown</span></div>
+      <ul id="algo-checklist" class="algo-checklist" aria-label="Normal theta entry requirements"></ul>
+      <section class="algo-basket" aria-labelledby="algo-basket-title"><h3 id="algo-basket-title">Basket comparison</h3><p id="algo-basket-summary">Waiting for a qualifying trend.</p><p class="algo-basket-rule">Compare Groww basket margin and charges. Select the highest quoted net maximum expiry profit among qualifying baskets. Strike distance varies with delta; it is not fixed at 10 strikes from ATM.</p></section>
+      <p id="algo-last-action" class="algo-last-action"></p>
+      <details class="algo-tools"><summary>Setup &amp; reporting</summary><div><a class="button" href="/live-setup">BUY / SELL / SL test</a><a class="button" href="/advanced-setup">Advanced setup</a><a class="button" href="/report">Email preview</a></div><p id="algo-connection" class="monitor-caption"></p></details>
     </section>
     <p id="orders-empty" class="orders-empty" role="status">Checking your open option positions…</p>
     <div id="chart-toolbar" class="chart-toolbar" hidden><div><h2>Option charts</h2><span class="toolbar-note">View your buy and sell legs</span></div><div class="index-tabs" role="group" aria-label="Option chart index"><button type="button" class="tab active" data-index="NIFTY" aria-pressed="true">NIFTY</button><button type="button" class="tab" data-index="SENSEX" aria-pressed="false">SENSEX</button><button type="button" class="tab" data-index="BANKNIFTY" aria-pressed="false">BANK NIFTY</button></div></div>
